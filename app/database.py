@@ -19,7 +19,7 @@ def get_db():
     finally:
         db.close()
 
-from app.models import Base  # Or wherever your Base is defined
+from app import models
 
 def create_tables():
     Base.metadata.create_all(bind=engine)        
