@@ -1,0 +1,273 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.dependencies import require_role,get_current_user
+from app.routes.access import get_password_hash
+from app.utilites.logging import log_activity
+from app import models, schemas
+from app.utilites.generator import generate_invite_code
+from app.models import User
+from typing import List
+from app.schemas import UserOut, OrganizationCreate, OrganizationOut
+from app.models import Organization
+
+router = APIRouter(prefix="/super", tags=["Super Admin"])
+
+@router.post("/create-user", status_code=201)
+def create_user_by_super_admin(
+    data: schemas.SuperAdminCreateUser,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    # Check if email already exists
+    if db.query(models.User).filter_by(email=data.email).first():
+        raise HTTPException(status_code=400, detail="Email already in use.")
+
+    # Check if organization exists
+    org = db.query(models.Organization).filter_by(id=data.organization_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found.")
+
+    # Create user
+    hashed_pw = get_password_hash(data.password)
+    new_user = models.User(
+        name=data.name,
+        email=data.email,
+        hashed_password=hashed_pw,
+        role=data.role,
+        organization_id=org.id,
+        is_verified=True,  # Super admin creates verified users
+        email_verification_token=None,  # No token needed for super admin created users
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    # Log activity
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="create_user_by_super_admin",
+        details=f"Super admin {current_user.email} created {data.role} user {data.email} in org {org.name}"
+    )
+
+    return {"message": f"{data.role.capitalize()} user created", "user_id": new_user.id}
+
+@router.get("/organizations", response_model=list[schemas.OrganizationOut])
+def list_organizations(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    orgs = db.query(models.Organization).all()
+    return orgs
+
+@router.post("/organizations", response_model=schemas.OrganizationOut)
+def create_organization(
+    org_data: schemas.OrganizationCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    # Check for duplicate org name (optional)
+    if db.query(models.Organization).filter_by(name=org_data.name).first():
+        raise HTTPException(status_code=400, detail="Organization name already exists")
+
+    invite_code = generate_invite_code()
+
+    new_org = models.Organization(
+        name=org_data.name,
+        type=org_data.type,
+        country=org_data.country,
+        state=org_data.state,
+        region=org_data.region,
+        invite_code=invite_code,
+        ico_registered=org_data.ico_registered,
+        data_retention_years=org_data.data_retention_years,
+        is_active=True
+    )
+    db.add(new_org)
+    db.commit()
+    db.refresh(new_org)
+
+    # ✅ Log activity
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="create_organization",
+        details=f"Super admin created organization '{new_org.name}' with code {new_org.invite_code}"
+    )
+
+    return new_org
+
+
+@router.delete("/{org_id}")
+def deactivate_organization(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
+
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    
+    if not org.is_active:
+        raise HTTPException(status_code=400, detail="Organization already deactivated")
+
+    # ✅ Soft deactivate instead of delete
+    org.is_active = False
+    db.commit()
+
+    # ✅ Optionally deactivate all users in this org
+    users = db.query(models.User).filter(models.User.organization_id == org_id).all()
+    for user in users:
+        user.is_active = False  # (Assumes your User model has is_active)
+    db.commit()
+
+    # ✅ Log the action
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="deactivate_organization",
+        details=f"Super admin {current_user.email} deactivated organization {org.name} (ID {org.id})"
+    )
+
+    return {"message": f"Organization '{org.name}' has been deactivated."}
+
+@router.patch("/{org_id}")
+def update_organization(
+    org_id: int,
+    update: schemas.OrganizationUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    org = db.query(models.Organization).filter_by(id=org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    if update.name:
+        org.name = update.name
+    if update.is_active is not None:
+        org.is_active = update.is_active
+
+    db.commit()
+    db.refresh(org)
+
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="update_organization",
+        details=f"Super admin updated organization {org.name} (ID: {org.id})"
+    )
+
+    return {"message": "Organization updated successfully", "organization": org}
+
+@router.get("/{org_id}")
+def get_organization_details(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    org = db.query(models.Organization).filter_by(id=org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    users = db.query(models.User).filter_by(organization_id=org.id).all()
+    trip_count = db.query(models.Trip).filter_by(organization_id=org.id).count()
+
+    return {
+        "organization": {
+            "id": org.id,
+            "name": org.name,
+            "invite_code": org.invite_code,
+            "is_active": org.is_active
+        },
+        "user_count": len(users),
+        "trip_count": trip_count,
+    }
+    
+    
+@router.post("/{org_id}/regenerate-code")
+def regenerate_invite_code(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    from app.utilites.generator import generate_invite_code
+
+    org = db.query(models.Organization).filter_by(id=org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    org.invite_code = generate_invite_code()
+    db.commit()
+
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="regenerate_invite_code",
+        details=f"Super admin regenerated invite code for organization {org.name} (ID: {org.id})"
+    )
+
+    return {"message": "Invite code regenerated", "new_invite_code": org.invite_code}    
+
+@router.get("/{org_id}/users")
+def get_org_users(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    users = db.query(models.User).filter(models.User.organization_id == org_id).all()
+    return users
+
+@router.post("/create_regulator", response_model=schemas.UserOut)
+def create_regulator(
+    regulator: schemas.RegulatorCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    # 🚫 Check if regulator already exists
+    existing = db.query(User).filter(User.email == regulator.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    # ✅ Hash the password
+    hashed_password = get_password_hash(regulator.password)
+
+    # ✅ Create the regulator user
+    new_user = User(
+        email=regulator.email,
+        name=regulator.name,
+        hashed_password=hashed_password,
+        role="regulator",
+        regulated_country=regulator.regulated_country,
+        regulated_state=regulator.regulated_state,
+        regulated_region=regulator.regulated_region
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+@router.get("/regulators", response_model=List[UserOut])
+def list_regulators(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    regulators = db.query(User).filter(User.role == "regulator").all()
+    return regulators
+
+
+@router.delete("/organizations/{org_id}/permanent", status_code=204)
+def delete_organization_permanently(
+    org_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    db.delete(org)
+    db.commit()
+    return {"message": "Organization permanently deleted."}
