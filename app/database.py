@@ -18,3 +18,8 @@ def get_db():
         yield db
     finally:
         db.close()
+
+from app.models import Base  # Or wherever your Base is defined
+
+def create_tables():
+    Base.metadata.create_all(bind=engine)        
