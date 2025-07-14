@@ -130,6 +130,3 @@ from app.scheduler import start as start_scheduler
 # Inside the block where your FastAPI app is initialized (after app creation)
 start_scheduler()
 
-from app.database import create_tables
-
-create_tables()
