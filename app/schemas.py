@@ -9,7 +9,7 @@ from app.models import PriorityLevel  # SQLAlchemy model
 from enum import Enum as PyEnum
 from .models import SupportTicket, SupportReply
 from app.enums import OrganizationType
-
+from app.models import CustodyEventType
 # --------------------------
 # Trip Schemas
 # --------------------------
@@ -427,7 +427,21 @@ class IncidentCreate(BaseModel):
     title: str
     description: str
     attachment_url: Optional[str]
-
+    incident_type: Optional[str]= None 
+    location: Optional[str]= None
+    severity:Optional[str]="low" # can be low, moderate, critical
+    is_visible_to_regulator: Optional[bool]= False
+    
+class IncidentUpdate(BaseModel):
+    title: Optional[str]
+    description: Optional[str]
+    incident_type: Optional[str]
+    location: Optional[str]
+    severity: Optional[str]
+    is_visible_to_regulator: Optional[bool]
+    status: Optional[str]
+    attachment_url: Optional[str]    
+    
 class IncidentOut(BaseModel):
     id: int
     title: str
@@ -437,6 +451,10 @@ class IncidentOut(BaseModel):
     submitted_by_id: int
     organization_id: int
     attachment_url: Optional[str]
+    is_visible_to_regulator: Optional[bool] = False
+    incident_type: Optional[str] = None  # e.g., "accident", "theft", "compliance_issue"
+    location: Optional[str] = None  # Optional field for incident location
+    severity: Optional[str] = "low"  # New severity field
 
     class Config:
         from_attributes = True 
@@ -542,4 +560,31 @@ class ShiftRequestUpdate(BaseModel):
     status:Literal["approved", "rejected", "pending"]   
 
     class Config:
-        from_attributes = True                                              
+        from_attributes = True
+
+class ChainOfCustodyCreate(BaseModel):
+    trip_id: int
+    event_type: CustodyEventType
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    signed_by: Optional[str] = None
+    signature_image_url: Optional[str] = None
+    signature_timestamp: Optional[datetime] = None
+    witness_name: Optional[str] = None
+
+class ChainOfCustodyOut(BaseModel):
+    id: int
+    trip_id: int
+    driver_id: Optional[int]
+    event_type: CustodyEventType
+    timestamp: datetime
+    location: Optional[str]
+    notes: Optional[str]
+    attachment_url: Optional[str]
+    signature_image_url: Optional[str]
+    signature_timestamp: Optional[datetime]
+    signed_by: Optional[str]
+    witness_name: Optional[str]
+
+    class Config:
+        form_attributes = True 

@@ -1,5 +1,7 @@
 from sqlalchemy.orm import Session
 from . import models, schemas
+from app.utilites.logging import log_activity
+
 
 def create_trip(db: Session, trip: schemas.TripCreate, current_user: models.User):
     db_trip = models.Trip(

@@ -4,6 +4,7 @@ from app import models
 from app.database import get_db
 from app.dependencies import get_current_user
 from pydantic import BaseModel
+from app.utilites.logging import log_activity
 
 router = APIRouter(
     prefix="/drivers",

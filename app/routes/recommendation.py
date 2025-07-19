@@ -4,6 +4,7 @@ from app.database import get_db
 from app.dependencies import require_role
 from app.utilites.driver_recommendation import recommend_nearest_drivers
 from app import models
+from app.utilites.logging import log_activity
 
 router = APIRouter(
     prefix="/recommendation",

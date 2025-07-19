@@ -37,11 +37,13 @@ from app.routes import profile
 from app.routes import activity_logs
 from app.routes import driver_availability
 from app.routes import shifts
+from  app.scheduler import start_scheduler
+from app.routes import chain_of_custody
 # app/main.py
 
 app = FastAPI(
     title="Medilogic API",
-    description="API for managing medical waste trips",
+    description="API for managing medical waste trips ,deliveries and compliances",
     version="1.0.0",
     docs_url="/docs",             # Swagger UI
     redoc_url="/redoc",           # ReDoc UI
@@ -91,6 +93,9 @@ app.include_router(profile.router)
 app.include_router(activity_logs.router)
 app.include_router(driver_availability.router)
 app.include_router(shifts.router)
+app.include_router(chain_of_custody.router)
+
+
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -124,8 +129,6 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
-
-from app.scheduler import start as start_scheduler
 
 # Inside the block where your FastAPI app is initialized (after app creation)
 start_scheduler()

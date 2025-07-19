@@ -45,6 +45,17 @@ class WeekDay(enum.Enum):
     saturday = "Saturday"
     sunday = "Sunday"    
 
+class SeverityLevel(str, enum.Enum):
+    low ="low"
+    moderate = "moderate"
+    critical = "critical"
+
+class CustodyEventType(str, enum.Enum):
+    pickup_confirmed = "pickup_confirmed"
+    in_transit = "in_transit"
+    delayed = "delayed"
+    handed_off = "handed_off"
+    delivered = "delivered"
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -78,6 +89,7 @@ class Trip(Base):
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     driver= relationship("User", foreign_keys=[driver_id],back_populates="driver_trips")
     activity_logs = relationship("ActivityLog", back_populates="trip")
+    custody_events = relationship("ChainOfCustody", back_populates="trip",cascade="all, delete")
 
 
 class User(Base):
@@ -117,6 +129,7 @@ class User(Base):
     two_fa_expiry = Column(DateTime, nullable=True)  # Optional field
     availabilities = relationship("DriverAvailability", back_populates="driver", cascade="all, delete")
     shifts = relationship("ShiftAssignment", back_populates="driver")
+    custody_events= relationship("ChainOfCustody",back_populates="driver", cascade="all,delete")
 
 
 class POD(Base):
@@ -307,7 +320,11 @@ class Incident(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     organization = relationship("Organization", back_populates="incidents")
     submitted_by = relationship("User")
-    
+    incident_type = Column(String, nullable=False)  # e.g., "accident", "theft", "compliance_issue"
+    location = Column(String, nullable=True)  # Optional field for incident location
+    severity = Column(Enum(SeverityLevel), nullable=False, default='low')  # New severity field
+    escalated= Column(Boolean, default=False)  # New field to track escalation status
+    is_visible_to_regulator = Column(Boolean, default=False)  # New field to control visibility to regulators
 
 class ComplianceStatus(Base):
     __tablename__ = "compliance_statuses"
@@ -376,4 +393,24 @@ class Shift(Base):
 
     # Relationships
     shift_requests = relationship("ShiftRequest", back_populates="shift", cascade="all, delete")
-    organization = relationship("Organization", back_populates="shifts")   
+    organization = relationship("Organization", back_populates="shifts")
+    
+
+class ChainOfCustody(Base):
+    __tablename__ = "chain_of_custody"
+
+    id = Column(Integer, primary_key=True, index=True)
+    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # who logged it
+    event_type = Column(PgEnum(CustodyEventType), nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    location = Column(String, nullable=True)  # optional GPS or address
+    notes = Column(Text, nullable=True)
+    attachment_url = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    signed_by = Column(String, nullable=True)
+    signature_image_url = Column(String, nullable=True)
+    signature_timestamp = Column(DateTime, nullable=True)
+    witness_name = Column(String, nullable=True)
+    trip = relationship("Trip", back_populates="custody_events")
+    driver = relationship("User", back_populates="custody_events")       
