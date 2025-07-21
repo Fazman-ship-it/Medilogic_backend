@@ -15,6 +15,7 @@ from app.enums import OrganizationType
 from sqlalchemy.sql import func
 from sqlalchemy import Time
 from app.database import Base
+from sqlalchemy.dialects.postgresql import ENUM
 Base = declarative_base()
 
 class UserRole(str, enum.Enum):
@@ -45,10 +46,11 @@ class WeekDay(enum.Enum):
     saturday = "Saturday"
     sunday = "Sunday"    
 
-class SeverityLevel(str, enum.Enum):
+class SeverityLevel(str,enum.Enum):
     low ="low"
     moderate = "moderate"
     critical = "critical"
+
 
 class CustodyEventType(str, enum.Enum):
     pickup_confirmed = "pickup_confirmed"
@@ -130,7 +132,8 @@ class User(Base):
     availabilities = relationship("DriverAvailability", back_populates="driver", cascade="all, delete")
     shifts = relationship("ShiftAssignment", back_populates="driver")
     custody_events= relationship("ChainOfCustody",back_populates="driver", cascade="all,delete")
-
+    session_id = Column(String, nullable=True)  # Optional field for session management
+    session_expires_at = Column(DateTime, nullable=True)  # Optional field for session expiry
 
 class POD(Base):
     __tablename__ = "pods"

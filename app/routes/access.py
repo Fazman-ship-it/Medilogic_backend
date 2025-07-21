@@ -52,10 +52,10 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 
 
 from fastapi import Request  # ✅ Add this import at the top
-
+from uuid import uuid4  # ✅ Import uuid4 for generating session IDs
 @router.post("/login-step-1")
 def login_step_1(
-    request: Request,  # ✅ Inject Request
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -67,15 +67,22 @@ def login_step_1(
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Please verify your email before logging in.")
 
-    # Generate 4-digit code
+    # 🔐 Generate 4-digit code and expiry
     code = str(secrets.randbelow(10000)).zfill(4)
     expiry = datetime.utcnow() + timedelta(minutes=10)
 
+    # 🆕 Generate session_id and expiry
+    session_id = str(uuid4())
+    session_expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+    # 🔐 Store in user object
     user.two_fa_code = code
     user.two_fa_expiry = expiry
+    user.session_id = session_id
+    user.session_expires_at = session_expires_at
     db.commit()
 
-    # 📧 Send email with the code
+    # 📧 Send login code via email
     subject = "Your Medilogic Login Code"
     body = f"""
     Hi {user.name},
@@ -90,11 +97,11 @@ def login_step_1(
     """
     send_email(to_email=user.email, subject=subject, body=body)
 
-    # ✅ Extract IP & User-Agent
+    # 📍 Extract IP and User-Agent
     ip = request.client.host
     user_agent = request.headers.get("user-agent", "unknown")
 
-    # ✅ Log activity
+    # 📝 Log login attempt
     log_activity(
         db=db,
         user_id=user.id,
@@ -102,9 +109,16 @@ def login_step_1(
         details=f"2FA login code sent | IP: {ip} | User-Agent: {user_agent}"
     )
 
-    return {"message": "Login code sent to your email"}
+    # ✅ Return session_id and message
+    return {
+        "message": "Login code sent to your email",
+        "session_id": session_id
+    }
 
 from fastapi import Request  # ✅ Make sure this is imported
+
+from uuid import uuid4
+from datetime import timedelta
 
 @router.post("/login-step-2")
 def login_step_2(
@@ -126,6 +140,14 @@ def login_step_2(
     # ✅ Clear 2FA fields
     user.two_fa_code = None
     user.two_fa_expiry = None
+
+    # ✅ Generate session_id and session_expires_at
+    session_id = str(uuid4())
+    session_expires_at = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry, you can adjust
+
+    user.session_id = session_id
+    user.session_expires_at = session_expires_at
+
     db.commit()
 
     # ✅ Generate JWT
@@ -143,7 +165,11 @@ def login_step_2(
         details=f"2FA login successful | IP: {ip} | User-Agent: {user_agent}"
     )
 
-    return {"access_token": token, "token_type": "bearer"}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "session_id": session_id  # ✅ Return session_id as requested by frontend
+    }
 
 from app.utilites.email_utilites import send_email  # 🔄 Import this
 from fastapi import Request  # ✅ import if not already
