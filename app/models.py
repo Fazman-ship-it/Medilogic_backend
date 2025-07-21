@@ -325,7 +325,7 @@ class Incident(Base):
     submitted_by = relationship("User")
     incident_type = Column(String, nullable=False)  # e.g., "accident", "theft", "compliance_issue"
     location = Column(String, nullable=True)  # Optional field for incident location
-    severity = Column(Enum(SeverityLevel), nullable=False, default='low')  # New severity field
+    severity = Column(SqlEnum(SeverityLevel,name="severitylevel"),nullable=False, default='low')  # New severity field
     escalated= Column(Boolean, default=False)  # New field to track escalation status
     is_visible_to_regulator = Column(Boolean, default=False)  # New field to control visibility to regulators
 
