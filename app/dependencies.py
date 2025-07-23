@@ -62,5 +62,31 @@ async def get_current_user_optional(
         return await get_current_user(request)
     except Exception:
         return None
+    
+from fastapi import WebSocket
+from jose import JWTError
+
+async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db)) -> User:
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008)  # Policy Violation
+        return
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_email = payload.get("sub")
+        if user_email is None:
+            await websocket.close(code=1008)
+            return
+    except JWTError:
+        await websocket.close(code=1008)
+        return
+
+    user = db.query(User).filter(User.email == user_email).first()
+    if user is None:
+        await websocket.close(code=1008)
+        return
+
+    return user    
 
 

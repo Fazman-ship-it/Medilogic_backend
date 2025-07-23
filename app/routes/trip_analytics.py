@@ -127,3 +127,5 @@ def get_trip_analytics(
         "ai_insight": ai_insight,
         "chart": chart_html
     } 
+
+

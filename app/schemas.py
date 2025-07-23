@@ -10,6 +10,7 @@ from enum import Enum as PyEnum
 from .models import SupportTicket, SupportReply
 from app.enums import OrganizationType
 from app.models import CustodyEventType
+from datetime import date, time
 # --------------------------
 # Trip Schemas
 # --------------------------
@@ -522,10 +523,23 @@ class DriverAvailabilityOut(DriverAvailabilityCreate):
     driver_id: int
     organization_id: int
 
+class LocationUpdate(BaseModel):
+    latitude: float
+    longitude: float
+    last_updated: Optional[datetime]
+    
+
+class DriverLocationHistoryOut(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp: datetime
+    trip_id: Optional[int] = None  # Optional link to a trip
+    
+
+
     class Config:
         from_attribute = True
 
-from datetime import date, time
 
 class ShiftAssignRequest(BaseModel):
     driver_id: int

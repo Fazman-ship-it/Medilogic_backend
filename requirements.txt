@@ -82,3 +82,4 @@ webencodings==0.5.1
 xlsxwriter==3.2.5
 zopfli==0.2.3.post1
 matplotlib==3.10.3
+broadcaster==0.3.1

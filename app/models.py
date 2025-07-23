@@ -92,6 +92,7 @@ class Trip(Base):
     driver= relationship("User", foreign_keys=[driver_id],back_populates="driver_trips")
     activity_logs = relationship("ActivityLog", back_populates="trip")
     custody_events = relationship("ChainOfCustody", back_populates="trip",cascade="all, delete")
+    location_history = relationship("DriverLocationHistory", back_populates="trip")
 
 
 class User(Base):
@@ -134,7 +135,8 @@ class User(Base):
     custody_events= relationship("ChainOfCustody",back_populates="driver", cascade="all,delete")
     session_id = Column(String, nullable=True)  # Optional field for session management
     session_expires_at = Column(DateTime, nullable=True)  # Optional field for session expiry
-
+    last_location_update = Column(DateTime, nullable=True)
+    location_history = relationship("DriverLocationHistory", back_populates="driver",cascade="all, delete-orphan")
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(Integer, ForeignKey("users.id"))  # Foreign key to User
@@ -416,4 +418,18 @@ class ChainOfCustody(Base):
     signature_timestamp = Column(DateTime, nullable=True)
     witness_name = Column(String, nullable=True)
     trip = relationship("Trip", back_populates="custody_events")
-    driver = relationship("User", back_populates="custody_events")       
+    driver = relationship("User", back_populates="custody_events")
+    
+    
+
+class DriverLocationHistory(Base):
+    __tablename__ = "driver_location_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    driver = relationship("User", back_populates="location_history")
+    trip_id = Column(Integer, ForeignKey("trips.id"))  # Optional link to a trip
+    trip = relationship("Trip", back_populates="location_history")           

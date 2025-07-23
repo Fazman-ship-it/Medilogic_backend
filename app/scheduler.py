@@ -11,6 +11,12 @@ from app.utilites.logging import log_activity
 from apscheduler.triggers.cron import CronTrigger
 from app.driver_notification import notify_upcoming_trips
 from app.utilites.delete_old_data import delete_expired_data
+from datetime import datetime, timedelta
+from app.database import SessionLocal
+from app.models import DriverLocationHistory
+from app.retrain_location_model import retrain_location_model
+from apscheduler.triggers.interval import IntervalTrigger
+
 # === JOB 1: Delete Unverified Accounts ===
 def delete_unverified_accounts():
     db: Session = SessionLocal()
@@ -105,10 +111,29 @@ def update_overdue_invoices():
     finally:
         db.close()
 
+#Job 4 Clean up function
+def cleanup_old_location_logs():
+    db = SessionLocal()
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=30)
+        db.query(DriverLocationHistory).filter(
+            DriverLocationHistory.timestamp < cutoff
+        ).delete()
+        db.commit()
+    finally:
+        db.close()
+        
+# Define the retrain job
+def scheduled_retrain_job():
+    print(f"🔁 Retraining check at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    try:
+        retrain_location_model()
+    except Exception as e:
+        print(f"❌ Error during scheduled retraining: {e}")
+
 
 # === Initialize Scheduler ===
 scheduler = BackgroundScheduler(timezone=timezone("Europe/London"))
-
 
 # === Add Scheduled Jobs ===
 
@@ -171,6 +196,24 @@ scheduler.add_job(
     hour=9,
     minute=0,
     id="weekly_compliance_report"
+)
+# 8. Clean up old driver location logs every Sunday at 3 AM UK time
+scheduler.add_job(
+    cleanup_old_location_logs,
+    trigger="cron",
+    day_of_week="sun",
+    hour=3,
+    minute=0,
+    id="cleanup_old_location_logs"
+)
+
+
+# 9. 🔁 Run every 6 hours (or change as needed)
+scheduler.add_job(
+    scheduled_retrain_job,
+    trigger=IntervalTrigger(hours=6),
+    id="retrain_location_model_job",
+    replace_existing=True,
 )
 
 

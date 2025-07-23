@@ -39,6 +39,9 @@ from app.routes import driver_availability
 from app.routes import shifts
 from  app.scheduler import start_scheduler
 from app.routes import chain_of_custody
+from app.routes import driver_location
+from app.routes import websockets
+from app.routes import location_analytics
 # app/main.py
 
 app = FastAPI(
@@ -94,6 +97,9 @@ app.include_router(activity_logs.router)
 app.include_router(driver_availability.router)
 app.include_router(shifts.router)
 app.include_router(chain_of_custody.router)
+app.include_router(driver_location.router)
+app.include_router(websockets.router)
+app.include_router(location_analytics.router)
 
 
 # Automatically create upload directory if it doesn't exist
