@@ -28,7 +28,7 @@ def get_all_driver_locations(
         # Return locations of all drivers in their organization
         drivers = db.query(User).filter(
             User.role == "driver",
-            User.client_id == current_user.client_id,
+            User.organization_id == current_user.organization_id,
             User.latitude.isnot(None),
             User.longitude.isnot(None)
         ).all()

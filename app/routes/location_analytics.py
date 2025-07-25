@@ -39,7 +39,7 @@ def location_history_summary(
     # Ensure only same org can access
     driver = db.query(models.User).filter(
         models.User.id == driver_id,
-        models.User.org_id == current_user.org_id
+        models.User.organization_id == current_user.organization_id
     ).first()
 
     if not driver:
@@ -175,7 +175,7 @@ def get_heatmap_data(
     if current_user.role == "driver":
         query = query.filter(DriverLocationHistory.driver_id == current_user.id)
     elif current_user.role == "admin":
-        driver_ids = db.query(User.id).filter(User.client_id == current_user.client_id, User.role == "driver")
+        driver_ids = db.query(User.id).filter(User.organization_id == current_user.organization_id, User.role == "driver")
         query = query.filter(DriverLocationHistory.driver_id.in_(driver_ids))
     elif current_user.role != "super_admin":
         raise HTTPException(status_code=403, detail="Access denied")

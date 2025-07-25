@@ -28,15 +28,15 @@ async def shutdown():
 
 
 # Internal function to manage org-wide sockets
-async def connect(websocket: WebSocket, org_id: int):
+async def connect(websocket: WebSocket, organization_id: int):
     await websocket.accept()
-    if org_id not in active_connections:
-        active_connections[org_id] = []
-    active_connections[org_id].append(websocket)
+    if organization_id not in active_connections:
+        active_connections[organization_id] = []
+    active_connections[organization_id].append(websocket)
 
-def disconnect(websocket: WebSocket, org_id: int):
-    if org_id in active_connections and websocket in active_connections[org_id]:
-        active_connections[org_id].remove(websocket)
+def disconnect(websocket: WebSocket, organization_id: int):
+    if organization_id in active_connections and websocket in active_connections[organization_id]:
+        active_connections[organization_id].remove(websocket)
 
 
 @router.websocket("/ws/location")
@@ -49,7 +49,7 @@ async def websocket_location(
         await websocket.close(code=1008)
         return
 
-    await connect(websocket, current_user.org_id)
+    await connect(websocket, current_user.organization_id)
 
     try:
         while True:
@@ -66,7 +66,7 @@ async def websocket_location(
                 # Log location history
                 location_log = DriverLocationHistory(
                     driver_id=current_user.id,
-                    org_id=current_user.org_id,
+                    organization_id=current_user.organization_id,
                     latitude=latitude,
                     longitude=longitude,
                     timestamp=datetime.utcnow()
@@ -82,7 +82,7 @@ async def websocket_location(
                 }
 
                 # Broadcast to dashboard clients in same org
-                for ws in active_connections.get(current_user.org_id, []):
+                for ws in active_connections.get(current_user.organization_id, []):
                     if ws.application_state == WebSocketState.CONNECTED:
                         await ws.send_json(payload)
 
@@ -90,7 +90,7 @@ async def websocket_location(
                 await broadcast_location_update(current_user.id, payload)
 
     except WebSocketDisconnect:
-        disconnect(websocket, current_user.org_id)
+        disconnect(websocket, current_user.organization_id)
 
 
 @router.websocket("/ws/dashboard")
@@ -103,13 +103,13 @@ async def websocket_dashboard(
         await websocket.close(code=1008)
         return
 
-    await connect(websocket, current_user.org_id)
+    await connect(websocket, current_user.organization_id)
 
     try:
         while True:
             await websocket.receive_text()  # keep alive
     except WebSocketDisconnect:
-        disconnect(websocket, current_user.org_id)
+        disconnect(websocket, current_user.organization_id)
 
 
 @router.websocket("/ws/driver/{driver_id}")
@@ -125,7 +125,7 @@ async def realtime_driver_tracking(
         await websocket.close(code=1008)
         return
 
-    if user.org_id != (
+    if user.organization_id != (
         user.id if user.role == "driver" else
         (await get_driver_org(driver_id))
     ):
@@ -158,4 +158,4 @@ async def get_driver_org(driver_id: int) -> int:
     from app.database import SessionLocal
     db = SessionLocal()
     driver = db.query(models.User).filter(models.User.id == driver_id).first()
-    return driver.org_id if driver else -1
+    return driver.organization_id if driver else -1

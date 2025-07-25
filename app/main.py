@@ -42,6 +42,7 @@ from app.routes import chain_of_custody
 from app.routes import driver_location
 from app.routes import websockets
 from app.routes import location_analytics
+from app.routes import admin_users
 # app/main.py
 
 app = FastAPI(
@@ -100,6 +101,7 @@ app.include_router(chain_of_custody.router)
 app.include_router(driver_location.router)
 app.include_router(websockets.router)
 app.include_router(location_analytics.router)
+app.include_router(admin_users.router)
 
 
 # Automatically create upload directory if it doesn't exist

@@ -7,6 +7,7 @@ from typing import Optional
 from app.models import Trip
 from app import models
 from sqlalchemy.orm import Session
+from app.utilites.logging import log_activity
 
 # Load model once
 model = joblib.load("trip_duration_model.pkl")  # ✅ already trained and saved

@@ -81,6 +81,15 @@ class UserOut(BaseModel):
     regulated_state:Optional[str]
     regulated_region:Optional[str]
     
+class UserAdminOut(UserOut):
+    is_active: bool
+    organization_id: int    
+
+class PaginatedUsers(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    data: List[UserAdminOut]    
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -534,7 +543,7 @@ class DriverLocationHistoryOut(BaseModel):
     longitude: float
     timestamp: datetime
     trip_id: Optional[int] = None  # Optional link to a trip
-    
+    organization_id:int
 
 
     class Config:
@@ -599,6 +608,19 @@ class ChainOfCustodyOut(BaseModel):
     signature_timestamp: Optional[datetime]
     signed_by: Optional[str]
     witness_name: Optional[str]
+    organization_id:int
 
     class Config:
-        form_attributes = True 
+        form_attributes = True
+        
+class DocumentOut(BaseModel):
+    id: int
+    filename: str
+    file_path: str
+    upload_time: datetime
+    doc_type: Optional[str]
+    organization_id:int
+    user_id: Optional[int] = None  # User who uploaded the document
+
+    class Config:
+        form_attributes = True        

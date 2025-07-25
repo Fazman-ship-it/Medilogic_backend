@@ -137,6 +137,7 @@ class User(Base):
     session_expires_at = Column(DateTime, nullable=True)  # Optional field for session expiry
     last_location_update = Column(DateTime, nullable=True)
     location_history = relationship("DriverLocationHistory", back_populates="driver",cascade="all, delete-orphan")
+    documents = relationship("Document", back_populates="user")
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(Integer, ForeignKey("users.id"))  # Foreign key to User
@@ -185,7 +186,9 @@ class Organization(Base):
     shift_assignments = relationship("ShiftAssignment", back_populates="organization")
     shifts = relationship("Shift", back_populates="organization",cascade="all, delete")
     enquiries = relationship("Enquiry", back_populates="organization")
-    
+    documents= relationship("Document", back_populates="organization")
+    location_history =relationship("DriverLocationHistory", back_populates="organization", cascade="all, delete")
+    chain_of_custody_events = relationship("ChainOfCustody", back_populates="organization", cascade="all, delete")
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
@@ -419,7 +422,8 @@ class ChainOfCustody(Base):
     witness_name = Column(String, nullable=True)
     trip = relationship("Trip", back_populates="custody_events")
     driver = relationship("User", back_populates="custody_events")
-    
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    organization = relationship("Organization", back_populates="chain_of_custody_events")
     
 
 class DriverLocationHistory(Base):
@@ -432,4 +436,21 @@ class DriverLocationHistory(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     driver = relationship("User", back_populates="location_history")
     trip_id = Column(Integer, ForeignKey("trips.id"))  # Optional link to a trip
-    trip = relationship("Trip", back_populates="location_history")           
+    trip = relationship("Trip", back_populates="location_history")
+    organization_id = Column(Integer, ForeignKey('organizations.id'), nullable=False)
+    organization=relationship("Organization", back_populates="location_history")
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    upload_time = Column(DateTime, default=datetime.utcnow)
+    doc_type = Column(String, nullable=True)  # e.g., "license", "permit"
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    user = relationship("User", back_populates="documents")
+    organization = relationship("Organization", back_populates="documents")
+    
+    
