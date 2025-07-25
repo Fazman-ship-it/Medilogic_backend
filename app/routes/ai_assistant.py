@@ -13,7 +13,7 @@ router = APIRouter(prefix="/ai", tags=["AI Assistant"])
 def ask_ai(
     chat: ChatRequest,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_role("admin", "driver", "client", "super_admin")) 
+    user: models.User = Depends(require_role("admin", "driver", "client")) 
 ):
     #  Step 1: Get AI response
     reply = ask_chatgpt(chat.prompt)
