@@ -153,7 +153,7 @@ def resend_verification_email(
     db.commit()
 
     # ✅ Build new link
-    verification_link = f"https://your-frontend-url.com/verify-email?token={new_token}"
+    verification_link = f"https://medilogic.vercel.app/verify-email?token={new_token}"
 
     # ✅ Send email
     subject = "Resend: Verify your Medilogic Email"

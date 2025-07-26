@@ -191,7 +191,7 @@ def request_password_reset(
     db.commit()
 
     # ✅ Send token by email
-    reset_link = f"https://your-frontend-domain.com/reset-password?token={token}"
+    reset_link = f"https://medilogic.vercel.app/reset-password?token={token}"
     email_body = f"""
     <p>Hello {user.name},</p>
     <p>You requested a password reset. Click the link below to reset your password:</p>
