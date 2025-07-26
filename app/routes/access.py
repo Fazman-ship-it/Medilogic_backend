@@ -191,7 +191,7 @@ def request_password_reset(
     db.commit()
 
     # ✅ Send token by email
-    reset_link = f"http://localhost:300/reset-password?token={token}"
+    reset_link = f"http://localhost:3000/reset-password?token={token}"
     email_body = f"""
     <p>Hello {user.name},</p>
     <p>You requested a password reset. Click the link below to reset your password:</p>

@@ -54,7 +54,7 @@ def public_signup(
     db.refresh(new_user)
 
     # ✅ Send verification email
-    verification_link = f"http://localhost:300/verify-email?token={verification_token}"
+    verification_link = f"http://localhost:3000/verify-email?token={verification_token}"
     subject = "Verify your Medilogic Email"
     email_body = f"""
     Hi {new_user.name},<br><br>
@@ -153,7 +153,7 @@ def resend_verification_email(
     db.commit()
 
     # ✅ Build new link
-    verification_link = f"http://localhost:300/verify-email?token={new_token}"
+    verification_link = f"http://localhost:3000/verify-email?token={new_token}"
 
     # ✅ Send email
     subject = "Resend: Verify your Medilogic Email"
