@@ -138,6 +138,7 @@ class User(Base):
     last_location_update = Column(DateTime, nullable=True)
     location_history = relationship("DriverLocationHistory", back_populates="driver",cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="user")
+    testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(Integer, ForeignKey("users.id"))  # Foreign key to User
@@ -454,3 +455,13 @@ class Document(Base):
     organization = relationship("Organization", back_populates="documents")
     
     
+class Testimonial(Base):
+    __tablename__ = "testimonials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Optional
+    name = Column(String(100), nullable=False)
+    content = Column(Text, nullable=False)
+    is_approved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    user = relationship("User", back_populates="testimonials", lazy="joined")   

@@ -43,6 +43,7 @@ from app.routes import driver_location
 from app.routes import websockets
 from app.routes import location_analytics
 from app.routes import admin_users
+from app.routes import testimonials
 # app/main.py
 
 app = FastAPI(
@@ -102,7 +103,7 @@ app.include_router(driver_location.router)
 app.include_router(websockets.router)
 app.include_router(location_analytics.router)
 app.include_router(admin_users.router)
-
+app.include_router(testimonials.router)
 
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")

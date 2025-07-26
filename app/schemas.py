@@ -623,4 +623,19 @@ class DocumentOut(BaseModel):
     user_id: Optional[int] = None  # User who uploaded the document
 
     class Config:
-        form_attributes = True        
+        form_attributes = True
+
+
+class TestimonialCreate(BaseModel):
+    name: str
+    content: str
+
+class TestimonialOut(BaseModel):
+    id: int
+    name: str
+    content: str
+    is_approved: bool
+    created_at: datetime
+
+    class Config:
+        form_attributes = True                
