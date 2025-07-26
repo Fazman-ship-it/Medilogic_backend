@@ -219,6 +219,36 @@ def request_password_reset(
 
     return {"message": "Password reset link sent to your email."}
 
+
+@router.post("/reset-password")
+def reset_password(data: schemas.PasswordResetSubmit, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.password_reset_token == data.token).first()
+
+    if not user or user.reset_token_expiry < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+
+    # Hash the new password
+    hashed_password = pwd_context.hash(data.new_password)
+    user.hashed_password = hashed_password
+
+    # Invalidate the token
+    user.password_reset_token = None
+    user.reset_token_expiry = None
+
+    db.commit()
+
+    # ✅ Optional: log activity
+    log_activity(db=db, user_id=user.id, action="password_reset", details="User reset their password")
+
+    # ✅ Optional: send confirmation email
+    send_email(
+        to_email=user.email,
+        subject="Your Medilogic Password Has Been Reset",
+        body=f"Hello {user.name},<br>Your password was successfully changed."
+    )
+
+    return {"message": "Password has been reset successfully."}
+
 @router.post("/change-password")
 def change_password(
     request: schemas.PasswordChange,
