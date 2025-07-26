@@ -192,4 +192,4 @@ def resend_verification_email(
         )
     )
 
-    return {"message": "A new verification email has been sent."}
+    return {"message": "A new verification email has been sent. Check your inbox or spam folder."}
