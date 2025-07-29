@@ -480,6 +480,7 @@ class PendingApplication(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)  # Will be hashed before saving
     role = Column(SqlEnum(PendingRole, name="pendingrole"), nullable=False)
+    message = Column(Text, nullable=True)
     # Admin-specific
     organization_name = Column(String, nullable=True)
     organization_type = Column(String, nullable=True)

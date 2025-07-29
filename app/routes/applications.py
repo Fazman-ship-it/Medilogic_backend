@@ -36,6 +36,7 @@ def submit_application(
         regulated_country=application.regulated_country,
         regulated_state=application.regulated_state,
         regulated_region=application.regulated_region,
+        message=application.message,
         status="pending"
     )
 

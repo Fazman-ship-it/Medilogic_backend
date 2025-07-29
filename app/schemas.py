@@ -643,18 +643,25 @@ class TestimonialOut(BaseModel):
 
 
 class PendingApplicationCreate(BaseModel):
-    name: str
+    full_name: str
     email: EmailStr
+    password: str
     role: PendingRole
+    message: Optional[str]= None
+    organization_name: Optional[str] = None
+    organization_type: Optional[str] = None
     regulated_country: Optional[str] = None
     regulated_state: Optional[str] = None
     regulated_region: Optional[str] = None
 
 class PendingApplicationOut(BaseModel):
     id: int
-    name: str
+    full_name: str
     email: EmailStr
     role: PendingRole
+    message: Optional[str]= None
+    organization_name: Optional[str]
+    organization_type: Optional[str]
     regulated_country: Optional[str]
     regulated_state: Optional[str]
     regulated_region: Optional[str]
