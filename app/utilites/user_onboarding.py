@@ -1,7 +1,6 @@
 # app/utils/user_onboarding.py
 
-from app.utilites import send_email  # assuming this is your generic email sender
-
+from app.utilites.email_utilites import send_email
 def send_welcome_email(
     to_email: str,
     full_name: str,
