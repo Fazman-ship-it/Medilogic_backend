@@ -16,6 +16,7 @@ from sqlalchemy.sql import func
 from sqlalchemy import Time
 from app.database import Base
 from sqlalchemy.dialects.postgresql import ENUM
+from enum import Enum as PyEnum
 Base = declarative_base()
 
 class UserRole(str, enum.Enum):
@@ -52,12 +53,16 @@ class SeverityLevel(str,enum.Enum):
     critical = "critical"
 
 
-class CustodyEventType(str, enum.Enum):
+class CustodyEventType(str,enum.Enum):
     pickup_confirmed = "pickup_confirmed"
     in_transit = "in_transit"
     delayed = "delayed"
     handed_off = "handed_off"
     delivered = "delivered"
+
+class PendingRole(str,enum.Enum):
+    admin = "admin"
+    regulator = "regulator"    
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -411,7 +416,7 @@ class ChainOfCustody(Base):
     id = Column(Integer, primary_key=True, index=True)
     trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # who logged it
-    event_type = Column(PgEnum(CustodyEventType), nullable=False)
+    event_type = Column(SqlEnum(CustodyEventType, name="custodyeventtype"), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     location = Column(String, nullable=True)  # optional GPS or address
     notes = Column(Text, nullable=True)
@@ -464,4 +469,23 @@ class Testimonial(Base):
     content = Column(Text, nullable=False)
     is_approved = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    user = relationship("User", back_populates="testimonials", lazy="joined")   
+    user = relationship("User", back_populates="testimonials", lazy="joined")
+    
+
+class PendingApplication(Base):
+    __tablename__ = "pending_applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password = Column(String, nullable=False)  # Will be hashed before saving
+    role = Column(SqlEnum(PendingRole, name="pendingrole"), nullable=False)
+    # Admin-specific
+    organization_name = Column(String, nullable=True)
+    organization_type = Column(String, nullable=True)
+    # Regulator-specific
+    regulated_country = Column(String, nullable=True)
+    regulated_state = Column(String, nullable=True)
+    regulated_region = Column(String, nullable=True)
+    status = Column(String, default="pending")  # pending, approved, rejected
+    submitted_at = Column(DateTime, default=datetime.utcnow)

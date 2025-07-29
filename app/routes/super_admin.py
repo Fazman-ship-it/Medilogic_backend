@@ -10,7 +10,7 @@ from app.models import User
 from typing import List
 from app.schemas import UserOut, OrganizationCreate, OrganizationOut
 from app.models import Organization
-
+from app.utilites.user_onboarding import send_welcome_email
 router = APIRouter(prefix="/super", tags=["Super Admin"])
 
 @router.post("/create-user", status_code=201)
@@ -36,8 +36,8 @@ def create_user_by_super_admin(
         hashed_password=hashed_pw,
         role=data.role,
         organization_id=org.id,
-        is_verified=True,  # Super admin creates verified users
-        email_verification_token=None,  # No token needed for super admin created users
+        is_verified=True,
+        email_verification_token=None,
     )
     db.add(new_user)
     db.commit()
@@ -49,6 +49,17 @@ def create_user_by_super_admin(
         user_id=current_user.id,
         action="create_user_by_super_admin",
         details=f"Super admin {current_user.email} created {data.role} user {data.email} in org {org.name}"
+    )
+
+    # ✅ Send welcome email to the new user
+    send_welcome_email(
+        to_email=data.email,
+        full_name=data.name,
+        role=data.role,
+        organization_id=str(org.id),
+        invite_code=org.invite_code,
+        temp_password=data.password,
+        login_link="https://medilogic.vercel.app/login"
     )
 
     return {"message": f"{data.role.capitalize()} user created", "user_id": new_user.id}
@@ -219,6 +230,7 @@ def get_org_users(
     users = db.query(models.User).filter(models.User.organization_id == org_id).all()
     return users
 
+
 @router.post("/create_regulator", response_model=schemas.UserOut)
 def create_regulator(
     regulator: schemas.RegulatorCreate,
@@ -247,6 +259,16 @@ def create_regulator(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # ✅ Send welcome email
+    send_welcome_email(
+        to_email=regulator.email,
+        full_name=regulator.name,
+        role="regulator",
+        temp_password=regulator.password,
+        login_link="https://medilogic.vercel.app/login"
+    )
+
     return new_user
 
 @router.get("/regulators", response_model=List[UserOut])

@@ -11,6 +11,7 @@ from .models import SupportTicket, SupportReply
 from app.enums import OrganizationType
 from app.models import CustodyEventType
 from datetime import date, time
+from app.models import PendingRole
 # --------------------------
 # Trip Schemas
 # --------------------------
@@ -638,4 +639,27 @@ class TestimonialOut(BaseModel):
     created_at: datetime
 
     class Config:
-        form_attributes = True                
+        form_attributes = True
+
+
+class PendingApplicationCreate(BaseModel):
+    name: str
+    email: EmailStr
+    role: PendingRole
+    regulated_country: Optional[str] = None
+    regulated_state: Optional[str] = None
+    regulated_region: Optional[str] = None
+
+class PendingApplicationOut(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: PendingRole
+    regulated_country: Optional[str]
+    regulated_state: Optional[str]
+    regulated_region: Optional[str]
+    status: str
+    submitted_at: datetime
+
+    class Config:
+        form_attributes = True                        
