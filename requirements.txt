@@ -101,3 +101,5 @@ xlsxwriter==3.2.5
 zope.event==5.1.1
 zope.interface==7.2
 zopfli==0.2.3.post1
+qrcode==8.2
+PyJWT==2.10.1

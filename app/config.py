@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     EMAIL_USERNAME: str
     EMAIL_PASSWORD: str
     EMAIL_FROM: str
+    
+    DELIVERY_CONFIRM_SECRET: str
+    DELIVERY_CONFIRM_EXPIRY_MINUTES:int
+    DELIVERY_CONFIRMATION_URL: str
+    FRONTEND_CONFIRM_SUCCESS_URL: str
+
 
     class Config:
         env_file = ".env"

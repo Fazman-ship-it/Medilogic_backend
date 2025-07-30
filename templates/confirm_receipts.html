@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Confirm Delivery</title>
+</head>
+<body>
+  <h2>Confirm Delivery</h2>
+
+  <div style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">
+    <p><strong>Driver:</strong> {{ trip.driver_name }}</p>
+    <p><strong>Client:</strong> {{ trip.client_name }}</p>
+    <p><strong>Pickup:</strong> {{ trip.pickup_location }}</p>
+    <p><strong>Dropoff:</strong> {{ trip.dropoff_location }}</p>
+    <p><strong>Scheduled Time:</strong> {{ trip.schedule_time.strftime('%Y-%m-%d %H:%M') }}</p>
+  </div>
+
+  <form method="POST" enctype="multipart/form-data">
+    <input type="hidden" name="trip_id" value="{{ trip.id }}">
+
+    <label>Enter PIN:</label><br>
+    <input type="text" name="pin" required><br><br>
+
+    <label>Signature (Draw below):</label><br>
+    <canvas id="signature-pad"></canvas><br>
+    <input type="hidden" name="signature_data" id="signature_data"><br><br>
+
+    <label>Upload Photo:</label><br>
+    <input type="file" name="photo"><br><br>
+
+    <label>WTN Code (Optional):</label><br>
+    <input type="text" name="wtn_code" id="wtn_code"><br><br>
+
+    <label>Scan QR Code (fills WTN):</label><br>
+    <video id="preview" style="width:300px;height:200px;border:1px solid black;"></video><br><br>
+
+    <button type="submit">Confirm Delivery</button>
+  </form>
+
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script>
+    const canvas = document.getElementById('signature-pad');
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+
+    canvas.width = 300;
+    canvas.height = 150;
+    canvas.style.border = "1px solid #000";
+
+    canvas.addEventListener('mousedown', () => drawing = true);
+    canvas.addEventListener('mouseup', () => drawing = false);
+    canvas.addEventListener('mousemove', draw);
+
+    function draw(e) {
+      if (!drawing) return;
+      ctx.lineWidth = 2;
+      ctx.lineTo(e.offsetX, e.offsetY);
+      ctx.stroke();
+    }
+
+    document.querySelector('form').addEventListener('submit', function () {
+      document.getElementById('signature_data').value = canvas.toDataURL();
+    });
+
+    // QR Scanner logic
+    const html5QrCode = new Html5Qrcode("preview");
+
+    Html5Qrcode.getCameras().then(cameras => {
+      if (cameras && cameras.length) {
+        const cameraId = cameras[0].id;
+        html5QrCode.start(
+          cameraId,
+          {
+            fps: 10,
+            qrbox: 250
+          },
+          qrCodeMessage => {
+            document.getElementById("wtn_code").value = qrCodeMessage;
+            html5QrCode.stop();
+            document.getElementById("preview").style.display = "none";
+          },
+          errorMessage => {
+            // Ignore scan errors
+          }
+        );
+      }
+    }).catch(err => {
+      console.error("QR camera error", err);
+    });
+  </script>
+</body>
+</html>

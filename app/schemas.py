@@ -12,16 +12,18 @@ from app.enums import OrganizationType
 from app.models import CustodyEventType
 from datetime import date, time
 from app.models import PendingRole
+from uuid import UUID
 # --------------------------
 # Trip Schemas
 # --------------------------
 class TripBase(BaseModel):
-    driver_id: Optional[int] = None
+    driver_id: Optional[UUID] = None
     driver_name: Optional[str] = None
     delivery_type: DeliveryType
     scheduled_time: Optional[datetime] = None
     cost: Optional[float] = None
     client_name: Optional[str] = None
+    organization_id: Optional[UUID]
     pickup_location: Optional[str] = None
     dropoff_location: Optional[str] = None
     distance_km: Optional[float] = None
@@ -44,7 +46,7 @@ class TripPatch(TripBase):
     pass
 
 class TripResponse(TripBase):
-    id: int
+    id: UUID
     created_at: datetime
 
     class Config:
@@ -73,7 +75,7 @@ class UserLogin(BaseModel):
     password: str
 
 class UserOut(BaseModel):
-    id: int
+    id: UUID
     name: str
     email: EmailStr
     role: RoleEnum
@@ -84,7 +86,7 @@ class UserOut(BaseModel):
     
 class UserAdminOut(UserOut):
     is_active: bool
-    organization_id: int    
+    organization_id: UUID   
 
 class PaginatedUsers(BaseModel):
     total: int
@@ -99,7 +101,7 @@ class UserStatusOut(BaseModel):
     name: str
     email: str
     role: str
-    organization_id: Optional[int]
+    organization_id: Optional[UUID]
     organization_name: Optional[str]  
 
     class Config:
@@ -116,7 +118,7 @@ class TripAnalyticsFilters(BaseModel):
     start_date: Optional[datetime]
     end_date: Optional[datetime]
     status: Optional[str]
-    driver_id: Optional[int]
+    driver_id: Optional[UUID]
     client_name: Optional[str]
     delivery_type: Optional[str]
 
@@ -140,18 +142,18 @@ class TripAnalyticsResponse(BaseModel):
 # Proof of Delivery (POD)
 # --------------------------
 class PODBase(BaseModel):
-    trip_id: int
+    trip_id: UUID
     attachment_url: Optional[str] = None
     signature: Optional[str] = None
     notes: Optional[str] = None
     delivered_to: Optional[str] = None
-    driver_id: Optional[int] = None
+    driver_id: Optional[UUID] = None
 
 class PODCreate(PODBase):
     pass
 
 class PODResponse(PODBase):
-    id: int
+    id: UUID
 
 # --------------------------
 # Client Booking & Trips
@@ -160,7 +162,7 @@ class ClientRegister(BaseModel):
     name: str
     email: EmailStr
     password: str
-    organization_id: int
+    organization_id: UUID
 
 class TripCreateClient(BaseModel):
     delivery_type: DeliveryType
@@ -172,7 +174,7 @@ class TripCreateClient(BaseModel):
     priority: str
 
 class TripClientResponse(BaseModel):
-    id: int
+    id: UUID
     delivery_type: DeliveryType
     custom_delivery_description: Optional[str] = None
     pickup_location: str
@@ -189,8 +191,8 @@ class TripClientStatusUpdate(BaseModel):
 # Invoice
 # --------------------------
 class InvoiceCreate(BaseModel):
-    client_id: Optional[int]
-    organization_id: Optional[int] = None
+    client_id: Optional[UUID]
+    organization_id: Optional[UUID] = None
     due_date: Optional[datetime] = None
     start_date: date
     end_date: date
@@ -198,10 +200,10 @@ class InvoiceCreate(BaseModel):
     generated_at: Optional[datetime] = None
 
 class InvoiceResponse(BaseModel):
-    id: int
+    id: UUID
     invoice_number: str
-    client_id: int
-    organization_id: Optional[int] = None
+    client_id: UUID
+    organization_id: Optional[UUID] = None
     status: InvoiceStatus
     generated_at: datetime
     due_date: Optional[datetime]
@@ -214,7 +216,7 @@ class InvoiceResponse(BaseModel):
 # AI Optimizer
 # --------------------------
 class AssignDriverRequest(BaseModel):
-    driver_id: int
+    driver_id: UUID
 
 class OptimizerRequest(BaseModel):
     delivery_type: str
@@ -222,19 +224,19 @@ class OptimizerRequest(BaseModel):
     pickup_lon: float
     priority_score: float = Field(..., ge=0, le=10)
     priority: str
-    client_id: int
+    client_id: UUID
     pickup_address: str
     dropoff_address: str
     estimated_cost: float
 
 class DriverRecommendation(BaseModel):
-    driver_id: int
+    driver_id: UUID
     driver_name: str
     distance_km: float
     predicted_score: float
 
 class OptimizerResponse(BaseModel):
-    trip_id: int
+    trip_id: UUID
     assigned_driver_id: int
     assigned_driver_name: str
     scheduled_time: datetime
@@ -254,7 +256,7 @@ class VehicleTypeCreate(VehicleTypeBase):
     pass
 
 class VehicleTypeResponse(VehicleTypeBase):
-    id: int
+    id: UUID
 
     class Config:
         from_attributes = True
@@ -266,7 +268,7 @@ class PriorityLevelCreate(PriorityLevelBase):
     pass
 
 class PriorityLevelResponse(PriorityLevelBase):
-    id: int
+    id: UUID
 
     class Config:
         from_attributes = True
@@ -278,7 +280,7 @@ class ShiftWindowCreate(ShiftWindowBase):
     pass
 
 class ShiftWindowResponse(ShiftWindowBase):
-    id: int
+    id: UUID
 
     class Config:
         from_attributes = True
@@ -290,7 +292,7 @@ class ZoneCreate(ZoneBase):
     pass
 
 class ZoneResponse(ZoneBase):
-    id: int
+    id: UUID
 
     class Config:
         from_attributes = True
@@ -323,19 +325,19 @@ class SupportTicketCreate(BaseModel):
     message:str
     
 class SupportReplyCreate(BaseModel):
-    ticket_id: int
+    ticket_id: UUID
     message: str
 
 class SupportMessageCreate(BaseModel):
-    ticket_id: int
+    ticket_id: UUID
     message: str
 
 # --- Output Schemas ---
 
 class SupportReplyResponse(BaseModel):
-    id: int
-    ticket_id: int
-    admin_id: int
+    id: UUID
+    ticket_id: UUID
+    admin_id: UUID
     message: str
     created_at: datetime
 
@@ -343,9 +345,9 @@ class SupportReplyResponse(BaseModel):
         from_attributes = True
 
 class SupportMessageResponse(BaseModel):
-    id: int
-    ticket_id: int
-    sender_id: Optional[int]
+    id: UUID
+    ticket_id: UUID
+    sender_id: Optional[UUID]
     message: str
     created_at: datetime
 
@@ -353,8 +355,8 @@ class SupportMessageResponse(BaseModel):
         from_attributes = True
 
 class SupportTicketResponse(BaseModel):
-    id: int
-    user_id: int
+    id: UUID
+    user_id: UUID
     status: TicketStatus
     created_at: datetime
     updated_at: datetime
@@ -389,7 +391,7 @@ class OrganizationCreate(BaseModel):
     data_retention_years:Optional[int]=3
     
 class OrganizationOut(BaseModel):
-    id: int
+    id: UUID
     name: str
     invite_code: Optional[str]
     ico_registered: Optional[bool]
@@ -407,7 +409,7 @@ class SuperAdminCreateUser(BaseModel):
     password: str
     role: RoleEnum = RoleEnum.user
     name: Optional[str] = None
-    organization_id: Optional[int] = None
+    organization_id: Optional[UUID] = None
     
 
 class RegulatorCreate(BaseModel):
@@ -425,7 +427,7 @@ class EnquiryCreate(BaseModel):
     message: str
 
 class EnquiryOut(BaseModel):
-    id: int
+    id: UUID
     name: str
     email: EmailStr
     message: str
@@ -454,13 +456,13 @@ class IncidentUpdate(BaseModel):
     attachment_url: Optional[str]    
     
 class IncidentOut(BaseModel):
-    id: int
+    id: UUID
     title: str
     description: str
     status: str
     created_at: datetime
-    submitted_by_id: int
-    organization_id: int
+    submitted_by_id: UUID
+    organization_id: UUID
     attachment_url: Optional[str]
     is_visible_to_regulator: Optional[bool] = False
     incident_type: Optional[str] = None  # e.g., "accident", "theft", "compliance_issue"
@@ -478,14 +480,14 @@ class ComplianceStatusBase(BaseModel):
     last_audit_date: Optional[date] = None
 
 class ComplianceStatusCreate(ComplianceStatusBase):
-    organization_id: int
+    organization_id: UUID
 
 class ComplianceStatusUpdate(ComplianceStatusBase):
     pass
 
 class ComplianceStatusOut(ComplianceStatusBase):
-    id: int
-    organization_id: int
+    id: UUID
+    organization_id: UUID
     created_at: datetime
     updated_at: datetime
 
@@ -529,9 +531,9 @@ class DriverAvailabilityCreate(BaseModel):
 
 # 🔹 Response model
 class DriverAvailabilityOut(DriverAvailabilityCreate):
-    id: int
-    driver_id: int
-    organization_id: int
+    id: UUID
+    driver_id: UUID
+    organization_id: UUID
 
 class LocationUpdate(BaseModel):
     latitude: float
@@ -543,8 +545,8 @@ class DriverLocationHistoryOut(BaseModel):
     latitude: float
     longitude: float
     timestamp: datetime
-    trip_id: Optional[int] = None  # Optional link to a trip
-    organization_id:int
+    trip_id: Optional[UUID] = None  # Optional link to a trip
+    organization_id:UUID
 
 
     class Config:
@@ -552,31 +554,31 @@ class DriverLocationHistoryOut(BaseModel):
 
 
 class ShiftAssignRequest(BaseModel):
-    driver_id: int
+    driver_id: UUID
     shift_date: date
     start_time: time
     end_time: time
     note: Optional[str] = None
 
 class ShiftOut(BaseModel):
-    id: int
-    driver_id: int
+    id: UUID
+    driver_id: UUID
     shift_date: date
     start_time: time
     end_time: time
     note: Optional[str]
-    organization_id: int
+    organization_id: UUID
 
     class Config:
         from_attributes = True
         
 class ShiftRequestCreate(BaseModel):
-    shift_id: int
+    shift_id: UUID
 
 class ShiftRequestOut(BaseModel):
-    id: int
-    shift_id: int
-    driver_id: int
+    id: UUID
+    shift_id: UUID
+    driver_id: UUID
     status: str
     requested_at: datetime
     
@@ -587,7 +589,7 @@ class ShiftRequestUpdate(BaseModel):
         from_attributes = True
 
 class ChainOfCustodyCreate(BaseModel):
-    trip_id: int
+    trip_id: UUID
     event_type: CustodyEventType
     location: Optional[str] = None
     notes: Optional[str] = None
@@ -597,9 +599,9 @@ class ChainOfCustodyCreate(BaseModel):
     witness_name: Optional[str] = None
 
 class ChainOfCustodyOut(BaseModel):
-    id: int
-    trip_id: int
-    driver_id: Optional[int]
+    id: UUID
+    trip_id: UUID
+    driver_id: Optional[UUID]
     event_type: CustodyEventType
     timestamp: datetime
     location: Optional[str]
@@ -609,19 +611,19 @@ class ChainOfCustodyOut(BaseModel):
     signature_timestamp: Optional[datetime]
     signed_by: Optional[str]
     witness_name: Optional[str]
-    organization_id:int
+    organization_id:UUID
 
     class Config:
         form_attributes = True
         
 class DocumentOut(BaseModel):
-    id: int
+    id: UUID
     filename: str
     file_path: str
     upload_time: datetime
     doc_type: Optional[str]
-    organization_id:int
-    user_id: Optional[int] = None  # User who uploaded the document
+    organization_id:UUID
+    user_id: Optional[UUID] = None  # User who uploaded the document
 
     class Config:
         form_attributes = True
@@ -632,7 +634,7 @@ class TestimonialCreate(BaseModel):
     content: str
 
 class TestimonialOut(BaseModel):
-    id: int
+    id: UUID
     name: str
     content: str
     is_approved: bool
@@ -655,7 +657,7 @@ class PendingApplicationCreate(BaseModel):
     regulated_region: Optional[str] = None
 
 class PendingApplicationOut(BaseModel):
-    id: int
+    id: UUID
     full_name: str
     email: EmailStr
     role: PendingRole
@@ -669,4 +671,31 @@ class PendingApplicationOut(BaseModel):
     submitted_at: datetime
 
     class Config:
-        form_attributes = True                        
+        form_attributes = True 
+        
+# Input payload when confirming delivery
+class DeliveryConfirmationRequest(BaseModel):
+    trip_id: UUID
+    pin: str 
+    signature_path: Optional[str] = None
+    photo_path: Optional[str] = None
+    wtn_code: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+# Output/response model when delivery is confirmed
+class DeliveryConfirmationResponse(BaseModel):
+    id: UUID
+    trip_id: UUID
+    pin_entered: str
+    signature_image_path: Optional[str] = None
+    photo_path: Optional[str] = None
+    wtn_code: Optional[str] = None
+    confirmed_at: datetime
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+    class Config:
+        form_attributes = True  # Enables ORM support for SQLAlchemy models

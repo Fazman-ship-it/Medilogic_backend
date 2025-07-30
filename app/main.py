@@ -45,6 +45,8 @@ from app.routes import location_analytics
 from app.routes import admin_users
 from app.routes import testimonials
 from app.routes import applications
+from app.routes import confirm_receipt
+from app.routes import confirm_qr
 # app/main.py
 
 app = FastAPI(
@@ -106,6 +108,8 @@ app.include_router(location_analytics.router)
 app.include_router(admin_users.router)
 app.include_router(testimonials.router)
 app.include_router(applications.router)
+app.include_router(confirm_receipt.router)
+app.include_router(confirm_qr.router)
 
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")

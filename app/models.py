@@ -17,6 +17,8 @@ from sqlalchemy import Time
 from app.database import Base
 from sqlalchemy.dialects.postgresql import ENUM
 from enum import Enum as PyEnum
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
 Base = declarative_base()
 
 class UserRole(str, enum.Enum):
@@ -67,7 +69,7 @@ class PendingRole(str,enum.Enum):
 class Trip(Base):
     __tablename__ = "trips"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     driver_name = Column(String, nullable=True)
     delivery_type = Column(SqlEnum(DeliveryType), nullable=False)
     scheduled_time = Column(DateTime)
@@ -89,21 +91,28 @@ class Trip(Base):
     priority = Column(SqlEnum(PriorityLevel), default=PriorityLevel.normal, nullable=False)  # New priority field   
     pod = relationship("POD", back_populates="trip", uselist=False)
     custom_delivery_description = Column(String, nullable=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="trips")
-    client_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     client = relationship("User", foreign_keys=[client_id], back_populates="client_trips")
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     driver= relationship("User", foreign_keys=[driver_id],back_populates="driver_trips")
     activity_logs = relationship("ActivityLog", back_populates="trip")
     custody_events = relationship("ChainOfCustody", back_populates="trip",cascade="all, delete")
     location_history = relationship("DriverLocationHistory", back_populates="trip")
-
+    delivery_confirmations = relationship("DeliveryConfirmation", back_populates="trip", cascade="all, delete-orphan")
+    confirmation_pin = Column(String, nullable=True)
+    is_delivered = Column(Boolean, default=False)
+    delivery_signature_path = Column(String, nullable=True)  # store image/signature
+    confirmation_photo_path = Column(String, nullable=True)
+    delivery_confirmed_at = Column(DateTime, nullable=True)
+    delivery_ip = Column(String, nullable=True)
+    wtn_serial = Column(String, nullable=True)
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, nullable=False)     # ✅ Confirm this is `name`
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
@@ -114,7 +123,7 @@ class User(Base):
     is_superuser = Column(Boolean, default=True)
     organization_name = Column(String, nullable=True)  # Optional field for organization name
     logo_url = Column(String, nullable=True)  # Optional field for organization logo URL
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization",back_populates="users")
     pods =relationship("POD", back_populates="driver")
     client_trips = relationship("Trip", foreign_keys="[Trip.client_id]", back_populates="client")
@@ -146,9 +155,9 @@ class User(Base):
     testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
 class POD(Base):
     __tablename__ = "pods"
-    driver_id = Column(Integer, ForeignKey("users.id"))  # Foreign key to User
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"), nullable=False)
     attachment_url = Column(String, nullable=True)  # Optional photo proof
     signature = Column(Text, nullable=True)# Optional e-signature or driver note.,
     timestamp = Column(DateTime, default=datetime.utcnow)
@@ -156,13 +165,13 @@ class POD(Base):
     delivered_to = Column(String, nullable=True)  # Name of the person who received the package
     trip = relationship("Trip", back_populates="pod")
     driver = relationship("User", back_populates="pods")
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True),ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="pods")        
 
 class Organization(Base):
     __tablename__ = "organizations"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, unique=True, nullable=False)
     logo_url = Column(String, nullable=True)
     users = relationship("User", back_populates="organization") 
@@ -195,18 +204,19 @@ class Organization(Base):
     documents= relationship("Document", back_populates="organization")
     location_history =relationship("DriverLocationHistory", back_populates="organization", cascade="all, delete")
     chain_of_custody_events = relationship("ChainOfCustody", back_populates="organization", cascade="all, delete")
+    delivery = relationship("DeliveryConfirmation", back_populates="organization", cascade="all, delete-orphan")
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"),nullable=True)
+    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"), nullable=True)
     action = Column(String, nullable=False)
     details = Column(Text, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     user = relationship("User", back_populates="activity_logs")    
     trip = relationship("Trip", back_populates="activity_logs")
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="activity_logs")
     ip_address = Column(String, nullable=True)  # Optional field for IP address
     user_agent = Column(String, nullable=True)  # Optional field for user agent string       
@@ -215,9 +225,9 @@ class ActivityLog(Base):
 class Invoice(Base):
     __tablename__ = "invoices"
 
-    id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     amount = Column(Float, nullable=False)
     status = Column(SqlEnum(InvoiceStatus, name="invoice_status_enum"), default=InvoiceStatus.unpaid)
     generated_at = Column(DateTime, default=datetime.utcnow)
@@ -232,28 +242,28 @@ class Invoice(Base):
 
 class VehicleType(Base):
     __tablename__ = "vehicle_types"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="vehicle_types")        
 
 class PriorityLevel(Base):
     __tablename__ = "priority_levels"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
 
 class ShiftWindow(Base):
     __tablename__ = "shift_windows"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="shift_windows")        
 
 class Zone(Base):
     __tablename__ = "zones"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="zones")
 
 
@@ -265,8 +275,8 @@ class TicketStatus(str, enum.Enum):
 class SupportTicket(Base):
     __tablename__ = "support_tickets"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     subject = Column(String, nullable=False)
     status = Column(Enum(TicketStatus), default=TicketStatus.open)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -274,49 +284,49 @@ class SupportTicket(Base):
     user = relationship("User", back_populates="support_tickets")
     replies = relationship("SupportReply", back_populates="ticket", cascade="all, delete-orphan")
     messages = relationship("SupportMessage", back_populates="ticket", cascade="all, delete-orphan")
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="support_tickets")        
 
 
 class SupportReply(Base):
     __tablename__ = "support_replies"
 
-    id = Column(Integer, primary_key=True, index=True)
-    ticket_id = Column(Integer, ForeignKey("support_tickets.id", ondelete="CASCADE"))
-    admin_id = Column(Integer, ForeignKey("users.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"))
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     ticket = relationship("SupportTicket", back_populates="replies")
     admin = relationship("User")
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="support_replies")        
     
 
 class SupportMessage(Base):
     __tablename__ = "support_messages"
 
-    id = Column(Integer, primary_key=True, index=True)
-    ticket_id = Column(Integer, ForeignKey("support_tickets.id", ondelete="CASCADE"))
-    sender_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"))
+    sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     message = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     ticket = relationship("SupportTicket", back_populates="messages")
     sender = relationship("User")
-    organization_id = Column(Integer,ForeignKey("organizations.id"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="support_messages")
     
 class Enquiry(Base):
     __tablename__ = "enquiries"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     message = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     user = relationship("User")
     organization = relationship("Organization", back_populates="enquiries")
     
@@ -324,9 +334,9 @@ class Enquiry(Base):
 class Incident(Base):
     __tablename__ = "incidents"
 
-    id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    submitted_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    submitted_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     attachment_url = Column(String, nullable=True)
@@ -343,8 +353,8 @@ class Incident(Base):
 class ComplianceStatus(Base):
     __tablename__ = "compliance_statuses"
 
-    id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), unique=True, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     iso_27001_certified = Column(Boolean, default=False)
     nhs_dsp_toolkit_complete = Column(Boolean, default=False)
     cyber_essentials_ready = Column(Boolean, default=False)
@@ -358,9 +368,9 @@ class ComplianceStatus(Base):
 class DriverAvailability(Base):
     __tablename__ = "driver_availabilities"
 
-    id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     day_of_week = Column(Enum(WeekDay), nullable=False)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
@@ -371,9 +381,9 @@ class DriverAvailability(Base):
 class ShiftAssignment(Base):
     __tablename__ = "shift_assignments"
 
-    id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     shift_date = Column(Date, nullable=False)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
@@ -385,12 +395,12 @@ class ShiftAssignment(Base):
 class ShiftRequest(Base):
     __tablename__ = "shift_requests"
 
-    id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    shift_id = Column(Integer, ForeignKey("shifts.id"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    shift_id = Column(UUID(as_uuid=True), ForeignKey("shifts.id"), nullable=False)
     status = Column(String, default="pending")  # Options: pending, approved, rejected
     requested_at = Column(DateTime, default=datetime.utcnow)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     driver = relationship("User")
     shift = relationship("Shift", back_populates="shift_requests")
     organization = relationship("Organization")
@@ -398,12 +408,12 @@ class ShiftRequest(Base):
 class Shift(Base):
     __tablename__ = "shifts"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     title = Column(String, nullable=False)
     date = Column(Date, nullable=False)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
 
     # Relationships
     shift_requests = relationship("ShiftRequest", back_populates="shift", cascade="all, delete")
@@ -413,9 +423,9 @@ class Shift(Base):
 class ChainOfCustody(Base):
     __tablename__ = "chain_of_custody"
 
-    id = Column(Integer, primary_key=True, index=True)
-    trip_id = Column(Integer, ForeignKey("trips.id"), nullable=False)
-    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # who logged it
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"), nullable=False)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # who logged it
     event_type = Column(SqlEnum(CustodyEventType, name="custodyeventtype"), nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     location = Column(String, nullable=True)  # optional GPS or address
@@ -428,34 +438,34 @@ class ChainOfCustody(Base):
     witness_name = Column(String, nullable=True)
     trip = relationship("Trip", back_populates="custody_events")
     driver = relationship("User", back_populates="custody_events")
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="chain_of_custody_events")
     
 
 class DriverLocationHistory(Base):
     __tablename__ = "driver_location_history"
 
-    id = Column(Integer, primary_key=True, index=True)
-    driver_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     driver = relationship("User", back_populates="location_history")
-    trip_id = Column(Integer, ForeignKey("trips.id"))  # Optional link to a trip
+    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"))  # Optional link to a trip
     trip = relationship("Trip", back_populates="location_history")
-    organization_id = Column(Integer, ForeignKey('organizations.id'), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization=relationship("Organization", back_populates="location_history")
 
 class Document(Base):
     __tablename__ = "documents"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     filename = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
     upload_time = Column(DateTime, default=datetime.utcnow)
     doc_type = Column(String, nullable=True)  # e.g., "license", "permit"
-    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     user = relationship("User", back_populates="documents")
     organization = relationship("Organization", back_populates="documents")
     
@@ -463,8 +473,8 @@ class Document(Base):
 class Testimonial(Base):
     __tablename__ = "testimonials"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Optional
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # Optional
     name = Column(String(100), nullable=False)
     content = Column(Text, nullable=False)
     is_approved = Column(Boolean, default=False)
@@ -475,7 +485,7 @@ class Testimonial(Base):
 class PendingApplication(Base):
     __tablename__ = "pending_applications"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     full_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)  # Will be hashed before saving
@@ -490,3 +500,21 @@ class PendingApplication(Base):
     regulated_region = Column(String, nullable=True)
     status = Column(String, default="pending")  # pending, approved, rejected
     submitted_at = Column(DateTime, default=datetime.utcnow)
+    
+class DeliveryConfirmation(Base):
+    __tablename__ = "delivery_confirmations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"))
+    pin_entered = Column(String, nullable=False)
+    signature_image_path = Column(String, nullable=True)
+    photo_path = Column(String, nullable=True)
+    wtn_code = Column(String, nullable=True)
+    confirmed_at = Column(DateTime, default=datetime.utcnow)
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    trip = relationship("Trip", back_populates="delivery_confirmations")
+    organization = relationship("Organization", back_populates="delivery")
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)    
