@@ -12,7 +12,7 @@ from app.config import settings
 from app.crudy.delivery_confirmation import create_delivery_confirmation
 from  app.schemas import DeliveryConfirmationRequest, DeliveryConfirmationResponse
 from app.utilites.helper import save_upload_file
-from utilites.pdf_file_generator import generate_confirmation_pdf
+from app.utilites.pdf_file_generator import generate_confirmation_pdf
 from app.utilites.logging import log_activity
 
 router = APIRouter(tags=["Delivery Confirmation"])
