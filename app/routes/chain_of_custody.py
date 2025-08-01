@@ -68,7 +68,7 @@ def log_custody_event(
         trip_id=event.trip_id,
         organization_id=current_user.organization_id,
         action=f"Logged custody event: {event.event_type}",
-        details=f"Custody logged for Trip #{event.trip_id} by {current_user.full_name}",
+        details=f"Custody logged for Trip #{event.trip_id} by {current_user.name}",
         timestamp=datetime.utcnow()
     )
 
@@ -90,7 +90,7 @@ def get_custody_events(
     if current_user.role == "driver" and trip.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have access to this trip")
     
-    if current_user.role == "client" and trip.client_name != current_user.full_name:
+    if current_user.role == "client" and trip.client_name != current_user.name:
         raise HTTPException(status_code=403, detail="Unauthorized: This is not your trip")
 
     if trip.organization_id != current_user.organization_id:
@@ -121,7 +121,7 @@ def export_custody_log(
     # Role-based filtering
     if current_user.role == "driver" and trip.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have access to this trip")
-    if current_user.role == "client" and trip.client_name != current_user.full_name:
+    if current_user.role == "client" and trip.client_name != current_user.name:
         raise HTTPException(status_code=403, detail="Unauthorized trip access")
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized organization")
@@ -142,7 +142,7 @@ def export_custody_log(
                 event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 event.event_type,
                 event.location,
-                driver.full_name if driver else "Unknown",
+                driver.name if driver else "Unknown",
                 event.notes,
                 event.attachment_url or ""
             ])
@@ -184,7 +184,7 @@ def export_custody_log(
         y -= 15
         c.drawString(50, y, f"Client: {trip.client_name}")
         y -= 15
-        c.drawString(50, y, f"Driver: {current_user.full_name}")
+        c.drawString(50, y, f"Driver: {current_user.name}")
         y -= 15
         c.drawString(50, y, f"Total Events: {len(events)}")
 
@@ -236,7 +236,7 @@ def custody_chart_data(
     # Authorization
     if current_user.role == "driver" and trip.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-    if current_user.role == "client" and trip.client_name != current_user.full_name:
+    if current_user.role == "client" and trip.client_name != current_user.name:
         raise HTTPException(status_code=403, detail="Access denied")
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized")
@@ -291,11 +291,11 @@ def export_custody_log(
 
     elif current_user.role == "regulator":
         # Enforce regulator jurisdiction filters
-        if current_user.country and organization.country != current_user.country:
+        if current_user.country and organization.country != current_user.regulated_country:
             raise HTTPException(status_code=403, detail="Trip outside your country jurisdiction")
-        if current_user.region and organization.region != current_user.region:
+        if current_user.region and organization.region != current_user.regulated_region:
             raise HTTPException(status_code=403, detail="Trip outside your region jurisdiction")
-        if current_user.state and organization.state != current_user.state:
+        if current_user.state and organization.state != current_user.regulated_state:
             raise HTTPException(status_code=403, detail="Trip outside your state jurisdiction")
 
     else:

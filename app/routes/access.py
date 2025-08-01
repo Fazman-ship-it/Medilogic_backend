@@ -168,7 +168,8 @@ def login_step_2(
     return {
         "access_token": token,
         "token_type": "bearer",
-        "session_id": session_id  # ✅ Return session_id as requested by frontend
+        "session_id": session_id, # ✅ Return session_id as requested by frontend
+        "role": user.role
     }
 
 from app.utilites.email_utilites import send_email  # 🔄 Import this

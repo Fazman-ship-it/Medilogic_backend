@@ -682,7 +682,7 @@ class DeliveryConfirmationRequest(BaseModel):
     wtn_code: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-
+    
 # Output/response model when delivery is confirmed
 class DeliveryConfirmationResponse(BaseModel):
     id: UUID

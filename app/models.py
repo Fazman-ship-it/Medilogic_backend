@@ -153,6 +153,7 @@ class User(Base):
     location_history = relationship("DriverLocationHistory", back_populates="driver",cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="user")
     testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
+
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
@@ -517,4 +518,4 @@ class DeliveryConfirmation(Base):
     trip = relationship("Trip", back_populates="delivery_confirmations")
     organization = relationship("Organization", back_populates="delivery")
     latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)    
+    longitude = Column(Float, nullable=True)
