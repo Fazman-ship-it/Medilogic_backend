@@ -16,7 +16,8 @@ from app.utilites.logging import log_activity
 import secrets
 from app.schemas import TwoFACodeRequest
 from app.models import User
-from app.auth import create_refresh_token 
+from app.auth import create_refresh_token, create_access_token, verify_token
+from app.config import settings 
 
 router = APIRouter()
 
@@ -44,13 +45,6 @@ def authenticate_user(db: Session, email: str, password: str):
     if not user or not verify_password(password, user.hashed_password):
         return None
     return user
-
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-
 
 from fastapi import Request  # ✅ Add this import at the top
 from uuid import uuid4  # ✅ Import uuid4 for generating session IDs
@@ -192,8 +186,6 @@ from app.models import User
 from app.schemas import Token
 from app.dependencies import get_db
 from app.auth import create_access_token  # your token utils
-
-router = APIRouter()
 
 @router.post("/refresh-token", response_model=Token)
 def refresh_token(refresh_token: str = Body(...), db: Session = Depends(get_db)):
