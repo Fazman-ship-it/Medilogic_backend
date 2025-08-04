@@ -64,7 +64,14 @@ class CustodyEventType(str,enum.Enum):
 
 class PendingRole(str,enum.Enum):
     admin = "admin"
-    regulator = "regulator"    
+    regulator = "regulator"
+
+class AuditStatusEnum(str, enum.Enum):
+    pending = "pending"
+    passed = "passed"
+    failed = "failed"
+    escalated = "escalated"
+        
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -108,6 +115,7 @@ class Trip(Base):
     delivery_confirmed_at = Column(DateTime, nullable=True)
     delivery_ip = Column(String, nullable=True)
     wtn_serial = Column(String, nullable=True)
+    
 
 class User(Base):
     __tablename__ = "users"
@@ -153,7 +161,7 @@ class User(Base):
     location_history = relationship("DriverLocationHistory", back_populates="driver",cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="user")
     testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
-
+    notifications = relationship("Notification", back_populates="user")
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
@@ -351,20 +359,49 @@ class Incident(Base):
     escalated= Column(Boolean, default=False)  # New field to track escalation status
     is_visible_to_regulator = Column(Boolean, default=False)  # New field to control visibility to regulators
 
+
 class ComplianceStatus(Base):
     __tablename__ = "compliance_statuses"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    # Core certifications
     iso_27001_certified = Column(Boolean, default=False)
     nhs_dsp_toolkit_complete = Column(Boolean, default=False)
     cyber_essentials_ready = Column(Boolean, default=False)
     has_waste_license = Column(Boolean, default=False)
-    last_audit_date = Column(Date, nullable=True)
+    # Operational compliance (for waste and clinical logistics)
+    fire_risk_assessment_complete = Column(Boolean, default=False)
+    gdpr_policy_uploaded = Column(Boolean, default=False)
+    clinical_waste_policy_uploaded = Column(Boolean, default=False)
+    sharps_policy_uploaded = Column(Boolean, default=False)
+    staff_training_records_uploaded = Column(Boolean, default=False)
+    transport_license_valid = Column(Boolean, default=False)
+    environmental_permit_valid = Column(Boolean, default=False)
+    data_protection_registration_valid = Column(Boolean, default=False)
+    # Certificate & document links (stored URLs)
+    iso_27001_certificate_url = Column(String, nullable=True)
+    waste_license_certificate_url = Column(String, nullable=True)
+    gdpr_certificate_url = Column(String, nullable=True)
+    environmental_permit_url = Column(String, nullable=True)
+    data_protection_registration_url = Column(String, nullable=True)
+    fire_risk_certificate_url = Column(String, nullable=True)
+    # Audit trail
+    audit_status = Column(Enum(AuditStatusEnum), default=AuditStatusEnum.pending, nullable=False)
+    audit_remarks = Column(Text, nullable=True)
+    last_audit_date = Column(DateTime, nullable=True)
+    next_audit_due_date = Column(DateTime, nullable=True)
+    last_updated_by_user_id = Column(UUID(as_uuid=True), nullable=True)
+    # Risk flags and controls
+    is_flagged_noncompliant = Column(Boolean, default=False)
+    escalation_level = Column(String, default="none")  # none, warning, review, urgent
+    auto_alert_enabled = Column(Boolean, default=True)
+    flags_needs_review = Column(Boolean, default=False)
+    is_visible_to_regulator = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     organization = relationship("Organization", back_populates="compliance_status")
-    
+
 
 class DriverAvailability(Base):
     __tablename__ = "driver_availabilities"
@@ -519,3 +556,16 @@ class DeliveryConfirmation(Base):
     organization = relationship("Organization", back_populates="delivery")
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+    
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    title = Column(String(100), nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String(50), default="general")
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    user = relationship("User", back_populates="notifications")
+        

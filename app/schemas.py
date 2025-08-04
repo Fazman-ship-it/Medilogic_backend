@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, HttpUrl
 from datetime import datetime, date
 from typing import Optional, Dict, Union, List, Literal
 from app.models import RecurrenceRule
@@ -13,6 +13,7 @@ from app.models import CustodyEventType
 from datetime import date, time
 from app.models import PendingRole
 from uuid import UUID
+import enum
 # --------------------------
 # Trip Schemas
 # --------------------------
@@ -110,6 +111,8 @@ class UserStatusOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str
+    expires_in: str
 
 # --------------------------
 # Trip Analytics Schemas
@@ -472,12 +475,44 @@ class IncidentOut(BaseModel):
     class Config:
         from_attributes = True 
         
+
+class AuditStatusEnum(str, enum.Enum):
+    pending = "pending"
+    passed = "passed"
+    failed = "failed"
+    escalated = "escalated"
+
 class ComplianceStatusBase(BaseModel):
-    iso_27001_certified: Optional[bool] = False
-    nhs_dsp_toolkit_complete: Optional[bool] = False
-    cyber_essentials_ready: Optional[bool] = False
-    has_waste_license: Optional[bool] = False
-    last_audit_date: Optional[date] = None
+    iso_27001_certified: bool = False
+    nhs_dsp_toolkit_complete: bool = False
+    cyber_essentials_ready: bool = False
+    has_waste_license: bool = False
+    fire_risk_assessment_complete: bool = False
+    gdpr_policy_uploaded: bool = False
+    clinical_waste_policy_uploaded: bool = False
+    sharps_policy_uploaded: bool = False
+    staff_training_records_uploaded: bool = False
+    transport_license_valid: bool = False
+    environmental_permit_valid: bool = False
+    data_protection_registration_valid: bool = False
+
+    iso_27001_certificate_url: Optional[HttpUrl]
+    waste_license_certificate_url: Optional[HttpUrl]
+    gdpr_certificate_url: Optional[HttpUrl]
+    environmental_permit_url: Optional[HttpUrl]
+    data_protection_registration_url: Optional[HttpUrl]
+    fire_risk_certificate_url: Optional[HttpUrl]
+
+    audit_status: AuditStatusEnum = AuditStatusEnum.pending
+    audit_remarks: Optional[str]
+    last_audit_date: Optional[datetime]
+    next_audit_due_date: Optional[datetime]
+    last_updated_by_user_id: Optional[UUID]
+
+    is_flagged_noncompliant: bool = False
+    escalation_level: Optional[str] = "none"
+    auto_alert_enabled: bool = True
+    is_visible_to_regulator: bool = False
 
 class ComplianceStatusCreate(ComplianceStatusBase):
     organization_id: UUID
@@ -492,7 +527,7 @@ class ComplianceStatusOut(ComplianceStatusBase):
     updated_at: datetime
 
     class Config:
-        from_attributes = True
+        from_attribute = True
         
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
@@ -699,3 +734,18 @@ class DeliveryConfirmationResponse(BaseModel):
 
     class Config:
         form_attributes = True  # Enables ORM support for SQLAlchemy models
+        
+class NotificationOut(BaseModel):
+    id: UUID
+    user_id: UUID
+    title: str
+    message: str
+    type: str
+    is_read: bool
+    created_at: datetime
+    
+class NotificationReadUpdate(BaseModel):
+    is_read: bool    
+
+    class Config:
+        form_attributes = True        

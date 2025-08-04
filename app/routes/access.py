@@ -15,7 +15,9 @@ from app.auth import authenticate_user, create_access_token
 from app.utilites.logging import log_activity
 import secrets
 from app.schemas import TwoFACodeRequest
-
+from app.models import User
+from app.models import Organizations
+from app.auth import create_refresh_token 
 
 router = APIRouter()
 
@@ -143,15 +145,24 @@ def login_step_2(
 
     # ✅ Generate session_id and session_expires_at
     session_id = str(uuid4())
-    session_expires_at = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry, you can adjust
+    session_expires_at = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry
 
     user.session_id = session_id
     user.session_expires_at = session_expires_at
 
     db.commit()
 
-    # ✅ Generate JWT
-    token = create_access_token(data={"sub": user.email})
+    # ✅ Generate Access Token
+    access_token = create_access_token(data={
+        "sub": str(user.id),
+        "role": user.role,
+        "org_id": user.organization_id  # optional for multitenancy
+    })
+
+    # ✅ Generate Refresh Token
+    refresh_token = create_refresh_token(data={
+        "sub": str(user.id)
+    })
 
     # ✅ Extract IP & User-Agent
     ip = request.client.host
@@ -165,12 +176,60 @@ def login_step_2(
         details=f"2FA login successful | IP: {ip} | User-Agent: {user_agent}"
     )
 
+    # ✅ Return all tokens + session info
     return {
-        "access_token": token,
+        "access_token": access_token,
+        "refresh_token": refresh_token,  # ✅ include this
         "token_type": "bearer",
-        "session_id": session_id, # ✅ Return session_id as requested by frontend
+        "expires_in": 900,  # 15 minutes
+        "session_id": session_id,
         "role": user.role
     }
+
+from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.orm import Session
+from jose import jwt, JWTError, ExpiredSignatureError
+from app.models import User
+from app.schemas import Token
+from app.dependencies import get_db
+from app.auth import create_access_token  # your token utils
+
+router = APIRouter()
+
+@router.post("/refresh-token", response_model=Token)
+def refresh_token(refresh_token: str = Body(...), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(
+            refresh_token,
+            settings.REFRESH_SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        # Include relevant claims in the new token
+        new_access_token = create_access_token(data={
+            "sub": str(user.id),
+            "role": user.role,
+            "org_id": user.organization_id # optional, only if you use multi-tenant access
+        })
+
+        return {
+            "access_token": new_access_token,
+            "refresh_token": refresh_token,  # keep the existing refresh token
+            "token_type": "bearer",
+            "expires_in": 900  # 15 minutes
+        }
+
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")    
 
 from app.utilites.email_utilites import send_email  # 🔄 Import this
 from fastapi import Request  # ✅ import if not already

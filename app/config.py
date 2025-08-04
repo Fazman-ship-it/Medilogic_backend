@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int
-    OPENAI_API_KEY: str 
+    OPENAI_API_KEY: str
+    REFRESH_TOKEN_EXPIRE_MINUTES: int 
+    REFRESH_SECRET_KEY: str
     
     #Email settings
     EMAIL_HOST: str

@@ -16,6 +16,8 @@ from app.database import SessionLocal
 from app.models import DriverLocationHistory
 from app.retrain_location_model import retrain_location_model
 from apscheduler.triggers.interval import IntervalTrigger
+from app.utilites.compliance_auditor import run_compliance_audit_check
+from app.notifications import send_compliance_alert
 
 # === JOB 1: Delete Unverified Accounts ===
 def delete_unverified_accounts():
@@ -130,6 +132,23 @@ def scheduled_retrain_job():
         retrain_location_model()
     except Exception as e:
         print(f"❌ Error during scheduled retraining: {e}")
+        
+# === 1. Daily Compliance Audit ===
+def audit_compliance_job():
+    db: Session = SessionLocal()
+    try:
+        flagged_orgs = run_compliance_audit_check(db)
+
+        for org in flagged_orgs:
+            reason = org.get("reason", "Unspecified reason")
+            org_id = org.get("organization_id")
+
+            # Central alert handling (email + app)
+            send_compliance_alert(org_id=org_id, reason=reason)
+
+        print(f"[Compliance Audit] {len(flagged_orgs)} orgs flagged.")
+    finally:
+        db.close()    
 
 
 # === Initialize Scheduler ===
@@ -215,7 +234,12 @@ scheduler.add_job(
     id="retrain_location_model_job",
     replace_existing=True,
 )
-
+# 9.audit complaince
+scheduler.add_job(
+    audit_compliance_job,
+    trigger=IntervalTrigger(days=1),
+    id="daily_compliance_audit"
+)
 
 # === Start Scheduler ===
 def start_scheduler():

@@ -1,130 +1,73 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from app import models, schemas
-from app.dependencies import get_db, get_current_user
-from app.utilites.logging import log_activity
-import csv
-import io
-from fastapi.responses import StreamingResponse
+from uuid import UUID
 from app.database import get_db
-from app.models import Organization, ComplianceStatus
+from app.schemas import ComplianceStatusCreate, ComplianceStatusUpdate, ComplianceStatusOut
+from app.crudy.compliance_crudy import (
+    create_compliance_status,
+    update_compliance_status,
+    get_compliance_by_org_id
+)
+from app.dependencies import get_current_user
+from app.dependencies import require_role
+from app.models import User
 
-router = APIRouter(prefix="/compliance", tags=["Compliance"])
+router = APIRouter(
+    prefix="/compliance",
+    tags=["Compliance"],
+)
 
-@router.post("/", response_model=schemas.ComplianceStatusOut)
-def create_compliance_status(
-    data: schemas.ComplianceStatusCreate,
+@router.post("/", response_model=ComplianceStatusOut, status_code=status.HTTP_201_CREATED)
+def create_compliance(
+    compliance_data: ComplianceStatusCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(require_role(["admin", "super_admin"]))
 ):
-    if current_user.role not in ["admin", "super_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized to create compliance status")
+    """
+    ✅ Create compliance status for an organization.
+    🔐 Admin and Super Admin only.
+    """
+    return create_compliance_status(db, compliance_data)
 
-    existing = db.query(models.ComplianceStatus).filter_by(organization_id=data.organization_id).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Compliance record already exists")
-
-    record = models.ComplianceStatus(**data.dict())
-    db.add(record)
-    db.commit()
-    db.refresh(record)
-    return record
-
-
-@router.put("/{org_id}", response_model=schemas.ComplianceStatusOut)
-def update_compliance_status(
-    org_id: int,
-    update: schemas.ComplianceStatusUpdate,
+@router.get("/{org_id}", response_model=ComplianceStatusOut)
+def get_compliance_by_org(
+    org_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
-    record = db.query(models.ComplianceStatus).filter_by(organization_id=org_id).first()
-    if not record:
-        raise HTTPException(status_code=404, detail="Compliance record not found")
+    """
+    📄 Get compliance status by organization ID.
+    🔐 Access control:
+    - super_admin: can access all orgs
+    - admin/client: can access only their own org
+    - others: denied
+    """
+    # Super admin has access to all orgs
+    if current_user.role not in ["super_admin", "admin", "client"]:
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    if current_user.role not in ["admin", "super_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized to update")
+    # Admins and clients can only view their own organization
+    if current_user.role in ["admin", "client"] and current_user.organization_id != org_id:
+        raise HTTPException(status_code=403, detail="Access denied for this organization")
 
-    # Track what was updated
-    changes = []
-    for key, value in update.dict(exclude_unset=True).items():
-        old = getattr(record, key)
-        if old != value:
-            changes.append(f"{key}: {old} ➝ {value}")
-        setattr(record, key, value)
-
-    db.commit()
-    db.refresh(record)
-
-    if changes:
-        log_activity(
-            db=db,
-            user_id=current_user.id,
-            action="update_compliance_status",
-            details="; ".join(changes),
-            organization_id=org_id
-        )
-
-    return record
-
-
-@router.get("/{org_id}", response_model=schemas.ComplianceStatusOut)
-def get_compliance_status(
-    org_id: int,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    record = db.query(models.ComplianceStatus).filter_by(organization_id=org_id).first()
-    if not record:
+    compliance = get_compliance_by_org_id(db, org_id)
+    if not compliance:
         raise HTTPException(status_code=404, detail="Compliance status not found")
-    return record
+    
+    return compliance
 
-
-@router.get("/regulator/export-compliance", response_class=StreamingResponse)
-def export_regulator_compliance_data(
+@router.patch("/{status_id}", response_model=ComplianceStatusOut)
+def update_compliance(
+    status_id: UUID,
+    updates: ComplianceStatusUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user: User = Depends(require_role(["admin", "super_admin"]))
 ):
-    # ✅ Role check
-    if current_user.role != "regulator":
-        raise HTTPException(status_code=403, detail="Only regulators can export compliance data.")
-
-    # 🔍 Filter organizations under this regulator
-    orgs = db.query(Organization).filter(
-        Organization.country == current_user.regulated_country,
-        Organization.state == current_user.regulated_state,
-        Organization.region == current_user.regulated_region
-    ).all()
-
-    # 🧾 Prepare CSV
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "Organization",
-        "ISO 27001 Certified",
-        "NHS DSP Toolkit Complete",
-        "Cyber Essentials Ready",
-        "Waste License Present",
-        "Last Audit Date"
-    ])
-
-    for org in orgs:
-        comp = org.compliance_status
-        writer.writerow([
-            org.name,
-            "Yes" if comp and comp.iso_27001_certified else "No",
-            "Yes" if comp and comp.nhs_dsp_toolkit_complete else "No",
-            "Yes" if comp and comp.cyber_essentials_ready else "No",
-            "Yes" if comp and comp.has_waste_license else "No",
-            comp.last_audit_date.strftime('%Y-%m-%d') if comp and comp.last_audit_date else "N/A"
-        ])
-
-    output.seek(0)
-
-    return StreamingResponse(
-        output,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": "attachment; filename=regulator_compliance_export.csv"
-        }
-    )
+    """
+    🛠 Update compliance status by status ID.
+    🔐 Admin and Super Admin only.
+    """
+    updated = update_compliance_status(db, status_id, updates)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Compliance status not found")
+    return updated
