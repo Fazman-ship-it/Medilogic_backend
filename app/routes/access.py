@@ -16,7 +16,6 @@ from app.utilites.logging import log_activity
 import secrets
 from app.schemas import TwoFACodeRequest
 from app.models import User
-from app.models import Organizations
 from app.auth import create_refresh_token 
 
 router = APIRouter()
