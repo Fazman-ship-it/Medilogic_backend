@@ -112,7 +112,7 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     refresh_token: str
-    expires_in: str
+    expires_in: int
 
 # --------------------------
 # Trip Analytics Schemas
