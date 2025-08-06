@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from app import models
 from app.config import settings
+from app.models import User  # ✅ You imported User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -17,11 +17,9 @@ def get_password_hash(password):
 
 # ✅ Authenticate user from DB
 def authenticate_user(db: Session, email: str, password: str):
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user:
-        return False
-    if not verify_password(password, user.hashed_password):
-        return False
+    user = db.query(User).filter(User.email == email).first()  # ✅ use User directly
+    if not user or not verify_password(password, user.hashed_password):
+        return None
     return user
 
 from jose import jwt

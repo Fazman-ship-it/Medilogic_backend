@@ -5,49 +5,32 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from app.dependencies import get_current_user
-from app import models, database
-from app.schemas import UserOut
-from app.config import settings  # if you're storing secrets/settings here
-from app import schemas
+from app import models,schemas,database
 from app.database import get_db
-from app import auth
-from app.auth import authenticate_user, create_access_token
-from app.utilites.logging import log_activity
-import secrets
-from app.schemas import TwoFACodeRequest
+from app.schemas import UserOut, TwoFACodeRequest
 from app.models import User
-from app.auth import create_refresh_token, create_access_token, verify_token
-from app.config import settings 
+from app.auth import (
+    authenticate_user,
+    create_refresh_token,
+    create_access_token,
+    verify_token,
+)
+from app.utilites.logging import log_activity
+from app.config import settings
+import secrets
+from fastapi import Request  # ✅ Add this import at the top
+from uuid import uuid4  # ✅ Import uuid4 for generating session IDs
 
+# Set up FastAPI router
 router = APIRouter()
 
 # Setup password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Set up OAuth2 scheme for token retrieval
 
-# Setup OAuth2 scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="access/login")
 
-# Secret key and algorithm
-SECRET_KEY = "supersecretkeyhere123" # Or hardcode a temp one for now
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-
-# Utility functions
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-def authenticate_user(db: Session, email: str, password: str):
-    user = db.query(models.User).filter(models.User.email == email).first()
-    if not user or not verify_password(password, user.hashed_password):
-        return None
-    return user
-
-from fastapi import Request  # ✅ Add this import at the top
-from uuid import uuid4  # ✅ Import uuid4 for generating session IDs
 @router.post("/login-step-1")
 def login_step_1(
     request: Request,

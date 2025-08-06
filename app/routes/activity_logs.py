@@ -14,7 +14,7 @@ router = APIRouter(
     tags=["Audit Trail"]
 )
 
-@router.get("", summary="View activity logs", response_model=List[dict])
+@router.get("", summary="View activity logs", response_model=List[dict], description ="Admin and Super_admin can view activity logs of users in their organization.")
 def get_activity_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -23,20 +23,20 @@ def get_activity_logs(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
 ):
-    if current_user.role not in ["admin", "superadmin"]:
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
     query = db.query(ActivityLog)
 
-    if current_user.role != "superadmin":
+    if current_user.role != "super_admin":
         query = query.filter(ActivityLog.organization_id == current_user.organization_id)
 
     if user_id:
         query = query.filter(ActivityLog.user_id == user_id)
 
     if organization_id:
-        if current_user.role != "superadmin":
-            raise HTTPException(status_code=403, detail="Only superadmins can filter by organization.")
+        if current_user.role != "super_admin":
+            raise HTTPException(status_code=403, detail="Only super_admin can filter by organization.")
         query = query.filter(ActivityLog.organization_id == organization_id)
 
     if start_date:
@@ -71,19 +71,19 @@ def export_logs_csv(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
 ):
-    if current_user.role not in ["admin", "superadmin"]:
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
     query = db.query(ActivityLog)
 
-    if current_user.role != "superadmin":
+    if current_user.role != "super_admin":
         query = query.filter(ActivityLog.organization_id == current_user.organization_id)
 
     if user_id:
         query = query.filter(ActivityLog.user_id == user_id)
     if organization_id:
-        if current_user.role != "superadmin":
-            raise HTTPException(status_code=403, detail="Only superadmins can filter by organization.")
+        if current_user.role != "super_admin":
+            raise HTTPException(status_code=403, detail="Only super_admin can filter by organization.")
         query = query.filter(ActivityLog.organization_id == organization_id)
     if start_date:
         query = query.filter(ActivityLog.timestamp >= start_date)
@@ -122,19 +122,19 @@ def export_logs_pdf(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
 ):
-    if current_user.role not in ["admin", "superadmin"]:
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
     query = db.query(ActivityLog)
 
-    if current_user.role != "superadmin":
+    if current_user.role != "super_admin":
         query = query.filter(ActivityLog.organization_id == current_user.organization_id)
 
     if user_id:
         query = query.filter(ActivityLog.user_id == user_id)
     if organization_id:
-        if current_user.role != "superadmin":
-            raise HTTPException(status_code=403, detail="Only superadmins can filter by organization.")
+        if current_user.role != "super_admin":
+            raise HTTPException(status_code=403, detail="Only super_admin can filter by organization.")
         query = query.filter(ActivityLog.organization_id == organization_id)
     if start_date:
         query = query.filter(ActivityLog.timestamp >= start_date)
