@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_role,get_current_user
-from app.routes.access import get_password_hash
+from app.auth import get_password_hash, verify_password
 from app.utilites.logging import log_activity
 from app import models, schemas
 from app.utilites.generator import generate_invite_code
