@@ -6,7 +6,7 @@ from app.utilites.logging import log_activity
 from app.utilites.user_onboarding import send_welcome_email
 from app.models import PendingApplication
 from app.schemas import PendingApplicationCreate, PendingApplicationOut
-from app.routes.access import get_password_hash
+from app.auth import get_password_hash
 from typing import List, Optional
 from app.dependencies import require_role, get_current_user
 from app.models import User
