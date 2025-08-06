@@ -47,7 +47,7 @@ def get_requests(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    if current_user.role not in ["admin", "superadmin"]:
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(status_code=403, detail="Access denied.")
 
     query = db.query(models.ShiftRequest)
@@ -64,13 +64,12 @@ def update_shift_request(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    if current_user.role not in ["admin", "superadmin"]:
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(status_code=403, detail="Access denied.")
 
     shift_request = db.query(models.ShiftRequest).filter_by(id=request_id).first()
     if not shift_request:
         raise HTTPException(status_code=404, detail="Shift request not found.")
-
     shift_request.status = update.status
     db.commit()
 

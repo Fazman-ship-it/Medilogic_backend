@@ -6,6 +6,7 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.utilites.logging import log_activity
+from uuid import UUID
 router = APIRouter(
     prefix="/assign-driver",
     tags=["Trip Assignment"]
@@ -14,7 +15,7 @@ router = APIRouter(
 
 @router.post("/{trip_id}")
 def assign_driver_to_trip(
-    trip_id: int,
+    trip_id: UUID,
     data: schemas.AssignDriverRequest,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # Only admin can access

@@ -4,6 +4,7 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import require_role
 from typing import List
+from uuid import UUID 
 router = APIRouter(
     prefix="/config",
     tags=["System Configuration"]
@@ -47,7 +48,7 @@ def list_vehicle_types(
 
 @router.delete("/vehicle-types/{vehicle_type_id}")
 def delete_vehicle_type(
-    vehicle_type_id: int,
+    vehicle_type_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ capture org
 ):
@@ -78,7 +79,7 @@ def get_priority_levels(db: Session = Depends(get_db), _: models.User = Depends(
     return db.query(models.PriorityLevel).all()
 
 @router.delete("/priority-levels/{level_id}")
-def delete_priority_level(level_id: int, db: Session = Depends(get_db), _: models.User = Depends(require_role("admin"))):
+def delete_priority_level(level_id: UUID, db: Session = Depends(get_db), _: models.User = Depends(require_role("admin"))):
     level = db.query(models.PriorityLevel).get(level_id)
     if not level:
         raise HTTPException(status_code=404, detail="Priority level not found")
@@ -116,7 +117,7 @@ def get_shift_windows(
 
 @router.delete("/shift-windows/{shift_id}")
 def delete_shift_window(
-    shift_id: int,
+    shift_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ capture org
 ):
@@ -161,7 +162,7 @@ def get_zones(
 
 @router.delete("/zones/{zone_id}")
 def delete_zone(
-    zone_id: int,
+    zone_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ capture org
 ):

@@ -7,6 +7,7 @@ from app.dependencies import get_db
 from app.dependencies import get_current_user
 from app.dependencies import require_role
 from app.models import ShiftAssignment, User
+from uuid import UUID
 
 router = APIRouter(
     prefix="/shifts",
@@ -48,7 +49,7 @@ def assign_shift(
 def get_shifts(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
-    driver_id: Optional[int] = Query(None),
+    driver_id: Optional[UUID] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None)
 ):
@@ -80,7 +81,7 @@ def get_shifts(
 
 @router.delete("/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_shift_assignment(
-    assignment_id: int,
+    assignment_id: UUID,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):

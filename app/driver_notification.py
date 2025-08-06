@@ -5,10 +5,11 @@ from app.utilites. email_utilites import send_email  # Adjust if your path diffe
 from app.models import Trip, User
 from app.database import SessionLocal
 from zoneinfo import ZoneInfo
+from uuid import UUID
 
 db = SessionLocal()
 
-def notify_driver_trip_assigned(driver_id: int, trip_id: int):
+def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
     driver = db.query(User).filter(User.id == driver_id).first()
     trip = db.query(Trip).filter(Trip.id == trip_id).first()
 

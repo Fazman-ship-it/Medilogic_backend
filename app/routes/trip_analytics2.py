@@ -11,6 +11,7 @@ from reportlab.pdfgen import canvas
 from app import models
 from app.database import get_db
 from app.dependencies import require_role
+from uuid import UUID 
 
 router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
@@ -21,7 +22,7 @@ def export_trips(
     end_date: Optional[str] = Query(None),
     client_name: Optional[str] = Query(None),
     delivery_type: Optional[str] = Query(None),
-    driver_id: Optional[int] = Query(None),
+    driver_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
     _: models.User = Depends(require_role("admin"))
 ):

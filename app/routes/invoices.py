@@ -13,6 +13,7 @@ import io
 from io import BytesIO
 from typing import List,Optional,Literal
 from app.dependencies import require_role
+from uuid import UUID
 
 router = APIRouter(
     prefix="/invoices",
@@ -84,7 +85,7 @@ def generate_invoice(
 
 @router.get("/admin", response_model=List[schemas.InvoiceResponse])
 def list_all_invoices(
-    client_id: Optional[int] = None,
+    client_id: Optional[UUID] = None,
     status: Optional[str] = Query(None, regex="^(paid|unpaid|overdue)$"),
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -123,7 +124,7 @@ def list_all_invoices(
 
 @router.get("/client/{client_id}", response_model=List[schemas.InvoiceResponse])
 def list_client_invoices(
-    client_id: int,
+    client_id: UUID,
     status: Optional[str] = Query(None, regex="^(paid|unpaid|overdue)$"),
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
@@ -159,7 +160,7 @@ def list_client_invoices(
 
 @router.delete("/{invoice_id}", status_code=200)
 def delete_invoice(
-    invoice_id: int,
+    invoice_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))
 ):
@@ -187,7 +188,7 @@ def delete_invoice(
 
 @router.get("/export", response_class=StreamingResponse)
 def export_invoices_csv(
-    client_id: Optional[int] = None,
+    client_id: Optional[UUID] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ Access org

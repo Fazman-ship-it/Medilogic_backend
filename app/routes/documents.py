@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
-
+from uuid import UUID
 from app.dependencies import get_db, get_current_user
 from app.models import Document, User
 from app.schemas import DocumentOut
@@ -84,7 +84,7 @@ def get_my_documents(
 
 @router.get("/download/{doc_id}")
 def download_my_document(
-    doc_id: int,
+    doc_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -104,7 +104,7 @@ def download_my_document(
 
 @router.delete("/{doc_id}")
 def delete_document(
-    doc_id: int,
+    doc_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

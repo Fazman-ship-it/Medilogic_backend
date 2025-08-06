@@ -11,6 +11,7 @@ from typing import List
 from app.schemas import UserOut, OrganizationCreate, OrganizationOut
 from app.models import Organization
 from app.utilites.user_onboarding import send_welcome_email
+from uuid import UUID
 router = APIRouter(prefix="/super", tags=["Super Admin"])
 
 @router.post("/create-user", status_code=201)
@@ -112,7 +113,7 @@ def create_organization(
 
 @router.delete("/{org_id}")
 def deactivate_organization(
-    org_id: int,
+    org_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
 ):
@@ -146,7 +147,7 @@ def deactivate_organization(
 
 @router.patch("/{org_id}")
 def update_organization(
-    org_id: int,
+    org_id: UUID,
     update: schemas.OrganizationUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
@@ -174,7 +175,7 @@ def update_organization(
 
 @router.get("/{org_id}")
 def get_organization_details(
-    org_id: int,
+    org_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
 ):
@@ -199,7 +200,7 @@ def get_organization_details(
     
 @router.post("/{org_id}/regenerate-code")
 def regenerate_invite_code(
-    org_id: int,
+    org_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
 ):
@@ -223,7 +224,7 @@ def regenerate_invite_code(
 
 @router.get("/{org_id}/users")
 def get_org_users(
-    org_id: int,
+    org_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
 ):
@@ -282,7 +283,7 @@ def list_regulators(
 
 @router.delete("/organizations/{org_id}/permanent", status_code=204)
 def delete_organization_permanently(
-    org_id: int,
+    org_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("super_admin"))
 ):

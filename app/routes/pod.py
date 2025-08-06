@@ -13,6 +13,7 @@ from typing import Optional
 from app.utilites.pdf_generator import generate_pod_pdf
 from app.dependencies import get_current_user
 from app.models import POD, User, Trip
+from uuid import UUID
 
 router = APIRouter(prefix="/pods", tags=["PODs"])
 
@@ -50,7 +51,7 @@ def create_pod(
 
 @router.get("/by-trip/{trip_id}", response_model=schemas.PODResponse)
 def get_pod_by_trip_id(
-    trip_id: int,
+    trip_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -87,7 +88,7 @@ def get_pod_by_trip_id(
 
 @router.get("/pods/{pod_id}", response_model=schemas.PODResponse)
 def get_pod_by_id(
-    pod_id: int,
+    pod_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -117,7 +118,7 @@ def get_pod_by_id(
 
 @router.post("/upload", response_model=schemas.PODResponse)
 def create_pod_with_file(
-    trip_id: int = Form(...),
+    trip_id: UUID = Form(...),
     delivered_to: str = Form(...),
     notes: Optional[str] = Form(None),
     signature: Optional[str] = Form(None),

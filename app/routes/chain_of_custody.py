@@ -18,6 +18,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 import plotly.graph_objs as go
+from uuid import UUID
 
 
 router = APIRouter(prefix="/custody", tags=["Chain of Custody"])
@@ -77,7 +78,7 @@ def log_custody_event(
 
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
 def get_custody_events(
-    trip_id: int = Path(..., description="Trip ID to fetch custody events for"),
+    trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -108,7 +109,7 @@ def get_custody_events(
 
 @router.get("/export/{trip_id}")
 def export_custody_log(
-    trip_id: int,
+    trip_id: UUID,
     format: str = "csv",  # Now supports "csv" and "pdf"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -225,7 +226,7 @@ def export_custody_log(
 
 @router.get("/analytics/{trip_id}")
 def custody_chart_data(
-    trip_id: int,
+    trip_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -270,7 +271,7 @@ def custody_chart_data(
 
 @router.get("/export/{trip_id}")
 def export_custody_log(
-    trip_id: int,
+    trip_id: UUID,
     format: str = "csv",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)

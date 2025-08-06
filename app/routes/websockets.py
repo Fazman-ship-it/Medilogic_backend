@@ -7,6 +7,7 @@ from datetime import datetime
 from starlette.websockets import WebSocketState
 from broadcaster import Broadcast
 from typing import Dict, List
+from uuid import UUID
 
 router = APIRouter()
 broadcast = Broadcast("memory://")
@@ -115,7 +116,7 @@ async def websocket_dashboard(
 @router.websocket("/ws/driver/{driver_id}")
 async def realtime_driver_tracking(
     websocket: WebSocket,
-    driver_id: int,
+    driver_id: UUID,
     user: models.User = Depends(get_current_user_ws)
 ):
     await websocket.accept()
@@ -148,13 +149,13 @@ async def realtime_driver_tracking(
         connected_clients[driver_id].remove(websocket)
 
 
-async def broadcast_location_update(driver_id: int, location_data: dict):
+async def broadcast_location_update(driver_id: UUID, location_data: dict):
     await broadcast.publish(
         channel=f"driver:{driver_id}",
         message=location_data
     )
 
-async def get_driver_org(driver_id: int) -> int:
+async def get_driver_org(driver_id: UUID) -> UUID:
     from app.database import SessionLocal
     db = SessionLocal()
     driver = db.query(models.User).filter(models.User.id == driver_id).first()

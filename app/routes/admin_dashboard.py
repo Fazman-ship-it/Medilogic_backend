@@ -23,6 +23,7 @@ from app.utilites.logging import log_activity
 from app import schemas
 from app.models import ShiftAssignment,User
 from datetime import date
+from uuid import UUID
 
 router = APIRouter(
     prefix="/admin-dashboard",
@@ -331,7 +332,7 @@ def export_admin_pdf_with_charts(
 def get_shift_assignments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    driver_id: Optional[int] = Query(None),
+    driver_id: Optional[UUID] = Query(None),
     shift_date: Optional[date] = Query(None),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),

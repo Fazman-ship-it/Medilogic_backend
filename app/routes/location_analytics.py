@@ -16,6 +16,7 @@ import numpy as np
 from geopy.distance import geodesic
 from pandas import DataFrame
 import pandas as pd
+from uuid import UUID
 
 
 router = APIRouter()
@@ -30,7 +31,7 @@ def haversine(lat1, lon1, lat2, lon2):
 
 @router.get("/location/history/summary")
 def location_history_summary(
-    driver_id: int,
+    driver_id: UUID,
     start: datetime = Query(...),
     end: datetime = Query(...),
     db: Session = Depends(get_db),
@@ -110,7 +111,7 @@ def location_history_summary(
     
 @router.get("/driver/{driver_id}/tracking-history", response_model=list[DriverLocationHistoryOut])
 def get_tracking_history(
-    driver_id: int,
+    driver_id: UUID,
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     db: Session = Depends(get_db),
@@ -152,7 +153,7 @@ def get_tracking_history(
 def get_heatmap_data(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
-    driver_id: Optional[int] = Query(None),
+    driver_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -210,7 +211,7 @@ except Exception as e:
 
 @router.get("/predict-next-location")
 def predict_next_location(
-    driver_id: int,
+    driver_id: UUID,
     db: Session = Depends(get_db)
 ):
     if not next_location_model:
@@ -254,7 +255,7 @@ import pandas as pd
 
 @router.get("/check-anomaly")
 def check_driver_deviation(
-    driver_id: int,
+    driver_id: UUID,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)  # 🛡️ Extract user/org info from token
 ):

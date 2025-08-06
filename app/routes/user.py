@@ -22,6 +22,7 @@ from app.utilites.logging import log_activity
 from app.schemas import UserUpdate
 from app.models import Organization
 from app.schemas import UserStatusOut
+from uuid import UUID
 
 router = APIRouter(
     prefix="/users", tags=['users'])
@@ -40,7 +41,7 @@ router = APIRouter()
 
 @router.delete("/users/{user_id}", status_code=204)
 def delete_user(
-    user_id: int,
+    user_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

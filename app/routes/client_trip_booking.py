@@ -8,6 +8,7 @@ from app.enums import DeliveryType  # ✅ Import the enum
 from typing import List,Optional
 from fastapi import Query
 from app.utilites.logging import log_activity
+from uuid import UUID
 
 router = APIRouter(
     prefix="/client/trips",
@@ -95,7 +96,7 @@ def get_client_trips(
 
 @router.patch("/{trip_id}/status")
 def update_trip_status(
-    trip_id: int,
+    trip_id: UUID,
     status_update: schemas.TripClientStatusUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)

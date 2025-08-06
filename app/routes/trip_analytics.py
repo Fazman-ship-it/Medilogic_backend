@@ -10,6 +10,7 @@ import plotly.io as pio
 from app import models
 from app.database import get_db
 from app.dependencies import require_role
+from uuid import UUID
 
 router = APIRouter(prefix="", tags=["Trip Analytics"])
 # Load the trained ML model
@@ -25,7 +26,7 @@ def get_trip_analytics(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     status: Optional[str] = Query(None),
-    driver_id: Optional[int] = Query(None),
+    driver_id: Optional[UUID] = Query(None),
     client_name: Optional[str] = Query(None),
     delivery_type: Optional[str] = Query(None),
     db: Session = Depends(get_db),

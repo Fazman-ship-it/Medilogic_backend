@@ -17,6 +17,7 @@ from typing import Optional, List
 from app.dependencies import require_role
 from app.schemas import TripUpdate, TripPatch, TripResponse, TripAnalyticsResponse,TripCreate
 from app.utilites.logging import log_activity
+from uuid import UUID
 # app/routes/trip.py
 router = APIRouter()
 @router.post("/", response_model=schemas.TripResponse)
@@ -90,7 +91,7 @@ def get_trips(
 
 @router.get("/trips/{trip_id}", response_model=schemas.TripResponse)
 def get_trip(
-    trip_id: int,
+    trip_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ to access org
 ):
@@ -108,7 +109,7 @@ def get_trip(
 
 @router.put("/trips/{trip_id}", response_model=schemas.TripResponse)
 def update_trip(
-    trip_id: int,
+    trip_id: UUID,
     updated_trip: schemas.TripUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ Admin-only access
@@ -147,7 +148,7 @@ def update_trip(
 
 @router.delete("/trips/{trip_id}", status_code=200)
 def delete_trip(
-    trip_id: int,
+    trip_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ capture current user
 ):
@@ -176,7 +177,7 @@ def delete_trip(
 
 @router.patch("/trips/{trip_id}", response_model=schemas.TripResponse)
 def partial_update_trip(
-    trip_id: int,
+    trip_id: UUID,
     trip_data: schemas.TripPatch,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ needed to access org

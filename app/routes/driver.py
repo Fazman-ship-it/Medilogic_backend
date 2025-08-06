@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List
 from app.models import User
 from app.schemas import DriverLocationHistoryOut
+from uuid import UUID
 router = APIRouter(
     prefix="/drivers",
     tags=["Drivers"]
@@ -68,7 +69,7 @@ def get_driver_location(
 
 @router.get("/{driver_id}/location")
 def get_driver_location_by_id(
-    driver_id: int,
+    driver_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
@@ -113,7 +114,7 @@ def get_driver_location_history(
 
 @router.get("/drivers/{driver_id}/location/history", response_model=List[DriverLocationHistoryOut])
 def get_driver_location_history_by_id(
-    driver_id: int,
+    driver_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):

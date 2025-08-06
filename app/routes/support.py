@@ -6,6 +6,7 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from typing import List
 from app.schemas import SupportTicketCreate
+from uuid import UUID
 
 router = APIRouter(prefix="/support", tags=["Support"])
 
@@ -53,7 +54,7 @@ def list_all_tickets(
 
 @router.get("/tickets/{ticket_id}", response_model=schemas.SupportTicketResponse)
 def get_ticket(
-    ticket_id: int,
+    ticket_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ access org
 ):
@@ -69,7 +70,7 @@ def get_ticket(
 
 @router.patch("/tickets/{ticket_id}/status", response_model=schemas.SupportTicketResponse)
 def update_ticket_status(
-    ticket_id: int,
+    ticket_id: UUID,
     status: schemas.TicketStatus,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ needed to access org

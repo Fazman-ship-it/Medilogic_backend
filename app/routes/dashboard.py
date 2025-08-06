@@ -5,6 +5,7 @@ from typing import Optional
 from app.database import get_db
 from app import models
 from app.dependencies import get_current_user
+from uuid import UUID
 
 router = APIRouter(
     prefix="/dashboard",
@@ -15,7 +16,7 @@ from app.models import ShiftAssignment  # Make sure this import is present
 
 @router.get("/driver/{driver_id}")
 def get_driver_dashboard(
-    driver_id: int,
+    driver_id: UUID,
     status: Optional[str] = Query(None),
     delivery_type: Optional[str] = Query(None),
     start_date: Optional[datetime] = Query(None),
@@ -111,7 +112,7 @@ def get_driver_dashboard(
 # -----------------------------
 @router.get("/client/{client_id}")
 def get_client_dashboard(
-    client_id: int,
+    client_id: UUID,
     status: Optional[str] = Query(None),
     delivery_type: Optional[str] = Query(None),
     start_date: Optional[datetime] = Query(None),

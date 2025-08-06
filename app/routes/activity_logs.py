@@ -8,6 +8,7 @@ from fpdf import FPDF
 from app.models import ActivityLog, User
 from app.dependencies import get_db
 from app.dependencies import get_current_user
+from uuid import UUID
 
 router = APIRouter(
     prefix="/activity-logs",
@@ -18,8 +19,8 @@ router = APIRouter(
 def get_activity_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    user_id: Optional[int] = Query(None),
-    organization_id: Optional[int] = Query(None),
+    user_id: Optional[UUID] = Query(None),
+    organization_id: Optional[UUID] = Query(None),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
 ):
@@ -66,8 +67,8 @@ def get_activity_logs(
 def export_logs_csv(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    user_id: Optional[int] = Query(None),
-    organization_id: Optional[int] = Query(None),
+    user_id: Optional[UUID] = Query(None),
+    organization_id: Optional[UUID] = Query(None),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
 ):
@@ -117,8 +118,8 @@ def export_logs_csv(
 def export_logs_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    user_id: Optional[int] = Query(None),
-    organization_id: Optional[int] = Query(None),
+    user_id: Optional[UUID] = Query(None),
+    organization_id: Optional[UUID] = Query(None),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
 ):
