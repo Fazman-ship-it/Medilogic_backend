@@ -6,13 +6,13 @@ from fastapi.responses import StreamingResponse
 from app.dependencies import get_db, get_current_user
 from app.models import ComplianceStatus, User
 from app.schemas import ComplianceScoreOut
-from app.enums import UserRole
+from app.models import UserRole
 import plotly.graph_objs as go
 import csv
 import io
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4s
 from reportlab.lib import colors
 from io import BytesIO
 
