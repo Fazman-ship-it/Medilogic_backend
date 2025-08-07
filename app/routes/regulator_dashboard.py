@@ -18,37 +18,77 @@ from app.models import ComplianceStatus, Organization, User
 
 router = APIRouter(prefix="/dashboard", tags=["Regulator Dashboard"])
 
-@router.get("/regulator")
-def get_regulator_dashboard_compliance(
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from uuid import UUID
+from typing import List
+from app.database import get_db
+from app.models import ComplianceStatus, Organization, User, AuditStatusEnum
+from app.dependencies import get_current_user
+
+
+@router.get("/compliance/summary/simple")
+def get_simple_regulatory_compliance_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != "regulator":
-        raise HTTPException(status_code=403, detail="Access denied")
+    """
+    ✅ Simplified Compliance Summary (Regulator only)
+    🔐 Regulatory users see only organizations in their assigned country/state/region
+    👑 Admins see all organizations
+    """
+    # 🔐 Check access
+    if current_user.role not in ["regulatory"]:
+        raise HTTPException(status_code=403, detail="Access denied.")
 
-    # 🎯 Get organizations under this regulator
-    orgs = db.query(Organization).filter(
-        Organization.country == current_user.regulated_country,
-        Organization.state == current_user.regulated_state,
-        Organization.region == current_user.regulated_region,
-    ).all()
+    # 🌍 Region-based filtering (for regulators only)
+    org_query = db.query(Organization)
+    if current_user.role == "regulatory":
+        org_query = org_query.filter(
+            Organization.country == current_user.regulated_country,
+            Organization.state == current_user. regulated_state,
+            Organization.region == current_user. regulated_region
+        )
+    
+    organizations = org_query.all()
+    summaries = []
 
-    # 📋 Collect compliance status for each
-    compliance_data = []
-    for org in orgs:
+    for org in organizations:
         compliance = db.query(ComplianceStatus).filter_by(organization_id=org.id).first()
-        compliance_data.append({
-            "organization": org.name,
-            "iso_27001": compliance.iso_27001_certified if compliance else False,
-            "nhs_dsp_toolkit": compliance.nhs_dsp_toolkit_complete if compliance else False,
-            "cyber_essentials": compliance.cyber_essentials_ready if compliance else False,
-            "has_waste_license": compliance.has_waste_license if compliance else False,
-            "last_audit": compliance.last_audit_date.isoformat() if compliance and compliance.last_audit_date else None
+        if not compliance:
+            continue
+
+        # 🧠 Simplified logic for high-level compliance flag
+        overall_compliant = (
+            compliance.iso_27001_certified and
+            compliance.nhs_dsp_toolkit_complete and
+            compliance.cyber_essentials_ready and
+            compliance.has_waste_license and
+            compliance.audit_status == AuditStatusEnum.passed and
+            not compliance.is_flagged_noncompliant
+        )
+
+        summaries.append({
+            "organization_id": str(org.id),
+            "organization_name": org.name,
+            "country": org.country,
+            "state": org.state,
+            "region": org.region,
+            "overall_compliant": overall_compliant
         })
 
+    # ✅ Log activity
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        org_id=None,
+        action="simple_compliance_summary_viewed",
+        details=f"{current_user.role.title()} user {current_user.name} viewed simplified compliance summary"
+    )
+
     return {
-        "total_organizations": len(orgs),
-        "compliance_overview": compliance_data
+        "total_organizations": len(summaries),
+        "organization_summaries": summaries
     }
 
 @router.get("/regulator")
@@ -263,52 +303,131 @@ def regulator_summary(
     return summary_data
 
 
-@router.get("/summary")
-def get_regulator_compliance_summary(
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from typing import Optional
+from datetime import date
+from uuid import UUID
+
+from app.database import get_db
+from app.models import ComplianceStatus, Organization, User
+from app.dependencies import require_role
+from app.utilites.logging import log_activity
+from app.utilites.compliance_exporter import generate_csv, generate_pdf, generate_compliance_chart
+from app.models import AuditStatusEnum
+
+@router.get("/compliance/regulatory-summary")
+def get_regulatory_compliance_summary(
+    region: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    export: Optional[str] = Query(None, regex="^(csv|pdf)$"),
+    include_charts: Optional[bool] = Query(False),
+
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_role(["regulatory"]))
 ):
-    # 🔐 Ensure user is a regulator
-    if current_user.role != "regulator":
-        raise HTTPException(status_code=403, detail="Only regulators can access this")
+    """
+    ✅ Get full compliance summary across all organizations (Regulatory Only)
+    📁 Supports PDF/CSV Export, Region & Date Filters, Chart Output
+    """
+    if current_user.role != "regulatory":
+        raise HTTPException(status_code=403, detail="Access denied. Regulatory only.")
 
-    # 🌍 Filter organizations under the regulator's scope
-    orgs = db.query(Organization).filter(
-        Organization.country == current_user.regulated_country,
-        Organization.state == current_user.regulated_state,
-        Organization.region == current_user.regulated_region
-    ).all()
+    query = db.query(Organization)
+    if region:
+        query = query.filter(Organization.region == region)
+    organizations = query.all()
 
-    total_orgs = len(orgs)
-    iso_certified = 0
-    nhs_completed = 0
-    cyber_ready = 0
-    waste_licensed = 0
+    summaries = []
+    compliant_count = 0
 
-    for org in orgs:
-        comp = org.compliance_status
-        if comp:
-            if comp.iso_27001_certified:
-                iso_certified += 1
-            if comp.nhs_dsp_toolkit_complete:
-                nhs_completed += 1
-            if comp.cyber_essentials_ready:
-                cyber_ready += 1
-            if comp.has_waste_license:
-                waste_licensed += 1
+    for org in organizations:
+        compliance_query = db.query(ComplianceStatus).filter_by(organization_id=org.id)
+
+        if start_date:
+            compliance_query = compliance_query.filter(ComplianceStatus.created_at >= start_date)
+        if end_date:
+            compliance_query = compliance_query.filter(ComplianceStatus.created_at <= end_date)
+
+        compliance = compliance_query.first()
+        if compliance:
+            overall_compliant = (
+                compliance.iso_27001_certified and
+                compliance.nhs_dsp_toolkit_complete and
+                compliance.cyber_essentials_ready and
+                compliance.has_waste_license and
+                compliance.fire_risk_assessment_complete and
+                compliance.gdpr_policy_uploaded and
+                compliance.clinical_waste_policy_uploaded and
+                compliance.sharps_policy_uploaded and
+                compliance.staff_training_records_uploaded and
+                compliance.transport_license_valid and
+                compliance.environmental_permit_valid and
+                compliance.data_protection_registration_valid and
+                compliance.audit_status == AuditStatusEnum.passed and
+                not compliance.is_flagged_noncompliant
+)
+            if overall_compliant:
+                compliant_count += 1
+
+            summaries.append({
+                "organization_id": str(org.id),
+                "organization_name": org.name,
+                "region": getattr(org, "region", "Unknown"),
+                "iso_27001_certified": compliance.iso_27001_certified,
+                "nhs_dsp_toolkit_complete": compliance.nhs_dsp_toolkit_complete,
+                "cyber_essentials_ready": compliance.cyber_essentials_ready,
+                "has_waste_license": compliance.has_waste_license,
+                "gdpr_policy_uploaded": compliance.gdpr_policy_uploaded,
+                "clinical_waste_policy_uploaded": compliance.clinical_waste_policy_uploaded,
+                "sharps_policy_uploaded": compliance.sharps_policy_uploaded,
+                "staff_training_records_uploaded": compliance.staff_training_records_uploaded,
+                "transport_license_valid": compliance.transport_license_valid,
+                "environmental_permit_valid": compliance.environmental_permit_valid,
+                "data_protection_registration_valid": compliance.data_protection_registration_valid,
+                "audit_status": compliance.audit_status.value,
+                "last_audit_date": compliance.last_audit_date.strftime("%Y-%m-%d") if compliance.last_audit_date else None,
+                "overall_compliant": overall_compliant,
+                "last_checked": compliance.created_at.strftime("%Y-%m-%d")
+})
+
+    total = len(organizations)
+    non_compliant = total - compliant_count
+    rate = f"{round((compliant_count / total) * 100)}%" if total > 0 else "N/A"
+
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        org_id=None,
+        action="regulatory_compliance_summary_viewed",
+        details=f"Regulatory user {current_user.name} viewed full compliance summary"
+    )
+
+    # ✅ Handle Export
+    if export == "csv":
+        csv_data = generate_csv(summaries)
+        return StreamingResponse(csv_data, media_type="text/csv", headers={
+            "Content-Disposition": "attachment; filename=compliance_summary.csv"
+        })
+
+    elif export == "pdf":
+        pdf_data = generate_pdf(summaries)
+        return StreamingResponse(pdf_data, media_type="application/pdf", headers={
+            "Content-Disposition": "attachment; filename=compliance_summary.pdf"
+        })
+
+    # ✅ If requesting charts
+    chart = None
+    if include_charts:
+        chart = generate_compliance_chart(summaries)
 
     return {
-        "total_organizations": total_orgs,
-        "iso_27001_certified": iso_certified,
-        "nhs_dsp_toolkit_completed": nhs_completed,
-        "cyber_essentials_ready": cyber_ready,
-        "waste_license_issued": waste_licensed,
-        "percentages": {
-            "iso_27001_certified": f"{(iso_certified / total_orgs * 100):.2f}%" if total_orgs else "0%",
-            "nhs_dsp_toolkit_completed": f"{(nhs_completed / total_orgs * 100):.2f}%" if total_orgs else "0%",
-            "cyber_essentials_ready": f"{(cyber_ready / total_orgs * 100):.2f}%" if total_orgs else "0%",
-            "waste_license_issued": f"{(waste_licensed / total_orgs * 100):.2f}%" if total_orgs else "0%"
-        }
+        "total_organizations": total,
+        "compliant_count": compliant_count,
+        "non_compliant_count": non_compliant,
+        "compliance_rate": rate,
+        "organization_summaries": summaries,
+        "chart": "Included as PNG binary stream" if include_charts else None
     }
-
-

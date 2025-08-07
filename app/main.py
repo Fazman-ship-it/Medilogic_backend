@@ -48,6 +48,9 @@ from app.routes import applications
 from app.routes import confirm_receipt
 from app.routes import confirm_qr
 from app.routes import app_notifications
+from app.routes import com
+from app.routes import document_upload
+
 # app/main.py
 
 app = FastAPI(
@@ -112,6 +115,9 @@ app.include_router(applications.router)
 app.include_router(confirm_receipt.router)
 app.include_router(confirm_qr.router)
 app.include_router(app_notifications.router)
+app.include_router(com.router)
+app.include_router(document_upload.router)
+
 
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")

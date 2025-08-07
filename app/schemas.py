@@ -525,7 +525,7 @@ class ComplianceStatusOut(ComplianceStatusBase):
     organization_id: UUID
     created_at: datetime
     updated_at: datetime
-
+    
     class Config:
         from_attribute = True
         
@@ -659,6 +659,16 @@ class DocumentOut(BaseModel):
     doc_type: Optional[str]
     organization_id:UUID
     user_id: Optional[UUID] = None  # User who uploaded the document
+    
+
+class DocumentUploadOut(BaseModel):
+    id: UUID
+    filename: str
+    file_path: str
+    upload_time: datetime
+    doc_type: Optional[str]
+    organization_id: Optional[UUID]
+    user_id: Optional[UUID]
 
     class Config:
         form_attributes = True
@@ -747,5 +757,58 @@ class NotificationOut(BaseModel):
 class NotificationReadUpdate(BaseModel):
     is_read: bool    
 
+    class Config:
+        form_attributes = True 
+        
+class ComplianceScoreOut(BaseModel):
+    organization_id: UUID
+    organization_name: Optional[str] = None
+    compliance_score: float
+    is_compliant: bool
+    flagged: bool
+    next_audit_due_date: Optional[date]
+    audit_status: str
+    last_audit_date: Optional[date]
+    escalation_level: Optional[str]
+    risk_level: str
+    alert: Optional[str]
+    
+    class Config:
+        form_attributes = True  # Enables ORM support for SQLAlchemy models 
+        
+# For individual org compliance summary
+class ComplianceSummary(BaseModel):
+    organization_id: UUID
+    organization_name: str
+    region: Optional[str]
+    iso_27001_certified: bool
+    nhs_dsp_toolkit_complete: bool
+    cyber_essentials_ready: bool
+    has_waste_license: bool
+    gdpr_policy_uploaded: bool
+    clinical_waste_policy_uploaded: bool
+    sharps_policy_uploaded: bool
+    staff_training_records_uploaded: bool
+    transport_license_valid: bool
+    environmental_permit_valid: bool
+    data_protection_registration_valid: bool
+    audit_status: AuditStatusEnum
+    last_audit_date: Optional[datetime]
+    overall_compliant: bool
+    last_checked: datetime
+
+    class Config:
+        form_attributes = True
+
+
+# For full endpoint response
+class RegulatoryComplianceSummaryResponse(BaseModel):
+    total_organizations: int
+    compliant_count: int
+    non_compliant_count: int
+    compliance_rate: str
+    organization_summaries: list[ComplianceSummary]
+    chart: Optional[str] = None
+    
     class Config:
         form_attributes = True        

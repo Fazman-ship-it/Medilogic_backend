@@ -222,7 +222,7 @@ def regenerate_invite_code(
 
     return {"message": "Invite code regenerated", "new_invite_code": org.invite_code}    
 
-@router.get("/{org_id}/users")
+@router.get("/super/orgs/{org_id}/users")
 def get_org_users(
     org_id: UUID,
     db: Session = Depends(get_db),
@@ -232,7 +232,7 @@ def get_org_users(
     return users
 
 
-@router.post("/create_regulator", response_model=schemas.UserOut)
+@router.post("/super/regulators", response_model=schemas.UserOut)
 def create_regulator(
     regulator: schemas.RegulatorCreate,
     db: Session = Depends(get_db),
@@ -272,7 +272,7 @@ def create_regulator(
 
     return new_user
 
-@router.get("/regulators", response_model=List[UserOut])
+@router.get("/super/regulators", response_model=List[UserOut])
 def list_regulators(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("super_admin"))
