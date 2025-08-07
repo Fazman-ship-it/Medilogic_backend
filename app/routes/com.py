@@ -12,7 +12,7 @@ import csv
 import io
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4s
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from io import BytesIO
 
