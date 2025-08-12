@@ -38,10 +38,10 @@ def get_trip_analytics(
     try:
         if start_date:
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
-            query = query.filter(models.Trip.schedule_time >= start_date)
+            query = query.filter(models.Trip.scheduled_time >= start_date)
         if end_date:
             end_date = datetime.strptime(end_date, "%Y-%m-%d")
-            query = query.filter(models.Trip.schedule_time <= end_date)
+            query = query.filter(models.Trip.scheduled_time <= end_date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
