@@ -65,13 +65,31 @@ def create_user_by_super_admin(
 
     return {"message": f"{data.role.capitalize()} user created", "user_id": new_user.id}
 
+from sqlalchemy import func
+
 @router.get("/organizations", response_model=list[schemas.OrganizationOut])
 def list_organizations(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
 ):
-    orgs = db.query(models.Organization).all()
-    return orgs
+    orgs_with_counts = (
+        db.query(
+            models.Organization,
+            func.count(models.User.id).label("user_count")
+        )
+        .outerjoin(models.User, models.User.organization_id == models.Organization.id)
+        .group_by(models.Organization.id)
+        .all()
+    )
+
+    # Transform result so Pydantic can serialize correctly
+    result = []
+    for org, user_count in orgs_with_counts:
+        org_dict = schemas.OrganizationOut.from_orm(org).dict()
+        org_dict["user_count"] = user_count
+        result.append(org_dict)
+
+    return result
 
 @router.post("/organizations", response_model=schemas.OrganizationOut)
 def create_organization(

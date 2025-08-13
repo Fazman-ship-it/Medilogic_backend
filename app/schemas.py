@@ -399,6 +399,10 @@ class OrganizationOut(BaseModel):
     invite_code: Optional[str]
     ico_registered: Optional[bool]
     data_retention_years: Optional[int]
+    type: str
+    is_active:bool
+    created_at: datetime
+    user_count: int
     
 class OrganizationUpdate(BaseModel):
     name: Optional[str]
