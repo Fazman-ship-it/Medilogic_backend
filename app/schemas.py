@@ -402,7 +402,7 @@ class OrganizationOut(BaseModel):
     type: str
     is_active:bool
     created_at: datetime
-    user_count: int
+    user_count: Optional[int]=None
     
     class Config:
         from_attributes = True
