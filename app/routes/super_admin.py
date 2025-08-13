@@ -166,25 +166,34 @@ def update_organization(
     org_id: UUID,
     update: schemas.OrganizationUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("super_admin"))
+    current_user: models.User = Depends(get_current_user)
 ):
-    org = db.query(models.Organization).filter_by(id=org_id).first()
+    org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    if update.name:
-        org.name = update.name
-    if update.is_active is not None:
-        org.is_active = update.is_active
+    # Multi-tenant check for org admins
+    if current_user.role == "admin":
+        if current_user.organization_id != org_id:
+            raise HTTPException(status_code=403, detail="Not authorized to update this organization")
+
+    # Role-based restrictions
+    restricted_fields = {"is_active", "invite_code"}
+    for field, value in update.dict(exclude_unset=True).items():
+        if current_user.role == "admin" and field in restricted_fields:
+            continue  # skip restricted fields for org admins
+        setattr(org, field, value)
 
     db.commit()
     db.refresh(org)
 
+    # Activity log
+    action_type = "update_organization" if current_user.role == "super_admin" else "update_own_organization"
     log_activity(
         db=db,
         user_id=current_user.id,
-        action="update_organization",
-        details=f"Super admin updated organization {org.name} (ID: {org.id})"
+        action=action_type,
+        details=f"{current_user.role.capitalize()} updated organization {org.name} (ID: {org.id})"
     )
 
     return {"message": "Organization updated successfully", "organization": org}

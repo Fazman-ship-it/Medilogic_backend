@@ -409,7 +409,18 @@ class OrganizationOut(BaseModel):
     
 class OrganizationUpdate(BaseModel):
     name: Optional[str]
-    is_active:Optional[bool]    
+    is_active:Optional[bool]
+    email: Optional[EmailStr]
+    phone_number: Optional[str]
+    address_line: Optional[str]
+    postal_code: Optional[str]
+    license_number: Optional[str]
+    waste_processing_capability: Optional[str]
+    delivery_capacity: Optional[int]
+    contact_person_name: Optional[str]
+    contact_person_role: Optional[str]
+    latitude: Optional[float]
+    longitude: Optional[float]        
 
     class Config:
         from_attributes = True

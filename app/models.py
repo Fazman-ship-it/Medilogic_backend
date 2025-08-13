@@ -214,6 +214,18 @@ class Organization(Base):
     location_history =relationship("DriverLocationHistory", back_populates="organization", cascade="all, delete")
     chain_of_custody_events = relationship("ChainOfCustody", back_populates="organization", cascade="all, delete")
     delivery = relationship("DeliveryConfirmation", back_populates="organization", cascade="all, delete-orphan")
+    email = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    address_line = Column(String, nullable=True)
+    postal_code = Column(String, nullable=True)
+    license_number = Column(String, nullable=True)
+    waste_processing_capability = Column(String, nullable=True)
+    delivery_capacity = Column(Integer, nullable=True)
+    contact_person_name = Column(String, nullable=True)
+    contact_person_role = Column(String, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
