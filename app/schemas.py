@@ -404,6 +404,9 @@ class OrganizationOut(BaseModel):
     created_at: datetime
     user_count: int
     
+    class Config:
+        from_attributes = True
+    
 class OrganizationUpdate(BaseModel):
     name: Optional[str]
     is_active:Optional[bool]    
@@ -531,7 +534,7 @@ class ComplianceStatusOut(ComplianceStatusBase):
     updated_at: datetime
     
     class Config:
-        from_attribute = True
+        from_attributes = True
         
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
@@ -589,7 +592,7 @@ class DriverLocationHistoryOut(BaseModel):
 
 
     class Config:
-        from_attribute = True
+        from_attributes = True
 
 
 class ShiftAssignRequest(BaseModel):
