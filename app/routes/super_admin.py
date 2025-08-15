@@ -216,7 +216,12 @@ def get_organization_details(
             "id": org.id,
             "name": org.name,
             "invite_code": org.invite_code,
-            "is_active": org.is_active
+            "is_active": org.is_active,
+            "email": org.email,
+            "phone_number": org.phone_number,
+            "address_line": org.address_line,
+            "postal_code": org.postal_code,
+            "license_number": org.license_number
         },
         "user_count": len(users),
         "trip_count": trip_count,
