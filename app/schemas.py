@@ -403,6 +403,11 @@ class OrganizationOut(BaseModel):
     is_active:bool
     created_at: datetime
     user_count: Optional[int]=None
+    email: Optional[EmailStr]
+    phone_number: Optional[str]
+    address_line: Optional[str]
+    postal_code: Optional[str]
+    license_number: Optional[str]    
     
     class Config:
         from_attributes = True
