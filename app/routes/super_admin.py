@@ -324,3 +324,37 @@ def delete_organization_permanently(
     db.delete(org)
     db.commit()
     return {"message": "Organization permanently deleted."}
+
+@router.patch("/{org_id}/activate")
+def activate_organization(
+    org_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    org = db.query(models.Organization).filter(models.Organization.id == org_id).first()
+
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    
+    if org.is_active:
+        raise HTTPException(status_code=400, detail="Organization is already active")
+
+    # ✅ Reactivate the organization
+    org.is_active = True
+    db.commit()
+
+    # ✅ Optionally reactivate all users in this org
+    users = db.query(models.User).filter(models.User.organization_id == org_id).all()
+    for user in users:
+        user.is_active = True  # (Assumes your User model has is_active)
+    db.commit()
+
+    # ✅ Log the action
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="activate_organization",
+        details=f"Super admin {current_user.email} reactivated organization {org.name} (ID {org.id})"
+    )
+
+    return {"message": f"Organization '{org.name}' has been reactivated."}
