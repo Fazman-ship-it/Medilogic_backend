@@ -162,6 +162,7 @@ class User(Base):
     documents = relationship("Document", back_populates="user")
     testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user")
+    credentials = relationship("DriverCredentials", back_populates="driver", uselist=False)    
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
@@ -225,7 +226,7 @@ class Organization(Base):
     contact_person_role = Column(String, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    
+    driver_credentials = relationship("DriverCredentials", back_populates="organization", cascade="all, delete-orphan")    
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
@@ -518,7 +519,11 @@ class Document(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     user = relationship("User", back_populates="documents")
     organization = relationship("Organization", back_populates="documents")
-    
+    credential_id = Column(UUID(as_uuid=True), ForeignKey("driver_credentials.id"), nullable=True)
+    credential = relationship("DriverCredentials", back_populates="documents")
+    is_active = Column(Boolean, default=True)
+    expiry_date = Column(DateTime, nullable=True)
+    revoked = Column(Boolean, default=False)
     
 class Testimonial(Base):
     __tablename__ = "testimonials"
@@ -580,3 +585,50 @@ class Notification(Base):
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User", back_populates="notifications")
+    
+
+class DriverCredentials(Base):
+    __tablename__ = "driver_credentials"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)  # driver
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+
+    # ✅ Driving license details
+    licence_number = Column(String, nullable=False)
+    licence_category = Column(String, nullable=True)  # e.g., B, C1, C, CE
+    licence_expiry = Column(Date, nullable=False)
+
+    # ✅ Regulatory compliance (for medical/waste transport)
+    adr_certificate = Column(String, nullable=True)   # file path or S3 URL
+    adr_expiry = Column(Date, nullable=True)
+    cpc_certificate = Column(String, nullable=True)
+    cpc_expiry = Column(Date, nullable=True)
+    dbs_check = Column(String, nullable=True)         # file path
+    dbs_expiry = Column(Date, nullable=True)
+    medical_certificate = Column(String, nullable=True)
+    medical_expiry = Column(Date, nullable=True)
+
+    # ✅ Training certifications
+    waste_training_cert = Column(String, nullable=True)
+    infection_control_cert = Column(String, nullable=True)
+    first_aid_cert = Column(String, nullable=True)
+    first_aid_expiry = Column(Date, nullable=True)
+
+    # ✅ Vehicle insurance
+    vehicle_insurance = Column(String, nullable=True)
+    insurance_expiry = Column(Date, nullable=True)
+
+    # ✅ Employment info
+    employment_contract = Column(String, nullable=True)  # upload contract file
+    right_to_work_doc = Column(String, nullable=True)    # visa / permit file
+    right_to_work_expiry = Column(Date, nullable=True)
+
+    # ✅ Status flags
+    is_verified = Column(Boolean, default=False)  # Admin/Org approval
+    is_active = Column(Boolean, default=True)
+
+    # Relationships
+    driver = relationship("User", back_populates="credentials")
+    organization = relationship("Organization", back_populates="driver_credentials")    
+    documents = relationship("Document", back_populates="credential", cascade="all, delete-orphan")

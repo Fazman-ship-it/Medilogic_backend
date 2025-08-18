@@ -681,7 +681,8 @@ class DocumentOut(BaseModel):
     upload_time: datetime
     doc_type: Optional[str]
     organization_id:UUID
-    user_id: Optional[UUID] = None  # User who uploaded the document
+    user_id: Optional[UUID] = None # User who uploaded the document
+    is_active:bool
     
 
 class DocumentUploadOut(BaseModel):
@@ -834,4 +835,82 @@ class RegulatoryComplianceSummaryResponse(BaseModel):
     chart: Optional[str] = None
     
     class Config:
-        form_attributes = True        
+        form_attributes = True
+
+
+# ---------- Base ----------
+class DriverCredentialsBase(BaseModel):
+    licence_number: str
+    licence_category: Optional[str] = None
+    licence_expiry: date
+
+    adr_certificate: Optional[str] = None
+    adr_expiry: Optional[date] = None
+    cpc_certificate: Optional[str] = None
+    cpc_expiry: Optional[date] = None
+    dbs_check: Optional[str] = None
+    dbs_expiry: Optional[date] = None
+    medical_certificate: Optional[str] = None
+    medical_expiry: Optional[date] = None
+
+    waste_training_cert: Optional[str] = None
+    infection_control_cert: Optional[str] = None
+    first_aid_cert: Optional[str] = None
+    first_aid_expiry: Optional[date] = None
+
+    vehicle_insurance: Optional[str] = None
+    insurance_expiry: Optional[date] = None
+
+    employment_contract: Optional[str] = None
+    right_to_work_doc: Optional[str] = None
+    right_to_work_expiry: Optional[date] = None
+
+    is_verified: bool = False
+    is_active: bool = True
+
+
+# ---------- Create ----------
+class DriverCredentialsCreate(DriverCredentialsBase):
+    user_id: UUID
+    organization_id: UUID
+
+
+# ---------- Update ----------
+class DriverCredentialsUpdate(BaseModel):
+    licence_number: Optional[str] = None
+    licence_category: Optional[str] = None
+    licence_expiry: Optional[date] = None
+
+    adr_certificate: Optional[str] = None
+    adr_expiry: Optional[date] = None
+    cpc_certificate: Optional[str] = None
+    cpc_expiry: Optional[date] = None
+    dbs_check: Optional[str] = None
+    dbs_expiry: Optional[date] = None
+    medical_certificate: Optional[str] = None
+    medical_expiry: Optional[date] = None
+
+    waste_training_cert: Optional[str] = None
+    infection_control_cert: Optional[str] = None
+    first_aid_cert: Optional[str] = None
+    first_aid_expiry: Optional[date] = None
+
+    vehicle_insurance: Optional[str] = None
+    insurance_expiry: Optional[date] = None
+
+    employment_contract: Optional[str] = None
+    right_to_work_doc: Optional[str] = None
+    right_to_work_expiry: Optional[date] = None
+
+    is_verified: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+
+# ---------- Response ----------
+class DriverCredentialsOut(DriverCredentialsBase):
+    id: UUID
+    user_id: UUID
+    organization_id: UUID
+
+    class Config:
+        form_attributes = True

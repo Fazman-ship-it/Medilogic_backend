@@ -37,7 +37,7 @@ from app.routes import profile
 from app.routes import activity_logs
 from app.routes import driver_availability
 from app.routes import shifts
-from  app.scheduler import start_scheduler
+from app.scheduler import start_scheduler
 from app.routes import chain_of_custody
 from app.routes import driver_location
 from app.routes import websockets
@@ -50,6 +50,7 @@ from app.routes import confirm_qr
 from app.routes import app_notifications
 from app.routes import com
 from app.routes import document_upload
+from app.routes import driver_credentials
 
 # app/main.py
 
@@ -117,6 +118,7 @@ app.include_router(confirm_qr.router)
 app.include_router(app_notifications.router)
 app.include_router(com.router)
 app.include_router(document_upload.router)
+app.include_router(driver_credentials.router)
 
 
 # Automatically create upload directory if it doesn't exist
