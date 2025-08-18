@@ -84,7 +84,7 @@ from uuid import UUID
 from datetime import datetime
 from app.database import get_db
 from app.models import Document, User
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 
 
 @router.get("/{driver_id}/documents")
