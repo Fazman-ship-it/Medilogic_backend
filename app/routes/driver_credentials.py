@@ -165,7 +165,7 @@ from typing import List
 from app.dependencies import require_role
 from app.database import get_db
 from app.models import Document, User
-from app.auth import get_current_user  # Assuming you already have RBAC utils
+from app.dependencies import get_current_user  # Assuming you already have RBAC utils
 from app.schemas import DocumentOut  # schema for returning documents
 
 
