@@ -162,7 +162,8 @@ class User(Base):
     documents = relationship("Document", back_populates="user")
     testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user")
-    credentials = relationship("DriverCredentials", back_populates="driver", uselist=False)    
+    credentials = relationship("DriverCredentials", back_populates="driver", uselist=False)
+    is_deleted = Column(Boolean, default=False)    
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User

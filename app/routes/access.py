@@ -97,6 +97,7 @@ from fastapi import Request  # ✅ Make sure this is imported
 
 from uuid import uuid4
 from datetime import timedelta
+from app import models
 
 @router.post("/login-step-2")
 def login_step_2(

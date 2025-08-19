@@ -460,4 +460,4 @@ def delete_driver_credentials(
         details=f"{current_user.role} deleted credentials {creds.id} for driver {creds.user_id} (org={creds.organization_id})"
     )
 
-    return None    
+    return None     
