@@ -425,7 +425,10 @@ class OrganizationUpdate(BaseModel):
     contact_person_name: Optional[str]
     contact_person_role: Optional[str]
     latitude: Optional[float]
-    longitude: Optional[float]        
+    longitude: Optional[float]
+    license_expiry_date: Optional[date] = None
+    supported_waste_types: Optional[List[str]] = None
+            
 
     class Config:
         from_attributes = True

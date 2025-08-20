@@ -1,6 +1,6 @@
 # app/models.py
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, DateTime, Text,Date
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, DateTime, Text,Date,ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 from sqlalchemy import Enum
@@ -226,7 +226,10 @@ class Organization(Base):
     contact_person_role = Column(String, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    driver_credentials = relationship("DriverCredentials", back_populates="organization", cascade="all, delete-orphan")    
+    driver_credentials = relationship("DriverCredentials", back_populates="organization", cascade="all, delete-orphan")
+    license_expiry = Column(Date, nullable=True)  # Optional field for license expiry
+    supported_waste_types = Column(ARRAY(String), nullable=True)
+        
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 

@@ -221,7 +221,11 @@ def get_organization_details(
             "phone_number": org.phone_number,
             "address_line": org.address_line,
             "postal_code": org.postal_code,
-            "license_number": org.license_number
+            "license_number": org.license_number,
+            "ico_registered": org.ico_registered,
+            "data_retention_years": org.data_retention_years,
+            "license_expiry": org.license_expiry,
+            "supported_waste_types": org.supported_waste_types
         },
         "user_count": len(users),
         "trip_count": trip_count,
@@ -358,3 +362,163 @@ def activate_organization(
     )
 
     return {"message": f"Organization '{org.name}' has been reactivated."}
+
+# ✅ Activate a regulator (super admin only)
+@router.patch("/super/regulators/{regulator_id}/activate", response_model=schemas.UserOut)
+def activate_regulator(
+    regulator_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    regulator = db.query(User).filter(User.id == regulator_id, User.role == "regulator").first()
+    if not regulator:
+        raise HTTPException(status_code=404, detail="Regulator not found")
+
+    if regulator.is_active:
+        raise HTTPException(status_code=400, detail="Regulator already active")
+
+    regulator.is_active = True
+    db.commit()
+    db.refresh(regulator)
+
+    return regulator
+
+# 🚫 Deactivate a regulator (super_admin only)
+@router.put("/super/regulators/{regulator_id}/deactivate", response_model=schemas.UserOut)
+def deactivate_regulator(
+    regulator_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    regulator = db.query(User).filter(User.id == regulator_id, User.role == "regulator").first()
+    if not regulator:
+        raise HTTPException(status_code=404, detail="Regulator not found")
+
+    if not regulator.is_active:
+        raise HTTPException(status_code=400, detail="Regulator is already deactivated")
+
+    regulator.is_active = False
+    db.commit()
+    db.refresh(regulator)
+
+    return regulator
+
+# ❌ Permanently delete a regulator (super_admin only)
+@router.delete("/super/regulators/{regulator_id}", response_model=dict)
+def delete_regulator(
+    regulator_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    regulator = db.query(User).filter(User.id == regulator_id, User.role == "regulator").first()
+    if not regulator:
+        raise HTTPException(status_code=404, detail="Regulator not found")
+
+    db.delete(regulator)
+    db.commit()
+
+    return {"detail": f"Regulator with ID {regulator_id} has been permanently deleted."}
+
+
+# ✅ Activate an admin/user (super_admin only)
+@router.patch("/super/users/{user_id}/activate", response_model=dict)
+def activate_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user.is_active:
+        raise HTTPException(status_code=400, detail="User is already active")
+
+    # ✅ Activate the user
+    user.is_active = True
+    db.commit()
+    db.refresh(user)
+
+    # ✅ Log the action
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="activate_user",
+        details=f"Super Admin {current_user.email} activated user {user.email} (ID: {user.id})"
+    )
+
+    return {"detail": f"User {user.email} has been activated."}
+
+# ✅ Deactivate an admin/user (super_admin only)
+@router.patch("/super/users/{user_id}/deactivate", response_model=dict)
+def deactivate_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="User is already deactivated")
+
+    # ✅ Deactivate the user
+    user.is_active = False
+    db.commit()
+    db.refresh(user)
+
+    # ✅ Log the action
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="deactivate_user",
+        details=f"Super Admin {current_user.email} deactivated user {user.email} (ID: {user.id})"
+    )
+
+    return {"detail": f"User {user.email} has been deactivated."}
+
+# ✅ Permanently delete an admin/user (super_admin only)
+@router.delete("/super/users/{user_id}", response_model=dict)
+def delete_user_permanently(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("super_admin"))
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 🚫 Prevent super_admins from deleting themselves
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Super Admin cannot delete themselves")
+
+    # ✅ Delete the user
+    db.delete(user)
+    db.commit()
+
+    # ✅ Log the action
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="delete_user_permanently",
+        details=f"Super Admin {current_user.email} permanently deleted user {user.email} (ID: {user.id})"
+    )
+
+    return {"detail": f"User {user.email} has been permanently deleted."}
+
+@router.get("/{org_id}/invite-code")
+def get_invite_code(
+    org_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("admin"))
+):
+    # Check if the admin belongs to this org
+    if current_user.organization_id != org_id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this organization’s invite code")
+
+    org = db.query(models.Organization).filter_by(id=org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    return {"invite_code": org.invite_code}
