@@ -162,7 +162,15 @@ class User(Base):
     documents = relationship("Document", back_populates="user")
     testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user")
-    credentials = relationship("DriverCredentials", back_populates="driver", uselist=False)   
+    credentials = relationship("DriverCredentials", back_populates="driver", uselist=False)
+    license_number = Column(String, nullable=True)
+    license_expiry = Column(Date, nullable=True)
+    phone_number = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    regulated_waste_types = Column(ARRAY(String), default=[])   # e.g., ["clinical", "pharma", "hazardous"]
+    regulated_goods_types = Column(ARRAY(String), default=[])   # e.g., ["surgical", "pharma products"]
+    regulated_logistics_scope = Column(ARRAY(String), default=[])
+
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User

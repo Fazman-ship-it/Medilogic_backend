@@ -306,13 +306,12 @@ def create_regulator(
 
     return new_user
 
-@router.get("/super/regulators", response_model=List[UserOut])
+@router.get("/super/regulators", response_model=List[schemas.RegulatorOut])
 def list_regulators(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("super_admin"))
 ):
-    regulators = db.query(User).filter(User.role == "regulator").all()
-    return regulators
+    return db.query(User).filter(User.role == "regulator").all()
 
 
 @router.delete("/organizations/{org_id}/permanent", status_code=204)
@@ -522,3 +521,65 @@ def get_invite_code(
         raise HTTPException(status_code=404, detail="Organization not found")
 
     return {"invite_code": org.invite_code}
+
+@router.put("/regulator/profile", response_model=schemas.RegulatorOut)
+def update_regulator_profile(
+    update: schemas.RegulatorUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("regulator"))
+):
+    regulator = db.query(User).filter(User.id == current_user.id).first()
+    if not regulator:
+        raise HTTPException(status_code=404, detail="Regulator not found")
+
+    # Regulators can update only their own compliance/contact details
+    regulator.organization_name = update.organization_name
+    regulator.license_number = update.license_number
+    regulator.license_expiry = update.license_expiry
+    regulator.phone_number = update.phone_number
+    regulator.address = update.address
+    regulator.regulated_waste_types = update.regulated_waste_types
+    regulator.email = update.email
+    regulator.name = update.name
+    regulator.regulated_goods_types = update.regulated_goods_types
+    regulator.regulated_logistics_scope = update.regulated_logistics_scope
+
+    # 🚫 Prevent regulators from changing jurisdiction
+    # regulator.regulated_country = update.regulated_country
+    # regulator.regulated_state = update.regulated_state
+    # regulator.regulated_region = update.regulated_region
+
+    db.commit()
+    db.refresh(regulator)
+    return regulator
+
+@router.put("/super/regulator/{regulator_id}/jurisdiction", response_model=schemas.RegulatorOut)
+def update_regulator_jurisdiction(
+    regulator_id: UUID,
+    update: schemas.RegulatorUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    regulator = db.query(User).filter(User.id == regulator_id).first()
+    if not regulator or regulator.role != "regulator":
+        raise HTTPException(status_code=404, detail="Regulator not found")
+
+    # ✅ Only super admins can update jurisdiction
+    regulator.regulated_country = update.regulated_country
+    regulator.regulated_state = update.regulated_state
+    regulator.regulated_region = update.regulated_region
+
+    db.commit()
+    db.refresh(regulator)
+    return regulator
+
+@router.get("/admin/regulators/{regulator_id}", response_model=schemas.RegulatorOut)
+def get_regulator_by_id(
+    regulator_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("super_admin"))
+):
+    regulator = db.query(User).filter(User.id == regulator_id, User.role == "regulator").first()
+    if not regulator:
+        raise HTTPException(status_code=404, detail="Regulator not found")
+    return regulator

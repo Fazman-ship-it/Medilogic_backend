@@ -449,6 +449,39 @@ class RegulatorCreate(BaseModel):
     regulated_state: str
     regulated_region: Optional[str] = None
     
+class RegulatorUpdate(BaseModel):
+    organization_name: Optional[str]
+    name: Optional[str]
+    email: Optional[EmailStr]
+    license_number: Optional[str]
+    license_expiry: Optional[date]
+    phone_number: Optional[str]
+    address: Optional[str]
+    regulated_country: Optional[str]
+    regulated_state: Optional[str]
+    regulated_region: Optional[str]
+    regulated_waste_types: Optional[List[str]] = []
+    regulated_goods_types:Optional[List[str]] = []
+    regulated_logistics_scope:Optional[List[str]] = []
+class RegulatorOut(BaseModel):
+    id: UUID
+    email: EmailStr
+    name: str
+    role: str
+    organization_name: Optional[str]
+    license_number: Optional[str]
+    license_expiry: Optional[date]
+    phone_number: Optional[str]
+    address: Optional[str]
+    regulated_country: Optional[str]
+    regulated_state: Optional[str]
+    regulated_region: Optional[str]
+    regulated_waste_types: Optional[List[str]] = []
+    regulated_goods_types:Optional[List[str]] = []
+    regulated_logistics_scope:Optional[List[str]] = []
+    class Config:
+        from_attributes = True
+        
 
 class EnquiryCreate(BaseModel):
     name: str
