@@ -468,6 +468,7 @@ class RegulatorOut(BaseModel):
     email: EmailStr
     name: str
     role: str
+    is_active:bool
     organization_name: Optional[str]
     license_number: Optional[str]
     license_expiry: Optional[date]

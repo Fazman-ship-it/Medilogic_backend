@@ -15,4 +15,7 @@ class InvoiceStatus(str, Enum):
 class OrganizationType(str,Enum):
     clinic = "clinic"
     waste_company = "waste_company"    
+    logistics_company = "logistics_company"  # General logistics/delivery firms
+    
+    
 
