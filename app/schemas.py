@@ -85,7 +85,7 @@ class UserOut(BaseModel):
     regulated_state:Optional[str]
     regulated_region:Optional[str]
     
-class UserAdminOut(UserOut):
+class UserAdminOut(BaseModel):
     id: UUID
     name: str
     email: EmailStr
@@ -94,7 +94,8 @@ class UserAdminOut(UserOut):
     organization_id: UUID
     organization_name: Optional[str] = None
     created_at: datetime
-
+    class Config:
+        from_attributes = True
 
 class PaginatedUsers(BaseModel):
     total: int
