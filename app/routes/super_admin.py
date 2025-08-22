@@ -626,6 +626,7 @@ def get_all_admins(
             name=a.User.name,
             email=a.User.email,
             role=a.User.role,
+            is_active=a.User.is_active,
             is_verified=a.User.is_verified,
             organization_id=a.User.organization_id,
             organization_name=a.organization_name,

@@ -90,6 +90,7 @@ class UserAdminOut(BaseModel):
     name: str
     email: EmailStr
     role: RoleEnum
+    is_active: bool
     is_verified: bool
     organization_id: UUID
     organization_name: Optional[str] = None
