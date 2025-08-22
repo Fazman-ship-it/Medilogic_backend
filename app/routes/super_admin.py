@@ -553,7 +553,7 @@ def update_regulator_profile(
     db.refresh(regulator)
     return regulator
 
-@router.put("/super/regulator/{regulator_id}/jurisdiction", response_model=schemas.RegulatorOut)
+@router.patch("/super/regulator/{regulator_id}/jurisdiction", response_model=schemas.RegulatorOut)
 def update_regulator_jurisdiction(
     regulator_id: UUID,
     update: schemas.RegulatorUpdate,
@@ -564,14 +564,18 @@ def update_regulator_jurisdiction(
     if not regulator or regulator.role != "regulator":
         raise HTTPException(status_code=404, detail="Regulator not found")
 
-    # ✅ Only super admins can update jurisdiction
-    regulator.regulated_country = update.regulated_country
-    regulator.regulated_state = update.regulated_state
-    regulator.regulated_region = update.regulated_region
+    # ✅ Only update fields that were provided
+    if update.regulated_country is not None:
+        regulator.regulated_country = update.regulated_country
+    if update.regulated_state is not None:
+        regulator.regulated_state = update.regulated_state
+    if update.regulated_region is not None:
+        regulator.regulated_region = update.regulated_region
 
     db.commit()
     db.refresh(regulator)
     return regulator
+
 
 @router.get("/admin/regulators/{regulator_id}", response_model=schemas.RegulatorOut)
 def get_regulator_by_id(
