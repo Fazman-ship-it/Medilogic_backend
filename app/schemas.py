@@ -86,8 +86,15 @@ class UserOut(BaseModel):
     regulated_region:Optional[str]
     
 class UserAdminOut(UserOut):
+    id: UUID
+    name: str
+    email: EmailStr
+    role: RoleEnum
     is_active: bool
-    organization_id: UUID   
+    organization_id: UUID
+    organization_name: Optional[str] = None
+    created_at: datetime
+
 
 class PaginatedUsers(BaseModel):
     total: int

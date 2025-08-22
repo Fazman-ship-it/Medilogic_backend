@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException,status
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_role,get_current_user
@@ -603,3 +603,39 @@ def get_regulator_by_id(
     if not regulator:
         raise HTTPException(status_code=404, detail="Regulator not found")
     return regulator
+
+
+@router.get(
+    "/organization/{organization_id}",
+    response_model=List[schemas.UserAdminOut],
+    summary="Super Admin: Fetch all admins of an organization"
+)
+def get_org_admins(
+    organization_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Check role
+    if current_user.role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Super Admins can view organization admins"
+        )
+
+    # Query admins for this org
+    admins = (
+        db.query(models.User)
+        .filter(
+            models.User.organization_id == organization_id,
+            models.User.role == "admin"
+        )
+        .all()
+    )
+
+    if not admins:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No admins found for this organization"
+        )
+
+    return admins
