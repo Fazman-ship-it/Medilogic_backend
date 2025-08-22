@@ -495,7 +495,7 @@ def deactivate_user(
 # ✅ Permanently delete an admin/user (super_admin only)
 @router.delete("/super/users/{user_id}", response_model=dict)
 def delete_user_permanently(
-    user_id: int,
+    user_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
 ):
