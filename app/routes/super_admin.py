@@ -79,7 +79,6 @@ def create_user_by_super_admin(
         "user_id": new_user.id
     }
 
- 
 
 from sqlalchemy import func
 @router.get("/organizations", response_model=list[schemas.OrganizationOut])
@@ -605,37 +604,34 @@ def get_regulator_by_id(
     return regulator
 
 
-@router.get(
-    "/organization/{organization_id}",
-    response_model=List[schemas.UserAdminOut],
-    summary="Super Admin: Fetch all admins of an organization"
-)
-def get_org_admins(
-    organization_id: str,
+@router.get("/", response_model=List[schemas.UserAdminOut], summary="Super Admin: Fetch all admins across organizations")
+def get_all_admins(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(require_role("super_admin")),
 ):
-    # Check role
-    if current_user.role != "super_admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only Super Admins can view organization admins"
-        )
-
-    # Query admins for this org
     admins = (
-        db.query(models.User)
-        .filter(
-            models.User.organization_id == organization_id,
-            models.User.role == "admin"
-        )
+        db.query(models.User, models.Organization.name.label("organization_name"))
+        .join(models.Organization, models.Organization.id == models.User.organization_id)
+        .filter(models.User.role == "admin")
         .all()
     )
 
     if not admins:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No admins found for this organization"
-        )
+        raise HTTPException(status_code=404, detail="No admins found")
 
-    return admins
+    # Transform results into schema format
+    result = [
+        schemas.UserAdminOut(
+            id=a.User.id,
+            name=a.User.name,
+            email=a.User.email,
+            role=a.User.role,
+            is_verified=a.User.is_verified,
+            organization_id=a.User.organization_id,
+            organization_name=a.organization_name,
+            created_at=a.User.created_at,
+        )
+        for a in admins
+    ]
+
+    return result
