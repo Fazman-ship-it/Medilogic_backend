@@ -14,6 +14,7 @@ from app.utilites.user_onboarding import send_welcome_email
 from uuid import UUID
 router = APIRouter(prefix="/super", tags=["Super Admin"])
 
+
 @router.post("/create-user", status_code=201)
 def create_user_by_super_admin(
     data: schemas.SuperAdminCreateUser,
@@ -28,6 +29,17 @@ def create_user_by_super_admin(
     org = db.query(models.Organization).filter_by(id=data.organization_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found.")
+
+    # ✅ Prevent multiple admins per organization
+    if data.role == "admin":
+        existing_admin = db.query(models.User).filter_by(
+            organization_id=org.id, role="admin"
+        ).first()
+        if existing_admin:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Organization {org.name} already has an admin assigned."
+            )
 
     # Create user
     hashed_pw = get_password_hash(data.password)
@@ -48,8 +60,7 @@ def create_user_by_super_admin(
     log_activity(
         db=db,
         user_id=current_user.id,
-        action="create_user_by_super_admin",
-        details=f"Super admin {current_user.email} created {data.role} user {data.email} in org {org.name}"
+        action=f"Created {data.role} '{data.email}' for organization {org.name}"
     )
 
     # ✅ Send welcome email to the new user
@@ -63,7 +74,12 @@ def create_user_by_super_admin(
         login_link="https://medilogic.vercel.app/login"
     )
 
-    return {"message": f"{data.role.capitalize()} user created", "user_id": new_user.id}
+    return {
+        "message": f"{data.role.capitalize()} user created successfully",
+        "user_id": new_user.id
+    }
+
+ 
 
 from sqlalchemy import func
 @router.get("/organizations", response_model=list[schemas.OrganizationOut])
