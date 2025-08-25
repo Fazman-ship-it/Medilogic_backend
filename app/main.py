@@ -51,6 +51,7 @@ from app.routes import app_notifications
 from app.routes import com
 from app.routes import document_upload
 from app.routes import driver_credentials
+from app.routes import international_application
 
 # app/main.py
 
@@ -119,7 +120,7 @@ app.include_router(app_notifications.router)
 app.include_router(com.router)
 app.include_router(document_upload.router)
 app.include_router(driver_credentials.router)
-
+app.include_router(international_application.router)
 
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")
