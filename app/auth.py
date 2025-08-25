@@ -3,7 +3,9 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models import User  # ✅ You imported User
+from app.models import User
+import secrets
+import string # ✅ You imported User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -81,3 +83,8 @@ def get_organization_id_from_token(token: str):
     if payload is None:
         return None
     return payload.get("organization_id")
+
+
+def generate_temp_password(length: int = 10) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))

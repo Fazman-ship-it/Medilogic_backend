@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, EmailStr, Field, HttpUrl
+from pydantic import BaseModel, EmailStr, Field, HttpUrl,constr
 from datetime import datetime, date
 from typing import Optional, Dict, Union, List, Literal
 from app.models import RecurrenceRule
@@ -960,3 +960,82 @@ class DriverCredentialsOut(DriverCredentialsBase):
 
     class Config:
         form_attributes = True
+
+
+# app/schemas/international_application.py
+from uuid import UUID
+from datetime import datetime
+from typing import Optional
+from pydantic import BaseModel, EmailStr, constr
+
+
+# ---------------------------
+# International Application Schemas
+# ---------------------------
+
+class IntlBasicCreate(BaseModel):
+    email: EmailStr
+    name: str
+    country: str
+    state: str
+    zip_code: str
+    password:str
+    confirm_password:str
+    accept_terms: bool
+
+class IntlApplicationOut(BaseModel):
+    id: UUID
+    email: EmailStr
+    name: str
+    country: str
+    state:str
+    zip_code:str
+    status: str
+    user_id: Optional[UUID] = None
+    has_paid_application_fee: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class IntlDetailsUpdate(BaseModel):
+    phone_number: Optional[str] = None
+    date_of_birth: Optional[str]= None
+    address:Optional[str]= None
+    visa_required: Optional[bool] = None
+    sector: Optional[str] = None       # e.g., "health", "tech"
+    role_applied_for: Optional[str] = None
+    state: Optional[str] = None        # NEW (added based on your request)
+    zip_code: Optional[str] = None     # NEW (added based on your request)
+    # documents path
+    cv_path: Optional[str]= None
+    passport_path: Optional[str]= None
+    driver_license_path: Optional[str] = None
+    certificate_path: Optional[str] = None
+    personal_statement:Optional[str]= None
+    
+# ---------------------------
+# Payment Schemas
+# ---------------------------
+class PaymentCreate(BaseModel):
+    application_id: UUID
+    amount: float                     # using float here, db handles Decimal/Numeric
+    currency: Optional[str] = "GBP"
+    provider: Optional[str] = None    # e.g., "stripe", "paystack"
+    reference: Optional[str] = None   # txn id or reference
+
+class PaymentOut(BaseModel):
+    id: UUID
+    application_id: UUID
+    amount: float
+    currency: str
+    provider: Optional[str]
+    reference: Optional[str]
+    status: str
+    is_verified: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

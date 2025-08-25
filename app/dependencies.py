@@ -87,6 +87,30 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
         await websocket.close(code=1008)
         return
 
-    return user    
+    return user
+
+# app/dependencies/applicants.py
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.auth import get_current_user
+from app.models import InternationalApplication
+
+def get_current_intl_application(db: Session, user_id):
+    app = db.query(InternationalApplication).filter(
+        InternationalApplication.user_id == user_id
+    ).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="International application not found for user")
+    return app
+
+def require_application_fee_paid(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),
+):
+    app = get_current_intl_application(db, current_user.id)
+    if not app.has_paid_application_fee:
+        raise HTTPException(status_code=402, detail="Payment required to upload gated documents")
+    return app    
 
 

@@ -1,6 +1,6 @@
 # app/models.py
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, DateTime, Text,Date,ARRAY
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, ForeignKey, DateTime, Text,Date,ARRAY,Numeric
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 from sqlalchemy import Enum
@@ -71,7 +71,11 @@ class AuditStatusEnum(str, enum.Enum):
     passed = "passed"
     failed = "failed"
     escalated = "escalated"
-        
+
+class InternationalApplicationStatus(str, enum.Enum):
+    submitted = "submitted"
+    approved = "approved"
+    rejected = "rejected"        
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -170,7 +174,7 @@ class User(Base):
     regulated_waste_types = Column(ARRAY(String), default=[])   # e.g., ["clinical", "pharma", "hazardous"]
     regulated_goods_types = Column(ARRAY(String), default=[])   # e.g., ["surgical", "pharma products"]
     regulated_logistics_scope = Column(ARRAY(String), default=[])
-
+    international_applications = relationship("InternationalApplication", back_populates="user")
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
@@ -237,6 +241,7 @@ class Organization(Base):
     driver_credentials = relationship("DriverCredentials", back_populates="organization", cascade="all, delete-orphan")
     license_expiry = Column(Date, nullable=True)  # Optional field for license expiry
     supported_waste_types = Column(ARRAY(String), nullable=True)
+    applications = relationship("InternationalApplication", back_populates="organization")
         
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
@@ -643,3 +648,58 @@ class DriverCredentials(Base):
     driver = relationship("User", back_populates="credentials")
     organization = relationship("Organization", back_populates="driver_credentials")    
     documents = relationship("Document", back_populates="credential", cascade="all, delete-orphan")
+    
+
+class InternationalApplication(Base):
+    __tablename__ = "international_applications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # submitted before approval
+    email = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    country = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    zip_code = Column(String, nullable=False)
+    status = Column(String, default=InternationalApplicationStatus.submitted, nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # set on approval
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    # Gate fee
+    has_paid_application_fee = Column(Boolean, default=False)
+
+    # Post-approval details (nullable until filled)
+    email = Column(String, nullable=True)
+    name = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    zip_code = Column(String, nullable=True)
+    state = Column(String, nullable=True)
+    date_of_birth = Column(Date, nullable=True)
+    phone_number = Column(String, nullable=True)
+    visa_required = Column(Boolean, nullable=True)
+    sector = Column(String, nullable=True)  # "health" | "tech" | etc.
+    role_applied_for = Column(String, nullable=True)  # "nurse", "doctor", "software developer", etc.
+        
+    # gated uploads (file paths)
+    cv_path = Column(String, nullable=True)
+    passport_path = Column(String, nullable=True)
+    drivers_license_path = Column(String, nullable=True)
+    personal_statement_path = Column(String, nullable=True)
+    certificate_path = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+   #relationship
+    user = relationship("User", back_populates="international_applications")
+    organization = relationship("Organization", back_populates="applications")
+    
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("international_applications.id"), nullable=False)
+    amount = Column(Numeric(10, 2), nullable=False)
+    currency = Column(String, default="GBP", nullable=False)
+    provider = Column(String, nullable=True)     # e.g. "stripe", "paystack"
+    reference = Column(String, nullable=True)    # provider reference / txn id
+    status = Column(String, default="succeeded") # keep simple for now
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    is_verified = Column(Boolean, default=False) # confired via provider webhook
