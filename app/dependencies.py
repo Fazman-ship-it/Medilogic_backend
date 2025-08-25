@@ -93,7 +93,7 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
 from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 from app.models import InternationalApplication
 
 def get_current_intl_application(db: Session, user_id):
