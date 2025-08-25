@@ -1039,3 +1039,18 @@ class PaymentOut(BaseModel):
 
     class Config:
         from_attributes = True
+        
+
+class DailyViewStat(BaseModel):
+    date: str    # ISO date string (e.g. "2025-08-25")
+    views: int   # Number of views on that day
+
+class ApplicationAnalyticsResponse(BaseModel):
+    application_id: str
+    total_views: int
+    unique_organizations: int
+    last_viewed_at: Optional[str]
+    views_over_time: List[DailyViewStat] 
+
+    class Config:
+        from_attributes = True      

@@ -242,6 +242,7 @@ class Organization(Base):
     license_expiry = Column(Date, nullable=True)  # Optional field for license expiry
     supported_waste_types = Column(ARRAY(String), nullable=True)
     applications = relationship("InternationalApplication", back_populates="organization")
+    views = relationship("ApplicationView", back_populates="organization", cascade="all, delete-orphan")
         
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
@@ -690,6 +691,7 @@ class InternationalApplication(Base):
    #relationship
     user = relationship("User", back_populates="international_applications")
     organization = relationship("Organization", back_populates="applications")
+    views = relationship("ApplicationView", back_populates="application", cascade="all, delete-orphan")
     
 class Payment(Base):
     __tablename__ = "payments"
@@ -703,3 +705,15 @@ class Payment(Base):
     status = Column(String, default="succeeded") # keep simple for now
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_verified = Column(Boolean, default=False) # confired via provider webhook
+    
+# models.py
+class ApplicationView(Base):
+    __tablename__ = "application_views"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("international_applications.id"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    viewed_at = Column(DateTime, default=datetime.utcnow)
+    #Releationship
+    application = relationship("InternationalApplication", back_populates="views")
+    organization = relationship("Organization", back_populates="views") 

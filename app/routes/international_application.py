@@ -12,6 +12,7 @@ from app.dependencies import get_current_user, require_role
 import uuid, os, shutil
 import datetime as dt
 from datetime import datetime
+from app.utilites.email_utilites import send_email
 
 router = APIRouter(prefix="/applications/international", tags=["International Applications"])
 
@@ -344,3 +345,38 @@ def list_paid_applications_for_org_admins(
         "limit": limit,
         "applications": apps
     }
+    
+@router.get("/admin/applications/{application_id}", response_model=schemas.IntlApplicationOut)
+async def get_application_by_id(
+    application_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("admin"))
+):
+    app = db.query(models.InternationalApplication).filter(
+        models.InternationalApplication.id == application_id,
+        models.InternationalApplication.has_paid_application_fee == True
+    ).first()
+
+    if not app:
+        return {"error": "Application not found"}
+
+    # ✅ Record a new view
+    new_view = models.ApplicationView(
+        application_id=app.id,
+        organization_id=current_user.organization_id
+    )
+    db.add(new_view)
+    db.commit()
+
+    # ✅ Trigger email notification to applicant
+    subject = "Your application has been viewed"
+    body = f"""
+    <p>Hello {app.full_name},</p>
+    <p>Your international application was viewed today by <b>{current_user.organization.name}</b>.</p>
+    <p>Keep checking your dashboard for updates.</p>
+    <br>
+    <p>- Medilogic Team</p>
+    """
+    await send_email(subject, [app.email], body)
+
+    return app
