@@ -18,6 +18,9 @@ from app.retrain_location_model import retrain_location_model
 from apscheduler.triggers.interval import IntervalTrigger
 from app.utilites.compliance_auditor import run_compliance_audit_check
 from app.notifications import send_compliance_alert
+from datetime import date
+from app import database
+from app.utilites.email_utilites import send_email
 
 # === JOB 1: Delete Unverified Accounts ===
 def delete_unverified_accounts():
@@ -148,8 +151,47 @@ def audit_compliance_job():
 
         print(f"[Compliance Audit] {len(flagged_orgs)} orgs flagged.")
     finally:
-        db.close()    
+        db.close() 
+        
+# === JOB 5: Expire Badges ===
+def expire_badges():
+    db: Session = database.SessionLocal()
+    try:
+        today = date.today()
+        expired_users = (
+            db.query(models.InternationalApplication)
+            .filter(
+                models.InternationalApplication.subscription_end_date != None,
+                models.InternationalApplication.subscription_end_date < today
+            )
+            .all()
+        )
 
+        for app in expired_users:
+            app.badge_type = models.BadgeType.none
+            app.subscription_end_date = None
+
+            # 👇 fetch user email
+            user = db.query(models.User).filter(models.User.id == app.user_id).first()
+            if user and user.email:
+                send_email(
+                    to_email=user.email,
+                    subject="Your Medilogic Verification Badge Has Expired",
+                    body=(
+                        f"Hello {user.full_name or 'User'},\n\n"
+                        "Your Medilogic verification badge subscription has expired. "
+                        "To continue enjoying higher visibility and application analytics, "
+                        "please renew your subscription.\n\n"
+                        "🔗 Login to your dashboard to renew.\n\n"
+                        "Best regards,\n"
+                        "The Medilogic Team"
+                    )
+                )
+
+            print(f"Downgraded {app.user_id} to no badge (expired)")
+        db.commit()
+    finally:
+        db.close()
 
 # === Initialize Scheduler ===
 scheduler = BackgroundScheduler(timezone=timezone("Europe/London"))
@@ -240,8 +282,17 @@ scheduler.add_job(
     trigger=IntervalTrigger(days=1),
     id="daily_compliance_audit"
 )
+# 10. Expire badges daily at midnight
+scheduler.add_job(
+    expire_badges,
+    trigger="cron",
+    hour=0,
+    minute=0,
+    id="expire_badges"
+)
 
 # === Start Scheduler ===
 def start_scheduler():
     scheduler.start()
     print("[Scheduler] Started.")
+

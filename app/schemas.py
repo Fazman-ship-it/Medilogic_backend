@@ -14,6 +14,7 @@ from datetime import date, time
 from app.models import PendingRole
 from uuid import UUID
 import enum
+from app.models import BadgeType, SubscriptionStatus
 # --------------------------
 # Trip Schemas
 # --------------------------
@@ -973,6 +974,11 @@ from pydantic import BaseModel, EmailStr, constr
 # International Application Schemas
 # ---------------------------
 
+class BadgeType(str, Enum):
+    none = "none"
+    green = "green"
+    blue = "blue"
+
 class IntlBasicCreate(BaseModel):
     email: EmailStr
     name: str
@@ -995,6 +1001,10 @@ class IntlApplicationOut(BaseModel):
     has_paid_application_fee: bool
     created_at: datetime
     updated_at: datetime
+    badge_type: BadgeType
+    subscription_status: SubscriptionStatus
+    subscription_start: Optional[datetime] = None
+    subscription_end: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -1041,16 +1051,47 @@ class PaymentOut(BaseModel):
         from_attributes = True
         
 
+# app/schemas/analytics.py (or wherever you keep analytics schemas)
+from typing import Optional, Literal, List, Dict
+from pydantic import BaseModel
+
 class DailyViewStat(BaseModel):
-    date: str    # ISO date string (e.g. "2025-08-25")
-    views: int   # Number of views on that day
+    date: str
+    views: int
+
+# Minimal Plotly schema so frontend can render directly with Plotly.newPlot()
+class PlotlyTrace(BaseModel):
+    type: Literal["scatter"] = "scatter"
+    mode: Literal["lines", "lines+markers"] = "lines+markers"
+    name: str = "Views"
+    x: List[str]  # ISO date strings
+    y: List[int]  # counts per day
+
+class PlotlyLayout(BaseModel):
+    title: str = "Application Views Over Time"
+    xaxis: Dict = {"title": "Date"}
+    yaxis: Dict = {"title": "Views"}
+    margin: Dict = {"l": 40, "r": 20, "t": 50, "b": 40}
+
+class PlotlyChartPayload(BaseModel):
+    traces: List[PlotlyTrace]
+    layout: PlotlyLayout
 
 class ApplicationAnalyticsResponse(BaseModel):
     application_id: str
     total_views: int
-    unique_organizations: int
-    last_viewed_at: Optional[str]
-    views_over_time: List[DailyViewStat] 
+    unique_organizations: Optional[int] = None
+    last_viewed_at: Optional[str] = None
+    views_over_time: List[DailyViewStat] = []
+    extra_insights: Optional[dict] = None
+    # New: chart payload for Plotly (only for premium users)
+    chart: Optional[PlotlyChartPayload] = None 
 
     class Config:
-        from_attributes = True      
+        from_attributes = True
+
+class SubscriptionRequest(BaseModel):
+    badge_type: BadgeType  # "green" or "blue"
+    
+    class config:
+        from_attributes = True

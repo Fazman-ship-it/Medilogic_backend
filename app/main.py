@@ -53,6 +53,7 @@ from app.routes import document_upload
 from app.routes import driver_credentials
 from app.routes import international_application
 from app.routes import appliciant_analytics
+from app.routes import subscriptions
 
 # app/main.py
 
@@ -123,6 +124,7 @@ app.include_router(document_upload.router)
 app.include_router(driver_credentials.router)
 app.include_router(international_application.router)
 app.include_router(appliciant_analytics.router)
+app.include_router(subscriptions.router)
 
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")

@@ -75,7 +75,19 @@ class AuditStatusEnum(str, enum.Enum):
 class InternationalApplicationStatus(str, enum.Enum):
     submitted = "submitted"
     approved = "approved"
-    rejected = "rejected"        
+    rejected = "rejected"
+    
+class BadgeType(str,enum.Enum):
+    none = "none"
+    green = "green"
+    blue = "blue"
+
+
+# ✅ Enum for subscription lifecycle
+class SubscriptionStatus(str,enum.Enum):
+    active = "active"
+    expired = "expired"
+    cancelled = "cancelled"            
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -692,6 +704,10 @@ class InternationalApplication(Base):
     user = relationship("User", back_populates="international_applications")
     organization = relationship("Organization", back_populates="applications")
     views = relationship("ApplicationView", back_populates="application", cascade="all, delete-orphan")
+    badge_type = Column(SqlEnum(BadgeType, name="badgetype"),default=BadgeType.none,nullable=False)
+    subscription_status = Column(SqlEnum(SubscriptionStatus, name="subscriptionstatus"),default=SubscriptionStatus.expired,nullable=False)
+    subscription_start_date = Column(DateTime, nullable=True)
+    subscription_end_date = Column(DateTime, nullable=True)
     
 class Payment(Base):
     __tablename__ = "payments"
@@ -717,3 +733,4 @@ class ApplicationView(Base):
     #Releationship
     application = relationship("InternationalApplication", back_populates="views")
     organization = relationship("Organization", back_populates="views") 
+

@@ -308,32 +308,40 @@ def list_all_international_applications(
 
 from fastapi import Query
 
-@router.get("/admin/applications", response_model=list[schemas.IntlApplicationOut])
+@router.get("/admin/applications")
 def list_paid_applications_for_org_admins(
     country: str = None,
     start_date: datetime = None,
     end_date: datetime = None,
-    skip: int = Query(0, ge=0, description="Number of records to skip"),   # Pagination start
-    limit: int = Query(20, ge=1, le=100, description="Max records to return"),  # Page size
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Max records to return"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))
 ):
-    query = db.query(InternationalApplication).filter(
-        InternationalApplication.has_paid_application_fee == True,
-        InternationalApplication.status == "submitted"
+    query = db.query(models.InternationalApplication).filter(
+        models.InternationalApplication.has_paid_application_fee == True,
+        models.InternationalApplication.status == "submitted"
     )
 
     if country:
-        query = query.filter(InternationalApplication.country == country)
+        query = query.filter(models.InternationalApplication.country == country)
     if start_date and end_date:
         query = query.filter(
-            InternationalApplication.created_at.between(start_date, end_date)
+            models.InternationalApplication.created_at.between(start_date, end_date)
         )
 
-    total_count = query.count()  # total applications (for UI)
+    total_count = query.count()
 
+    # Order by badge priority (blue > green > none), then newest first
     apps = (
-        query.order_by(InternationalApplication.created_at.desc())
+        query.order_by(
+            db.case(
+                (models.InternationalApplication.badge_type == models.BadgeType.blue, 1),
+                (models.InternationalApplication.badge_type == models.BadgeType.green, 2),
+                else_=3
+            ),
+            models.InternationalApplication.created_at.desc()
+        )
         .offset(skip)
         .limit(limit)
         .all()
@@ -360,10 +368,11 @@ async def get_application_by_id(
     if not app:
         return {"error": "Application not found"}
 
-    # ✅ Record a new view
+    # ✅ Record a new view with badge awareness
     new_view = models.ApplicationView(
         application_id=app.id,
-        organization_id=current_user.organization_id
+        organization_id=current_user.organization_id,
+        badge_type=app.badge_type
     )
     db.add(new_view)
     db.commit()
