@@ -51,6 +51,7 @@ def create_user_by_super_admin(
         organization_id=org.id,
         is_verified=True,
         email_verification_token=None,
+        is_active=True
     )
     db.add(new_user)
     db.commit()
@@ -303,7 +304,9 @@ def create_regulator(
         role="regulator",
         regulated_country=regulator.regulated_country,
         regulated_state=regulator.regulated_state,
-        regulated_region=regulator.regulated_region
+        regulated_region=regulator.regulated_region,
+        is_verified=True,
+        is_active=True
     )
 
     db.add(new_user)

@@ -464,6 +464,7 @@ class RegulatorUpdate(BaseModel):
     name: Optional[str]
     email: Optional[EmailStr]
     license_number: Optional[str]
+    is_active: bool
     license_expiry: Optional[date]
     phone_number: Optional[str]
     address: Optional[str]
@@ -479,6 +480,7 @@ class RegulatorOut(BaseModel):
     name: str
     role: str
     is_active:bool
+    is_verified:bool
     organization_name: Optional[str]
     license_number: Optional[str]
     license_expiry: Optional[date]
