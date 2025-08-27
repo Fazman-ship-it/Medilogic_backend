@@ -23,6 +23,14 @@ from app.schemas import UserUpdate
 from app.models import Organization
 from app.schemas import UserStatusOut
 from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from datetime import datetime
+
+from app.models import User, ActivityLog
+from app.dependencies import get_db, get_current_user
+from app.schemas import UserUpdate, DeleteAccountRequest
+from app.utilites.logging import log_activity
 
 router = APIRouter(
     prefix="/users", tags=['users'])
@@ -30,47 +38,28 @@ router = APIRouter(
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from datetime import datetime
-
-from app.models import User, ActivityLog
-from app.dependencies import get_db, get_current_user
-
-router = APIRouter()
-
-@router.delete("/users/{user_id}", status_code=204)
-def delete_user(
-    user_id: UUID,
+@router.delete("/users/me", status_code=204)
+def delete_own_account(
+    request: DeleteAccountRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    user_to_delete = db.query(User).filter(User.id == user_id).first()
-    if not user_to_delete:
-        raise HTTPException(status_code=404, detail="User not found")
+    # ✅ Verify password
+    if not pwd_context.verify(request.password, current_user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid password")
 
-    # 🚫 Check access control
-    if current_user.role == "admin":
-        if user_to_delete.organization_id != current_user.organization_id:
-            raise HTTPException(status_code=403, detail="Cannot delete users outside your organization")
-    elif current_user.role != "super_admin":
-        raise HTTPException(status_code=403, detail="Only admins or super admins can delete users")
-
-    # ✅ Log activity before deletion
+    # 📝 Log before deletion (include reason)
     log_activity(
         db=db,
-        user_id=current_user.id,  # Who performed it
-        action="delete_user",
-        details=f"Deleted user: {user_to_delete.email} (ID: {user_to_delete.id})",
+        user_id=current_user.id,
+        action="delete_own_account",
+        details=f"User {current_user.email} deleted their own account. Reason: {request.reason}",
         timestamp=datetime.utcnow(),
-        organization_id=current_user.organization_id  # Logs are scoped to org
+        organization_id=current_user.organization_id
     )
-    # 🗑️ Check if the user is trying to delete themselves
-    if user_to_delete.id == current_user.id:
-        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
 
-    # 🚮 Delete the user
-    db.delete(user_to_delete)
+    # 🚮 Delete user
+    db.delete(current_user)
     db.commit()
 
 

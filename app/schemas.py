@@ -81,6 +81,8 @@ class UserOut(BaseModel):
     name: str
     email: EmailStr
     role: RoleEnum
+    is_active: bool
+    is_verified: bool
     created_at: datetime
     regulated_country:Optional[str]
     regulated_state:Optional[str]
@@ -1097,3 +1099,7 @@ class SubscriptionRequest(BaseModel):
     
     class config:
         from_attributes = True
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+    reason: Optional[str] = None

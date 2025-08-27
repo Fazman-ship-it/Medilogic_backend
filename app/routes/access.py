@@ -30,7 +30,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="access/login")
 
-
 @router.post("/login-step-1")
 def login_step_1(
     request: Request,
@@ -44,6 +43,10 @@ def login_step_1(
 
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Please verify your email before logging in.")
+
+    # 🚨 Check if user is active
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Your account is inactive. Contact support.")
 
     # 🔐 Generate 4-digit code and expiry
     code = str(secrets.randbelow(10000)).zfill(4)

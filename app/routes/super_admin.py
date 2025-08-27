@@ -495,34 +495,6 @@ def deactivate_user(
 
     return {"detail": f"User {user.email} has been deactivated."}
 
-# ✅ Permanently delete an admin/user (super_admin only)
-@router.delete("/super/users/{user_id}", response_model=dict)
-def delete_user_permanently(
-    user_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("super_admin"))
-):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # 🚫 Prevent super_admins from deleting themselves
-    if user.id == current_user.id:
-        raise HTTPException(status_code=400, detail="Super Admin cannot delete themselves")
-
-    # ✅ Delete the user
-    db.delete(user)
-    db.commit()
-
-    # ✅ Log the action
-    log_activity(
-        db=db,
-        user_id=current_user.id,
-        action="delete_user_permanently",
-        details=f"Super Admin {current_user.email} permanently deleted user {user.email} (ID: {user.id})"
-    )
-
-    return {"detail": f"User {user.email} has been permanently deleted."}
 
 @router.get("/{org_id}/invite-code")
 def get_invite_code(
