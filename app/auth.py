@@ -6,8 +6,21 @@ from app.config import settings
 from app.models import User
 import secrets
 import string # ✅ You imported User
-
+from uuid import UUID
+from datetime import datetime
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def serialize_for_jwt(data: dict):
+    """Convert UUIDs and datetimes to strings so they're safe for JWT payloads."""
+    clean = {}
+    for k, v in data.items():
+        if isinstance(v, UUID):
+            clean[k] = str(v)
+        elif isinstance(v, datetime):
+            clean[k] = v.isoformat()
+        else:
+            clean[k] = v
+    return clean
 
 # ✅ Verify plain vs hashed password
 def verify_password(plain_password, hashed_password):
@@ -28,15 +41,16 @@ from jose import jwt
 from datetime import datetime, timedelta
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
+    to_encode = serialize_for_jwt(data).copy()  # ✅ safe copy
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
+
 def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(days=7))  # default: 7 days
+    to_encode = serialize_for_jwt(data).copy()  # ✅ safe copy
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=7))
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.REFRESH_SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -77,12 +91,11 @@ def get_user_name_from_token(token: str):
         return None
     return payload.get("name")
 
-# ✅ ✅ NEW: Extract organization ID
 def get_organization_id_from_token(token: str):
     payload = verify_token(token)
     if payload is None:
         return None
-    return payload.get("organization_id")
+    return payload.get("org_id")   # ✅ match login_step_2
 
 
 def generate_temp_password(length: int = 10) -> str:

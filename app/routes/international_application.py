@@ -4,15 +4,16 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from app.database import get_db
 from app import models, schemas
-from app.models import InternationalApplication, InternationalApplicationStatus 
+from app.models import InternationalApplication, InternationalApplicationStatus, Payment 
 from app.auth import get_password_hash, generate_temp_password
 from app.utilites.logging import log_activity
 from app.utilites.applicant_email import send_applicant_approved_email
 from app.dependencies import get_current_user, require_role
 import uuid, os, shutil
 import datetime as dt
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.utilites.email_utilites import send_email
+from sqlalchemy import func
 
 router = APIRouter(prefix="/applications/international", tags=["International Applications"])
 
@@ -389,3 +390,71 @@ async def get_application_by_id(
     await send_email(subject, [app.email], body)
 
     return app
+
+
+@router.get("/dashboard")
+def finance_dashboard(
+    db: Session = Depends(get_db),
+    user=Depends(require_role("super_admin"))
+):
+    # 1. Total international applicants
+    total_applicants = db.query(InternationalApplication).count()
+
+    # 2. Applicants who paid application fee
+    paid_applicants = db.query(InternationalApplication).filter(
+        InternationalApplication.has_paid_application_fee == True
+    ).count()
+
+    # Sum revenue from payments marked as application fees (amount ~ 150)
+    one_term_revenue = db.query(func.sum(Payment.amount)).filter(
+        Payment.is_verified == True,
+        Payment.amount == 150
+    ).scalar() or 0
+
+    # 3. Subscriptions by badge
+    green_subs = db.query(InternationalApplication).filter(
+        InternationalApplication.badge_type == "green",
+        InternationalApplication.subscription_status == "active"
+    ).count()
+
+    blue_subs = db.query(InternationalApplication).filter(
+        InternationalApplication.badge_type == "blue",
+        InternationalApplication.subscription_status == "active"
+    ).count()
+
+    # Revenue from subscriptions
+    sub_revenue = db.query(func.sum(Payment.amount)).filter(
+        Payment.is_verified == True,
+        Payment.amount != 150
+    ).scalar() or 0
+
+    # 4. Monthly revenue trend (last 6 months)
+    last_6_months = []
+    for i in range(6):
+        month_start = (datetime.utcnow().replace(day=1) - timedelta(days=30*i)).replace(day=1)
+        month_end = (month_start + timedelta(days=32)).replace(day=1)  # next month 1st day
+
+        month_revenue = db.query(func.sum(Payment.amount)).filter(
+            Payment.is_verified == True,
+            Payment.created_at >= month_start,
+            Payment.created_at < month_end
+        ).scalar() or 0
+
+        last_6_months.append({
+            "month": month_start.strftime("%b %Y"),
+            "revenue": float(month_revenue)
+        })
+
+    return {
+        "applicants": {
+            "total": total_applicants,
+            "paid_application_fee": paid_applicants,
+            "one_term_revenue": float(one_term_revenue)
+        },
+        "subscriptions": {
+            "green_active": green_subs,
+            "blue_active": blue_subs,
+            "revenue": float(sub_revenue)
+        },
+        "monthly_revenue_trend": list(reversed(last_6_months))
+    }
