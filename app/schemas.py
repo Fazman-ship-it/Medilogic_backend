@@ -1103,3 +1103,26 @@ class SubscriptionRequest(BaseModel):
 class DeleteAccountRequest(BaseModel):
     password: str
     reason: Optional[str] = None
+    
+    class config:
+        from_attributes = True
+
+
+# ✅ Request schema (optional — empty for now)
+class RestoreUserRequest(BaseModel):
+    """Reserved for future use, e.g., adding a restore reason."""
+    pass
+
+
+# ✅ Response schema
+class RestoreUserResponse(BaseModel):
+    id: UUID
+    email: str
+    is_active: bool
+    restored_at: datetime
+    restored_by: UUID  # Who performed the restore
+    
+    class config:
+        from_attributes = True
+
+    

@@ -187,6 +187,8 @@ class User(Base):
     regulated_goods_types = Column(ARRAY(String), default=[])   # e.g., ["surgical", "pharma products"]
     regulated_logistics_scope = Column(ARRAY(String), default=[])
     international_applications = relationship("InternationalApplication", back_populates="user")
+    deleted_at = Column(DateTime, nullable=True)
+    deletion_reason = Column(Text, nullable=True)
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User

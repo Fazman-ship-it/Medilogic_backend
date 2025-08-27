@@ -48,18 +48,25 @@ def delete_own_account(
     if not pwd_context.verify(request.password, current_user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid password")
 
-    # 📝 Log before deletion (include reason)
+    # 🚫 Prevent double deletion
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Account already deleted")
+
+    # 📝 Mark account as deleted instead of removing it
+    current_user.is_active = False
+    current_user.deleted_at = datetime.utcnow()
+    current_user.deletion_reason = request.reason
+
+    # 📝 Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
-        action="delete_own_account",
-        details=f"User {current_user.email} deleted their own account. Reason: {request.reason}",
+        action="soft_delete_account",
+        details=f"User {current_user.email} marked their account as deleted. Reason: {request.reason}",
         timestamp=datetime.utcnow(),
         organization_id=current_user.organization_id
     )
 
-    # 🚮 Delete user
-    db.delete(current_user)
     db.commit()
 
 
@@ -97,3 +104,44 @@ def update_my_account(
             "email": current_user.email
         }
     }
+    
+@router.patch("/users/{user_id}/restore", status_code=200)
+def restore_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 🔎 Fetch user
+    user_to_restore = db.query(User).filter(User.id == user_id).first()
+    if not user_to_restore:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 🔒 Access Control
+    if current_user.role == "admin":
+        if user_to_restore.organization_id != current_user.organization_id:
+            raise HTTPException(status_code=403, detail="Admins can only restore users in their own organization")
+    elif current_user.role != "super_admin":
+        raise HTTPException(status_code=403, detail="Only admins or super admins can restore users")
+
+    # 🚫 Ensure the user is actually deleted
+    if user_to_restore.is_active:
+        raise HTTPException(status_code=400, detail="User account is already active")
+
+    # ✅ Restore user
+    user_to_restore.is_active = True
+    user_to_restore.deleted_at = None
+    user_to_restore.deletion_reason = None
+
+    db.commit()
+
+    # 📝 Log activity
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="restore_user",
+        details=f"Restored user: {user_to_restore.email} (ID: {user_to_restore.id})",
+        timestamp=datetime.utcnow(),
+        organization_id=current_user.organization_id
+    )
+
+    return {"message": f"User {user_to_restore.email} has been restored successfully."}    
