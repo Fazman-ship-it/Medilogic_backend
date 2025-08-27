@@ -1126,3 +1126,11 @@ class RestoreUserResponse(BaseModel):
         from_attributes = True
 
     
+class DeletedUser(BaseModel):
+    id: UUID
+    email: EmailStr
+    deleted_at: datetime
+    deletion_reason: Optional[str] = None
+
+    class config:
+        from_attributes = True

@@ -26,7 +26,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
-
+from app.schemas import DeletedUser
 from app.models import User, ActivityLog
 from app.dependencies import get_db, get_current_user
 from app.schemas import UserUpdate, DeleteAccountRequest
@@ -144,4 +144,47 @@ def restore_user(
         organization_id=current_user.organization_id
     )
 
-    return {"message": f"User {user_to_restore.email} has been restored successfully."}    
+    return {"message": f"User {user_to_restore.email} has been restored successfully."}
+
+@router.get("/users/deleted", response_model=list[DeletedUser])
+def get_deleted_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 🔒 Only admins or super_admins can view deleted users
+    if current_user.role == "admin":
+        users = (
+            db.query(User)
+            .filter(
+                User.organization_id == current_user.organization_id,
+                User.is_active == False
+            )
+            .all()
+        )
+    elif current_user.role == "super_admin":
+        users = db.query(User).filter(User.is_active == False).all()
+    else:
+        raise HTTPException(status_code=403, detail="Not authorized to view deleted users")
+
+    return users
+
+@router.get("/users/deleted/{user_id}", response_model=DeletedUser)
+def get_deleted_user(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 🔍 Fetch user
+    user = db.query(User).filter(User.id == user_id, User.is_active == False).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Deleted user not found")
+
+    # 🔒 Authorization
+    if current_user.role == "admin" and user.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this deleted user")
+
+    if current_user.role not in ["admin", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized to view deleted users")
+
+    return user    
