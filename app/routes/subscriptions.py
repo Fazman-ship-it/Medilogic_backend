@@ -49,7 +49,6 @@ from app import models, database
 from app.utilites.payment_processor import process_payment
 from app.dependencies import get_current_user
 
-router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
 
 @router.post("/renew")
 def renew_subscription(
@@ -71,7 +70,7 @@ def renew_subscription(
     if badge_type == models.BadgeType.green:
         price = 7.99
     elif badge_type == models.BadgeType.blue:
-        price = 14.99
+        price = 12.99
     else:
         raise HTTPException(status_code=400, detail="Invalid badge type")
 

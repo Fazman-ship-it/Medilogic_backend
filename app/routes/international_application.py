@@ -172,7 +172,7 @@ def pay_application_fee(
     # Record payment (stub). Integrate Stripe/Paystack later or handle via webhook.
     payment = Payment(
         application_id=app.id,
-        amount=150.00,
+        amount=200.00,
         currency="GBP",
         provider=payload.provider or "manual",
         reference=payload.reference or str(uuid.uuid4()),
@@ -408,7 +408,7 @@ def finance_dashboard(
     # Sum revenue from payments marked as application fees (amount ~ 150)
     one_term_revenue = db.query(func.sum(Payment.amount)).filter(
         Payment.is_verified == True,
-        Payment.amount == 150
+        Payment.amount == 200
     ).scalar() or 0
 
     # 3. Subscriptions by badge
@@ -425,7 +425,7 @@ def finance_dashboard(
     # Revenue from subscriptions
     sub_revenue = db.query(func.sum(Payment.amount)).filter(
         Payment.is_verified == True,
-        Payment.amount != 150
+        Payment.amount != 200
     ).scalar() or 0
 
     # 4. Monthly revenue trend (last 6 months)
