@@ -88,6 +88,17 @@ class SubscriptionStatus(str,enum.Enum):
     active = "active"
     expired = "expired"
     cancelled = "cancelled"            
+    none = "none"
+class SubscriptionPlan(str, enum.Enum):
+    free = "free"
+    green = "green"
+    blue = "blue"
+    
+class MedilogicDriverStatus(str, enum.Enum):
+    submitted = "submitted"
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
 
 class Trip(Base):
     __tablename__ = "trips"
@@ -189,6 +200,7 @@ class User(Base):
     international_applications = relationship("InternationalApplication", back_populates="user")
     deleted_at = Column(DateTime, nullable=True)
     deletion_reason = Column(Text, nullable=True)
+    medilogic_driver = relationship("Medilogic_Driver", back_populates="user", uselist=False)
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
@@ -257,7 +269,8 @@ class Organization(Base):
     supported_waste_types = Column(ARRAY(String), nullable=True)
     applications = relationship("InternationalApplication", back_populates="organization")
     views = relationship("ApplicationView", back_populates="organization", cascade="all, delete-orphan")
-        
+    medilogic_drivers = relationship("Medilogic_Driver", back_populates="organization", cascade="all, delete-orphan")
+    driver_views = relationship("DriverView", back_populates="organization", cascade="all, delete-orphan")    
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
@@ -555,6 +568,8 @@ class Document(Base):
     is_active = Column(Boolean, default=True)
     expiry_date = Column(DateTime, nullable=True)
     revoked = Column(Boolean, default=False)
+    medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id"), nullable=True)
+    medilogic_driver = relationship("Medilogic_Driver", back_populates="documents")
     
 class Testimonial(Base):
     __tablename__ = "testimonials"
@@ -723,6 +738,7 @@ class Payment(Base):
     status = Column(String, default="succeeded") # keep simple for now
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_verified = Column(Boolean, default=False) # confired via provider webhook
+    medilogic_driver = relationship("Medilogic_Driver", back_populates="payments")
     
 # models.py
 class ApplicationView(Base):
@@ -736,3 +752,66 @@ class ApplicationView(Base):
     application = relationship("InternationalApplication", back_populates="views")
     organization = relationship("Organization", back_populates="views") 
 
+
+# -----------------------------------
+# Driver Model
+# -----------------------------------
+class Medilogic_Driver(Base):
+    __tablename__ = " medilogic_drivers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True, index=True)
+    phone_number = Column(String, nullable=False)
+    address = Column(String, nullable=True)
+    date_of_birth = Column(Date, nullable=True)
+    country = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    region = Column(String, nullable=True)
+    license_number = Column(String, nullable=False)
+    license_expiry = Column(Date, nullable=False)
+    vehicle_type = Column(String, nullable=False)  # e.g., "van", "truck"
+    zip_code = Column(String, nullable=True)
+    experience_years = Column(Integer, nullable=True)
+    preferred_role = Column(String, nullable=False)  # e.g. "waste driver", "medical delivery"
+    status = Column(SqlEnum(MedilogicDriverStatus, name="driverstatus"), default=MedilogicDriverStatus.submitted, nullable=False)
+    subscription_status = Column(SqlEnum(SubscriptionStatus, name="subscriptionstatus"), default=SubscriptionStatus.none, nullable=False)
+    subscription_plan = Column(SqlEnum(SubscriptionPlan, name="subscriptionplan"), default=SubscriptionPlan.free, nullable=False)
+    badge_type = Column(SqlEnum(BadgeType, name="badgetype"),default=BadgeType.none,nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
+    user = relationship("User", back_populates="medilogic_driver")
+    organization = relationship("Organization", back_populates="medilogic_drivers")
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)
+    documents = relationship("Document", back_populates="medilogic_driver", cascade="all, delete-orphan")
+    views = relationship("DriverView", back_populates="medilogic_driver", cascade="all, delete-orphan")
+    subscription_start = Column(DateTime, nullable=True)
+    subscription_end = Column(DateTime, nullable=True)
+    payments = relationship("Payment", back_populates="medilogic_driver", cascade="all, delete-orphan")
+    #Document paths
+    drivers_license = Column(String, nullable=True)
+    dvla_check_code = Column(String, nullable=True)
+    proof_of_id_address = Column(String, nullable=True)
+    mot_certificate = Column(String, nullable=True)
+    vehicle_insurance = Column(String, nullable=True)
+    waste_carrier_license = Column(String, nullable=True)
+    adr_certificate = Column(String, nullable=True)
+    dbs_check = Column(String, nullable=True)
+    professional_id_photo = Column(String, nullable=True)
+    can_view_analytics = Column(Boolean, default=False)
+    can_see_org_names = Column(Boolean, default=False)
+    
+    
+class DriverView(Base):
+    __tablename__ = "driver_views"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id", ondelete="CASCADE"))
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"))
+    viewed_at = Column(DateTime, default=datetime.utcnow)
+
+    medilogic_driver = relationship("Medilogic_Driver", back_populates="views")
+    organization = relationship("Organization", back_populates="driver_views")

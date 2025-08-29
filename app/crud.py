@@ -23,3 +23,4 @@ def create_trip(db: Session, trip: schemas.TripCreate, current_user: models.User
     )
 
     return db_trip
+

@@ -25,29 +25,44 @@ def submit_basic_application(
     payload: schemas.IntlBasicCreate,
     db: Session = Depends(get_db),
 ):
-    # Prevent duplicate basic applications by email in submitted/approved states
+    # Prevent duplicate applications by email
     exists = db.query(InternationalApplication).filter(
         InternationalApplication.email == payload.email,
-        InternationalApplication.status.in_([InternationalApplicationStatus.submitted, InternationalApplicationStatus.approved])
+        InternationalApplication.status.in_([
+            InternationalApplicationStatus.submitted,
+            InternationalApplicationStatus.approved
+        ])
     ).first()
     if exists:
-        raise HTTPException(status_code=400, detail="Application already submitted or approved with this email")
+        raise HTTPException(
+            status_code=400,
+            detail="Application already submitted or approved with this email"
+        )
 
-    app = InternationalApplication(
-        email=payload.email,
-        name=payload.name,
-        country=payload.country,
-        state=payload.state,
-        zip_code=payload.zip_code,
-        password=payload.password,
-        confirm_password=payload.password,
-        status=InternationalApplicationStatus.submitted,
-    )
-    db.add(app)
-    db.commit()
-    db.refresh(app)
-    return app
+    # ✅ Ensure passwords match
+    if payload.password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
 
+    # ✅ Hash password before saving
+    hashed_pw = get_password_hash(payload.password)
+
+    try:
+        app = InternationalApplication(
+            email=payload.email,
+            name=payload.name,
+            country=payload.country,
+            state=payload.state,
+            zip_code=payload.zip_code,
+            hashed_password=hashed_pw,  # store hashed password only
+            status=InternationalApplicationStatus.submitted,
+        )
+        db.add(app)
+        db.commit()
+        db.refresh(app)
+        return app
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error creating application")
 
 @router.patch("/super/{application_id}/approve", response_model=schemas.IntlApplicationOut)
 def approve_application(
@@ -55,38 +70,68 @@ def approve_application(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin")),
 ):
-    app = db.query(InternationalApplication).filter(InternationalApplication.id == application_id).first()
+    """
+    ✅ Approve an international application:
+    - Ensure not already approved
+    - Create loginable user with role "applicant_international"
+    - Link user to application
+    - Commit safely with rollback on errors
+    - Then send email & log activity
+    """
+    app = db.query(InternationalApplication).filter(
+        InternationalApplication.id == application_id
+    ).first()
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
+
     if app.status == InternationalApplicationStatus.approved:
         raise HTTPException(status_code=400, detail="Already approved")
 
-    # Create loginable user with role "applicant"
-    temp_password = generate_temp_password()
-    new_user = models.User(
-        email=app.email,
-        name=app.name,
-        role="applicant_international",
-        hashed_password=get_password_hash(temp_password),
-        is_verified=True
-    )
-    db.add(new_user)
-    db.flush()  # get id without full commit
+    # --- DB Transaction ---
+    try:
+        # Generate temporary password
+        temp_password = generate_temp_password()
 
-    app.status = InternationalApplicationStatus.approved
-    app.user_id = new_user.id
-    db.commit()
-    db.refresh(app)
+        # Create user
+        new_user = models.User(
+            email=app.email,
+            name=app.name,
+            role="applicant_international",  # ✅ make sure this role exists
+            hashed_password=get_password_hash(temp_password),
+            is_verified=True
+        )
+        db.add(new_user)
+        db.flush()  # assign id without committing
 
-    # Email the applicant
-    send_applicant_approved_email(
-        to_email=app.email,
-        full_name=app.name,
-        temp_password=temp_password,
-        login_link="https://medilogic.vercel.app/login"
-    )
+        # Update application
+        app.status = InternationalApplicationStatus.approved
+        app.user_id = new_user.id
 
-    # Log
+        db.commit()
+        db.refresh(app)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Approval failed: {str(e)}")
+
+    # --- Non-DB operations (safe after commit) ---
+    try:
+        send_applicant_approved_email(
+            to_email=app.email,
+            full_name=app.name,
+            temp_password=temp_password,
+            login_link="https://medilogic.vercel.app/login"
+        )
+    except Exception as e:
+        # Log email failure, but don’t rollback DB
+        log_activity(
+            db=db,
+            user_id=current_user.id,
+            action="email_failed",
+            details=f"Failed to send approval email to {app.email}: {str(e)}"
+        )
+
+    # Audit log for approval
     log_activity(
         db=db,
         user_id=current_user.id,

@@ -54,6 +54,8 @@ from app.routes import driver_credentials
 from app.routes import international_application
 from app.routes import appliciant_analytics
 from app.routes import subscriptions
+from app.routes import stripe_webhook
+from app.routes import medilogic_driver
 
 # app/main.py
 
@@ -125,6 +127,8 @@ app.include_router(driver_credentials.router)
 app.include_router(international_application.router)
 app.include_router(appliciant_analytics.router)
 app.include_router(subscriptions.router)
+app.include_router(stripe_webhook.router)
+app.include_router(medilogic_driver.router)
 
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")

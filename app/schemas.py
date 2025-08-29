@@ -10,12 +10,16 @@ from enum import Enum as PyEnum
 from .models import SupportTicket, SupportReply
 from app.enums import OrganizationType
 from app.models import CustodyEventType
-from datetime import date, time
+from datetime import date, time, datetime
 from app.models import PendingRole
 from uuid import UUID
 import enum
-from app.models import BadgeType, SubscriptionStatus
+from enum import Enum
+from app.models import BadgeType, SubscriptionStatus, SubscriptionPlan, MedilogicDriverStatus
+from pydantic import root_validator
 # --------------------------
+
+
 # Trip Schemas
 # --------------------------
 class TripBase(BaseModel):
@@ -992,6 +996,12 @@ class IntlBasicCreate(BaseModel):
     password:str
     confirm_password:str
     accept_terms: bool
+    @root_validator
+    def check_password_match(cls, values):
+        pw, cpw = values.get("password"), values.get("confirm_password")
+        if pw != cpw:
+            raise ValueError("Passwords do not match")
+        return values
 
 class IntlApplicationOut(BaseModel):
     id: UUID
@@ -1016,7 +1026,7 @@ class IntlApplicationOut(BaseModel):
 
 class IntlDetailsUpdate(BaseModel):
     phone_number: Optional[str] = None
-    date_of_birth: Optional[str]= None
+    date_of_birth: Optional[date]= None
     address:Optional[str]= None
     visa_required: Optional[bool] = None
     sector: Optional[str] = None       # e.g., "health", "tech"
@@ -1134,3 +1144,137 @@ class DeletedUser(BaseModel):
 
     class config:
         from_attributes = True
+        
+
+
+# --- BASE ---
+# --- BASE (shared fields, no password) ---
+class MedilogicDriverBase(BaseModel):
+    name: str
+    email: EmailStr
+    phone_number: str
+    country: str
+    state: str
+    license_number: str
+    license_expiry: date
+    vehicle_type: str
+    preferred_role: str
+    accept_terms: bool
+
+    # optional fields
+    address: Optional[str] = None
+    region: Optional[str] = None
+    zip_code: Optional[str] = None
+    experience_years: Optional[int] = None
+
+    # defaults
+    status: Optional[MedilogicDriverStatus] = MedilogicDriverStatus.submitted
+    subscription_status: Optional[SubscriptionStatus] = SubscriptionStatus.none
+    subscription_plan: Optional[SubscriptionPlan] = SubscriptionPlan.free
+    badge_type: Optional[BadgeType] = BadgeType.none
+
+
+# --- CREATE (used for registration form) ---
+class MedilogicDriverCreate(MedilogicDriverBase):
+    user_id: Optional[UUID] = None
+    organization_id: Optional[UUID] = None
+    password: str
+    confirm_password: str
+
+
+# --- UPDATE (used for dashboard update) ---
+class MedilogicDriverUpdate(BaseModel):
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    address: Optional[str] = None
+    region: Optional[str] = None
+    license_number: Optional[str] = None
+    license_expiry: Optional[date] = None
+    vehicle_type: Optional[str] = None
+    zip_code: Optional[str] = None
+    experience_years: Optional[int] = None
+    preferred_role: Optional[str] = None
+
+    status: Optional[MedilogicDriverStatus] = None
+    subscription_status: Optional[SubscriptionStatus] = None
+    subscription_plan: Optional[SubscriptionPlan] = None
+    badge_type: Optional[BadgeType] = None
+
+    is_active: Optional[bool] = None
+    is_verified: Optional[bool] = None
+    
+    #Documents
+    drivers_license: Optional[str]=None
+    dvla_check_code: Optional[str]=None
+    proof_of_id_address: Optional[str]=None
+    mot_certificate: Optional[str]=None
+    vehicle_insurance: Optional[str]=None
+    waste_carrier_license: Optional[str]=None
+    adr_certificate: Optional[str]=None
+    dbs_check: Optional[str]=None
+    professional_id_photo: Optional[str]=None
+
+
+# --- OUT (response model) ---
+class MedilogicDriverOut(BaseModel):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+    is_active: bool
+    is_verified: bool
+
+    # main profile
+    name: Optional[str]
+    email: Optional[EmailStr]
+    phone_number: Optional[str]
+    country: Optional[str]
+    state: Optional[str]
+    region: Optional[str]
+    address: Optional[str]
+    zip_code: Optional[str]
+    date_of_birth: Optional[date]
+
+    # license & vehicle
+    license_number: Optional[str]
+    license_expiry: Optional[date]
+    vehicle_type: Optional[str]
+    preferred_role: Optional[str]
+    experience_years: Optional[int]
+
+    # enums
+    status: MedilogicDriverStatus
+    subscription_status: SubscriptionStatus
+    subscription_plan: SubscriptionPlan
+    badge_type: BadgeType
+    
+    # documents
+    drivers_license: Optional[str]=None
+    dvla_check_code: Optional[str]=None
+    proof_of_id_address: Optional[str]=None
+    mot_certificate: Optional[str]=None
+    vehicle_insurance: Optional[str]=None
+    waste_carrier_license: Optional[str]=None
+    adr_certificate: Optional[str]=None
+    dbs_check: Optional[str]=None
+    professional_id_photo: Optional[str]=None
+    
+    subscription_start: Optional[datetime] = None
+    subscription_end: Optional[datetime] = None
+
+
+    class Config:
+        from_attributes = True
+        
+
+
+class MedilogicDriverAnalyticsOut(BaseModel):
+    profile_views: int
+    org_views: Dict[str, int]  # {"Organization Name": count}
+    charts: Optional[Dict[str, List[datetime]]] = None
+    
+    class Config:
+        from_attributes = True
+        

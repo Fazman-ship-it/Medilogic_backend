@@ -104,3 +104,5 @@ zopfli==0.2.3.post1
 qrcode==8.2
 PyJWT==2.10.1
 Jinja2==3.1.6
+stripe==12.5.0
+requests==2.32.5

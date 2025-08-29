@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     DELIVERY_CONFIRM_EXPIRY_MINUTES:int
     DELIVERY_CONFIRMATION_URL: str
     FRONTEND_CONFIRM_SUCCESS_URL: str
+    STRIPE_SECRET_KEY: str
 
 
     class Config:
