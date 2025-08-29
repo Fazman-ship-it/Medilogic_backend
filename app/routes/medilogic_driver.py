@@ -395,9 +395,9 @@ async def update_profile_and_subscribe(
         if medilogic_driver.badge_type == "blue":
             # Blue gets detailed charts (e.g., time series)
             charts = db.query(
-                models.DriverProfileView.viewed_at
+                models.Medilogic_DriverProfileView.viewed_at
             ).filter(
-                models.DriverProfileView.medilogic_driver_id == medilogic_driver.id
+                models.Medilogic_DriverProfileView.medilogic_driver_id == medilogic_driver.id
             ).all()
             analytics["charts"]["views_over_time"] = charts
 

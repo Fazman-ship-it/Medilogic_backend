@@ -229,6 +229,21 @@ def get_admin_dashboard_charts(
         "top_drivers_chart": fig3.to_json()
     }
 
+import io
+import os
+from datetime import datetime
+from typing import Optional
+from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+import matplotlib.pyplot as plt
+
+from app import models, schemas
+from app.dependencies import get_db, get_current_user
+
 
 @router.get("/export/pdf")
 def export_admin_pdf_with_charts(
@@ -243,7 +258,7 @@ def export_admin_pdf_with_charts(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can export PDF reports.")
 
-    # 🧠 Query Trips
+    # Query Trips
     query = db.query(models.Trip).filter(models.Trip.organization_id == current_user.organization_id)
     if status:
         query = query.filter(models.Trip.status == status)
@@ -256,10 +271,13 @@ def export_admin_pdf_with_charts(
 
     trips = query.all()
 
-    # 🖼 Prepare Plotly Charts
-    def generate_chart_image(fig: go.Figure):
-        image_bytes = fig.to_image(format="png", width=600, height=400)
-        return ImageReader(io.BytesIO(image_bytes))
+    # Helper: generate chart as ImageReader
+    def generate_chart_image(fig):
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return ImageReader(buf)
 
     # Chart 1: Monthly Trip Count
     monthly_counts = {}
@@ -268,18 +286,25 @@ def export_admin_pdf_with_charts(
             key = t.scheduled_time.strftime("%Y-%m")
             monthly_counts[key] = monthly_counts.get(key, 0) + 1
     months = sorted(monthly_counts)
-    fig_months = go.Figure(data=[go.Bar(x=months, y=[monthly_counts[m] for m in months])])
-    fig_months.update_layout(title="Monthly Trip Volume")
-    chart1_img = generate_chart_image(fig_months)
+    counts = [monthly_counts[m] for m in months]
+
+    fig_months, ax = plt.subplots()
+    ax.bar(months, counts, color='skyblue')
+    ax.set_title("Monthly Trip Volume")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Trips")
+    fig_months_img = generate_chart_image(fig_months)
 
     # Chart 2: Delivery Types
     delivery_counts = {}
     for t in trips:
         if t.delivery_type:
             delivery_counts[t.delivery_type] = delivery_counts.get(t.delivery_type, 0) + 1
-    fig_delivery = go.Figure(data=[go.Pie(labels=list(delivery_counts.keys()), values=list(delivery_counts.values()))])
-    fig_delivery.update_layout(title="Trips by Delivery Type")
-    chart2_img = generate_chart_image(fig_delivery)
+
+    fig_delivery, ax = plt.subplots()
+    ax.pie(delivery_counts.values(), labels=delivery_counts.keys(), autopct='%1.1f%%')
+    ax.set_title("Trips by Delivery Type")
+    fig_delivery_img = generate_chart_image(fig_delivery)
 
     # Chart 3: Top Drivers
     driver_counts = {}
@@ -289,17 +314,21 @@ def export_admin_pdf_with_charts(
     top_drivers = sorted(driver_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     driver_ids = [str(d[0]) for d in top_drivers]
     driver_values = [d[1] for d in top_drivers]
-    fig_drivers = go.Figure(data=[go.Bar(x=driver_ids, y=driver_values)])
-    fig_drivers.update_layout(title="Top Drivers by Trips")
-    chart3_img = generate_chart_image(fig_drivers)
 
-    # 🧾 Generate PDF
+    fig_drivers, ax = plt.subplots()
+    ax.bar(driver_ids, driver_values, color='orange')
+    ax.set_title("Top Drivers by Trips")
+    ax.set_xlabel("Driver ID")
+    ax.set_ylabel("Trips")
+    fig_drivers_img = generate_chart_image(fig_drivers)
+
+    # Generate PDF
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     y = height - 50
 
-    # ✅ Branding: Logo + Org Name
+    # Branding: Logo + Org Name
     logo_path = "app/static/logo.png"
     if os.path.exists(logo_path):
         p.drawImage(ImageReader(logo_path), 50, y - 40, width=80, height=40)
@@ -308,9 +337,9 @@ def export_admin_pdf_with_charts(
     p.drawString(150, y, f"{org_name} – Admin Trip Report")
     y -= 60
 
-    # ✅ Trip Summary Table
+    # Trip Summary Table
     p.setFont("Helvetica", 9)
-    for trip in trips[:15]:  # limit for space
+    for trip in trips[:15]:
         date_str = trip.scheduled_time.strftime("%d-%b-%Y %H:%M") if trip.scheduled_time else "N/A"
         p.drawString(
             50, y,
@@ -322,8 +351,8 @@ def export_admin_pdf_with_charts(
             p.showPage()
             y = height - 50
 
-    # 🧠 Insert Charts
-    for chart_img in [chart1_img, chart2_img, chart3_img]:
+    # Insert Charts
+    for chart_img in [fig_months_img, fig_delivery_img, fig_drivers_img]:
         p.showPage()
         p.drawImage(chart_img, 50, 300, width=500, height=300)
 
