@@ -5,7 +5,7 @@ from datetime import date
 from typing import List, Optional
 from sqlalchemy import Enum as SqlEnum
 from enum import Enum
-from utilites.medilogic_driver_applicant import send_driver_welcome_email
+from app.utilites.medilogic_driver_applicant import send_driver_welcome_email
 from app import models, schemas
 from app.database import get_db
 from app.auth import get_password_hash, generate_temp_password
