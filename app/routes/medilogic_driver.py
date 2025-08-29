@@ -201,6 +201,7 @@ def list_medilogic_drivers(
 
     return query.all()
 
+
 @router.get("/{medilogic_driver_id}", response_model=schemas.MedilogicDriverOut)
 def get_driver(
     medilogic_driver_id: UUID,
@@ -209,8 +210,8 @@ def get_driver(
 ):
     """
     Retrieve a single Medilogic driver application.
-    - Super Admin: can view any driver.
-    - Org Admin: can view Medilogic drivers (not invited drivers).
+
+    - Super Admin & Admin: can view all Medilogic drivers.
     """
     driver = db.query(models.Medilogic_Driver).filter(
         models.Medilogic_Driver.medilogic_driver_id == medilogic_driver_id

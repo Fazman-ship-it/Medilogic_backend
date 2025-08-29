@@ -804,6 +804,7 @@ class Medilogic_Driver(Base):
     professional_id_photo = Column(String, nullable=True)
     can_view_analytics = Column(Boolean, default=False)
     can_see_org_names = Column(Boolean, default=False)
+    can_upload_docs = Column(Boolean, default=False)
     
     
 class DriverView(Base):
