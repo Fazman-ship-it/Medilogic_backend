@@ -229,6 +229,7 @@ def get_admin_dashboard_charts(
         "top_drivers_chart": fig3.to_json()
     }
 
+
 @router.get("/export/pdf")
 def export_admin_pdf_with_charts(
     status: Optional[str] = Query(None),
@@ -274,7 +275,8 @@ def export_admin_pdf_with_charts(
     # Chart 2: Delivery Types
     delivery_counts = {}
     for t in trips:
-        delivery_counts[t.delivery_type] = delivery_counts.get(t.delivery_type, 0) + 1
+        if t.delivery_type:
+            delivery_counts[t.delivery_type] = delivery_counts.get(t.delivery_type, 0) + 1
     fig_delivery = go.Figure(data=[go.Pie(labels=list(delivery_counts.keys()), values=list(delivery_counts.values()))])
     fig_delivery.update_layout(title="Trips by Delivery Type")
     chart2_img = generate_chart_image(fig_delivery)
@@ -282,7 +284,8 @@ def export_admin_pdf_with_charts(
     # Chart 3: Top Drivers
     driver_counts = {}
     for t in trips:
-        driver_counts[t.driver_id] = driver_counts.get(t.driver_id, 0) + 1
+        if t.driver_id:
+            driver_counts[t.driver_id] = driver_counts.get(t.driver_id, 0) + 1
     top_drivers = sorted(driver_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     driver_ids = [str(d[0]) for d in top_drivers]
     driver_values = [d[1] for d in top_drivers]
@@ -300,7 +303,7 @@ def export_admin_pdf_with_charts(
     logo_path = "app/static/logo.png"
     if os.path.exists(logo_path):
         p.drawImage(ImageReader(logo_path), 50, y - 40, width=80, height=40)
-    org_name = current_user.organisation_name 
+    org_name = getattr(current_user, "organization_name", "Organization")
     p.setFont("Helvetica-Bold", 16)
     p.drawString(150, y, f"{org_name} – Admin Trip Report")
     y -= 60
@@ -309,7 +312,11 @@ def export_admin_pdf_with_charts(
     p.setFont("Helvetica", 9)
     for trip in trips[:15]:  # limit for space
         date_str = trip.scheduled_time.strftime("%d-%b-%Y %H:%M") if trip.scheduled_time else "N/A"
-        p.drawString(50, y, f"Trip ID: {trip.id} | Client: {trip.client_name} | Delivery: {trip.delivery_type} | Priority: {trip.priority} | Cost: £{trip.cost} | Date: {date_str}")
+        p.drawString(
+            50, y,
+            f"Trip ID: {trip.id} | Client: {trip.client_name} | Delivery: {trip.delivery_type} | "
+            f"Priority: {trip.priority} | Cost: £{trip.cost} | Date: {date_str}"
+        )
         y -= 18
         if y < 100:
             p.showPage()
@@ -323,9 +330,11 @@ def export_admin_pdf_with_charts(
     p.save()
     buffer.seek(0)
 
-    return StreamingResponse(buffer, media_type="application/pdf", headers={
-        "Content-Disposition": "attachment; filename=admin_trip_report.pdf"
-    })
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=admin_trip_report.pdf"}
+    )
 
 
 @router.get("/assignments", summary="Admin: View shift assignments")
