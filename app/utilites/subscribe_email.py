@@ -7,8 +7,8 @@ def send_subscription_email(to_email: str, full_name: str, badge: BadgeType, pla
     """
     Send a subscription confirmation email to a Medilogic driver.
     
-    - Green (£7.99): can upload docs + profile boost + view counts
-    - Blue (£12.99): all Green benefits + analytics graphs + org names
+    - Green (£10.99): can upload docs + profile boost + view counts
+    - Blue (£15.99): all Green benefits + analytics graphs + org names
     """
     # Build email subject and body
     subject = f"Medilogic Subscription Upgrade: {badge.value.title()} Badge Activated"

@@ -310,8 +310,8 @@ async def update_profile_and_subscribe(
     # -------------------------
     if plan:
         price_map = {
-            schemas.SubscriptionPlan.green: 799,  # pence
-            schemas.SubscriptionPlan.blue: 1299
+            schemas.SubscriptionPlan.green: 1099,  # pence
+            schemas.SubscriptionPlan.blue: 1599
         }
         if plan not in price_map:
             raise HTTPException(status_code=400, detail="Invalid subscription plan")
@@ -351,7 +351,7 @@ async def update_profile_and_subscribe(
         if files:
             raise HTTPException(
                 status_code=403,
-                detail="You must subscribe to Green (£7.99) or Blue (£12.99) to upload documents"
+                detail="You must subscribe to Green (£10.99) or Blue (£15.99) to upload documents"
             )
 
     # -------------------------

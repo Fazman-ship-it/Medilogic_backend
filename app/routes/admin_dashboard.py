@@ -258,7 +258,7 @@ def export_admin_pdf_with_charts(
 
     # 🖼 Prepare Plotly Charts
     def generate_chart_image(fig: go.Figure):
-        image_bytes = fig.to_image(format="png", width=600, height=400, engine="kaleido")
+        image_bytes = fig.to_image(format="png", width=600, height=400)
         return ImageReader(io.BytesIO(image_bytes))
 
     # Chart 1: Monthly Trip Count
