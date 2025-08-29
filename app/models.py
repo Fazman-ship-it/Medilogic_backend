@@ -757,7 +757,7 @@ class ApplicationView(Base):
 # Driver Model
 # -----------------------------------
 class Medilogic_Driver(Base):
-    __tablename__ = " medilogic_drivers"
+    __tablename__ ="medilogic_drivers"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
@@ -806,7 +806,7 @@ class Medilogic_Driver(Base):
     
     
 class DriverView(Base):
-    __tablename__ = "driver_views"
+    __tablename__ ="driver_views"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id", ondelete="CASCADE"))
