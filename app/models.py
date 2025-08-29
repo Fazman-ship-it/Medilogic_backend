@@ -568,7 +568,7 @@ class Document(Base):
     is_active = Column(Boolean, default=True)
     expiry_date = Column(DateTime, nullable=True)
     revoked = Column(Boolean, default=False)
-    medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id"), nullable=True)
+    medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id",ondelete="CASCADE"))
     medilogic_driver = relationship("Medilogic_Driver", back_populates="documents")
     
 class Testimonial(Base):

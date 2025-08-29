@@ -266,7 +266,7 @@ async def update_profile_and_subscribe(
     # Document uploads
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["driver"]))
+    current_user=Depends(require_role(["medilogic_driver"]))
 ):
     """
     Full Medilogic Driver dashboard update:
