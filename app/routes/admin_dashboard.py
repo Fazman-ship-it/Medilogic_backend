@@ -352,12 +352,12 @@ def get_shift_assignments(
         query = query.filter(ShiftAssignment.driver_id == driver_id)
 
     if shift_date:
-        query = query.filter(ShiftAssignment.date == shift_date)
+        query = query.filter(ShiftAssignment.shift_date == shift_date)
 
     if start_date and end_date:
-        query = query.filter(ShiftAssignment.date.between(start_date, end_date))
+        query = query.filter(ShiftAssignment.shift_date.between(start_date, end_date))
 
-    query = query.order_by(ShiftAssignment.date.asc(), ShiftAssignment.start_time.asc())
+    query = query.order_by(ShiftAssignment.shift_date.asc(), ShiftAssignment.start_time.asc())
 
     assignments = query.all()
 
