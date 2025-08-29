@@ -16,7 +16,7 @@ from uuid import UUID
 import enum
 from enum import Enum
 from app.models import BadgeType, SubscriptionStatus, SubscriptionPlan, MedilogicDriverStatus
-from pydantic import root_validator
+from pydantic import model_validator
 # --------------------------
 
 
@@ -996,7 +996,8 @@ class IntlBasicCreate(BaseModel):
     password:str
     confirm_password:str
     accept_terms: bool
-    @root_validator
+    
+    @model_validator(mode="before")
     def check_password_match(cls, values):
         pw, cpw = values.get("password"), values.get("confirm_password")
         if pw != cpw:
