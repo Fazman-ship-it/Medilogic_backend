@@ -341,3 +341,86 @@ def export_custody_log(
         })
 
     raise HTTPException(status_code=400, detail="Unsupported export format. Use ?format=csv")
+
+@router.get("/dashboard/admin/{organization_id}/custody-summary")
+def admin_custody_summary(
+    organization_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)  # ✅ match your code style
+):
+    # --- 1. Verify Admin Access ---
+    if current_user.role != "admin" or current_user.organization_id != organization_id:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    # --- 2. Get Trips for Org ---
+    trips = db.query(models.Trip).filter(models.Trip.organization_id == organization_id).all()
+    total_trips = len(trips)
+    if total_trips == 0:
+        return {
+            "organization_id": organization_id,
+            "total_trips": 0,
+            "trips_with_custody": 0,
+            "compliance_rate": 0,
+            "non_compliant_trips": [],
+            "recent_events": []
+        }
+
+    # --- 3. Check Custody Compliance ---
+    trips_with_custody = 0
+    non_compliant_trips = []
+
+    for trip in trips:
+        events = db.query(models.ChainOfCustody).filter_by(trip_id=trip.id).all()
+        if events:
+            trips_with_custody += 1
+
+            # Optional: Check for mandatory events
+            event_types = [e.event_type.lower() for e in events]  # ✅ case-insensitive
+            missing = []
+            if "pickup" not in event_types:
+                missing.append("pickup")
+            if "delivery" not in event_types:
+                missing.append("delivery")
+
+            if missing:
+                driver = db.query(User).filter_by(id=trip.driver_id).first()
+                non_compliant_trips.append({
+                    "trip_id": trip.id,
+                    "client_name": trip.client_name,
+                    "driver_name": driver.name if driver else "Unknown",
+                    "missing_events": missing
+                })
+        else:
+            # No custody events at all → non compliant
+            driver = db.query(User).filter_by(id=trip.driver_id).first()
+            non_compliant_trips.append({
+                "trip_id": trip.id,
+                "client_name": trip.client_name,
+                "driver_name": driver.name if driver else "Unknown",
+                "missing_events": ["pickup", "delivery"]
+            })
+
+    compliance_rate = (trips_with_custody / total_trips) * 100
+
+    # --- 4. Get Recent Custody Events ---
+    recent_events = db.query(models.ChainOfCustody)\
+        .filter(models.ChainOfCustody.trip_id.in_([t.id for t in trips]))\
+        .order_by(models.ChainOfCustody.timestamp.desc())\
+        .limit(10).all()
+
+    recent_event_list = [{
+        "timestamp": e.timestamp,
+        "event_type": e.event_type,
+        "driver_name": db.query(User).filter_by(id=e.driver_id).first().name,
+        "trip_id": e.trip_id
+    } for e in recent_events]
+
+    # --- 5. Return Dashboard Summary ---
+    return {
+        "organization_id": organization_id,
+        "total_trips": total_trips,
+        "trips_with_custody": trips_with_custody,
+        "compliance_rate": round(compliance_rate, 2),
+        "non_compliant_trips": non_compliant_trips,
+        "recent_events": recent_event_list
+    }

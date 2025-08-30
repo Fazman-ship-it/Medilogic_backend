@@ -725,9 +725,29 @@ class ChainOfCustodyOut(BaseModel):
     signed_by: Optional[str]
     witness_name: Optional[str]
     organization_id:UUID
+        
+class NonCompliantTripOut(BaseModel):
+    trip_id: UUID
+    client_name: str
+    driver_name: str
+    missing_events: List[str]
+
+class RecentCustodyEventOut(BaseModel):
+    timestamp: datetime
+    event_type: str
+    driver_name: str
+    trip_id: UUID
+
+class CustodySummaryOut(BaseModel):
+    organization_id: UUID
+    total_trips: int
+    trips_with_custody: int
+    compliance_rate: float
+    non_compliant_trips: List[NonCompliantTripOut]
+    recent_events: List[RecentCustodyEventOut]
 
     class Config:
-        form_attributes = True
+        from_attributes = True
         
 class DocumentOut(BaseModel):
     id: UUID
@@ -750,7 +770,7 @@ class DocumentUploadOut(BaseModel):
     user_id: Optional[UUID]
 
     class Config:
-        form_attributes = True
+        from_attributes = True
 
 
 class TestimonialCreate(BaseModel):
@@ -765,7 +785,7 @@ class TestimonialOut(BaseModel):
     created_at: datetime
 
     class Config:
-        form_attributes = True
+        from_attributes = True
 
 
 class PendingApplicationCreate(BaseModel):

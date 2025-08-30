@@ -20,6 +20,7 @@ from app.utilites.logging import log_activity
 from uuid import UUID
 # app/routes/trip.py
 router = APIRouter()
+
 @router.post("/", response_model=schemas.TripResponse)
 def create_trip(
     trip: schemas.TripCreate,

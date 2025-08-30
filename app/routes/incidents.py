@@ -10,6 +10,41 @@ from datetime import datetime
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"]) 
 
+import os
+import uuid
+from fastapi import APIRouter, Form, File, UploadFile, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import Optional, List
+from datetime import datetime
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.utilites.email_utilites import send_email
+
+
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".pdf", ".docx"}
+
+
+def save_file_safely(file: UploadFile, folder: str = "static/incidents") -> str:
+    """Safely save uploaded files and return relative public path."""
+    os.makedirs(folder, exist_ok=True)
+
+    file_extension = os.path.splitext(file.filename)[-1].lower()
+    if file_extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="File type not allowed")
+
+    unique_filename = f"{uuid.uuid4()}{file_extension}"
+    file_path = os.path.join(folder, unique_filename)
+
+    try:
+        with open(file_path, "wb") as f:
+            f.write(file.file.read())
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to save file")
+
+    return f"/{folder}/{unique_filename}"
+
+
 @router.post("/submit", response_model=schemas.IncidentOut)
 def submit_incident(
     title: str = Form(...),
@@ -18,23 +53,11 @@ def submit_incident(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # ✅ Only admins can submit incidents
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only organization admins can submit incidents.")
 
-    # 📂 Handle optional file upload
-    attachment_url = None
-    if file:
-        upload_folder = "static/incidents"
-        os.makedirs(upload_folder, exist_ok=True)  # Make sure the folder exists
-        file_path = os.path.join(upload_folder, file.filename)
-        
-        with open(file_path, "wb") as f:
-            f.write(file.file.read())
+    attachment_url = save_file_safely(file) if file else None
 
-        attachment_url = file_path  # Store the relative file path
-
-    # 📝 Save the incident
     new_incident = models.Incident(
         title=title,
         description=description,
@@ -58,25 +81,17 @@ def get_incidents(
     current_user: models.User = Depends(get_current_user),
 ):
     if current_user.role == "super_admin":
-        # Super admin can view all incidents
         return db.query(models.Incident).all()
 
     elif current_user.role == "regulator":
-        # Regulator can only view incidents from their region
         return db.query(models.Incident).join(models.Organization).filter(
             models.Organization.country == current_user.regulated_country,
             models.Organization.state == current_user.regulated_state,
             models.Organization.region == current_user.regulated_region
         ).all()
 
-    else:
-        # Other roles cannot view incidents
-        raise HTTPException(status_code=403, detail="Not authorized to view incidents.")
+    raise HTTPException(status_code=403, detail="Not authorized to view incidents.")
 
-import os
-import uuid
-from app.utilites.email_utilites import send_email
-from sqlalchemy import or_
 
 @router.post("/incidents/driver", response_model=schemas.IncidentOut)
 def submit_incident_as_driver(
@@ -84,34 +99,17 @@ def submit_incident_as_driver(
     description: str = Form(...),
     incident_type: str = Form(...),
     location: str = Form(...),
-    severity: str = Form(...),  # "low", "moderate", "critical"
+    severity: str = Form(...),
     is_visible_to_regulator: bool = Form(False),
-    file: UploadFile = File(None),
+    file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can submit incidents")
 
-    # Save file if present
-    attachment_url = None
-    if file:
-        upload_folder = "static/incidents"
-        os.makedirs(upload_folder, exist_ok=True)  # Ensure directory exists
+    attachment_url = save_file_safely(file) if file else None
 
-        # Generate unique filename
-        file_extension = os.path.splitext(file.filename)[-1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(upload_folder, unique_filename)
-
-        # Save the file
-        with open(file_path, "wb") as f:
-            f.write(file.file.read())
-
-        # Return public-facing path
-        attachment_url = f"/static/incidents/{unique_filename}"
-
-    # Create incident record
     new_incident = models.Incident(
         organization_id=current_user.organization_id,
         submitted_by_id=current_user.id,
@@ -127,7 +125,7 @@ def submit_incident_as_driver(
     db.commit()
     db.refresh(new_incident)
 
-    # 🔔 Email notification to admins and regulators in the same organization
+    # 🔔 Notifications (critical or regulator-visible only)
     recipients = db.query(models.User).filter(
         models.User.organization_id == current_user.organization_id,
         models.User.role.in_(["admin", "regulator"]),
@@ -159,16 +157,14 @@ Please review this incident in the Medilogic Admin Panel.
     return new_incident
 
 
-@router.get("/incidents/admin", response_model=list[schemas.IncidentOut])
+@router.get("/incidents/admin", response_model=List[schemas.IncidentOut])
 def get_org_incidents_for_admin(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # ✅ Only allow admins
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view incidents")
 
-    # ✅ Fetch incidents within the admin's organization
     incidents = db.query(models.Incident).filter(
         models.Incident.organization_id == current_user.organization_id
     ).order_by(models.Incident.created_at.desc()).all()
