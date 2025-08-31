@@ -75,7 +75,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static",StaticFiles(directory="static"), name="static")
+app.mount("/static",StaticFiles(directory="app/static"), name="static")
 app.include_router(trip.router)
 
 @app.get("/")
@@ -133,6 +133,13 @@ app.include_router(medilogic_driver.router)
 # Automatically create upload directory if it doesn't exist
 UPLOAD_DIR = os.path.join("app", "uploads", "pods")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Subfolders for raw and processed files
+UPLOAD_DIR_RAW = os.path.join(UPLOAD_DIR, "raw")
+UPLOAD_DIR_PDF = os.path.join(UPLOAD_DIR, "pdf")
+
+os.makedirs(UPLOAD_DIR_RAW, exist_ok=True)
+os.makedirs(UPLOAD_DIR_PDF, exist_ok=True)
 
 # Create database tables
 # ✅ Swagger UI JWT Bearer token support

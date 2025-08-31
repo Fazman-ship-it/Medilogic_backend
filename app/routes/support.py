@@ -129,7 +129,7 @@ def post_support_message(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     # ✅ If client, ensure they are replying only to their own ticket
-    if current_user.role == "client" and ticket.user_id != current_user.id:
+    if current_user.role in["driver", "client"] and ticket.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only reply to your own ticket.")
 
     message = models.SupportMessage(

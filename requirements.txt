@@ -106,3 +106,8 @@ PyJWT==2.10.1
 Jinja2==3.1.6
 stripe==12.5.0
 requests==2.32.5
+Deprecated==1.2.18
+img2pdf==0.6.1
+lxml==6.0.1
+pikepdf==9.10.2
+wrapt==1.17.3
