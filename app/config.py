@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+import os
 # app/config.py
 class Settings(BaseSettings):
     DB_HOST: str
@@ -31,3 +32,14 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+
+# Automatically create upload directory if it doesn't exist
+UPLOAD_DIR = os.path.join("app", "uploads", "pods")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Subfolders for raw and processed files
+UPLOAD_DIR_RAW = os.path.join(UPLOAD_DIR, "raw")
+UPLOAD_DIR_PDF = os.path.join(UPLOAD_DIR, "pdf")
+
+os.makedirs(UPLOAD_DIR_RAW, exist_ok=True)
+os.makedirs(UPLOAD_DIR_PDF, exist_ok=True)

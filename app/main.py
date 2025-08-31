@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from app.routes import trip
 from app.routes import trip, user
 from app.database import engine, Base
-from app import models
+from app import models, config
 from app.routes import access, user
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
@@ -129,17 +129,6 @@ app.include_router(appliciant_analytics.router)
 app.include_router(subscriptions.router)
 app.include_router(stripe_webhook.router)
 app.include_router(medilogic_driver.router)
-
-# Automatically create upload directory if it doesn't exist
-UPLOAD_DIR = os.path.join("app", "uploads", "pods")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Subfolders for raw and processed files
-UPLOAD_DIR_RAW = os.path.join(UPLOAD_DIR, "raw")
-UPLOAD_DIR_PDF = os.path.join(UPLOAD_DIR, "pdf")
-
-os.makedirs(UPLOAD_DIR_RAW, exist_ok=True)
-os.makedirs(UPLOAD_DIR_PDF, exist_ok=True)
 
 # Create database tables
 # ✅ Swagger UI JWT Bearer token support

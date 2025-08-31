@@ -208,6 +208,7 @@ from app import models
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.utilites.raw_convert import ensure_pdf_exists
+from app.config import UPLOAD_DIR_RAW, UPLOAD_DIR_PDF
 # Directories
 UPLOAD_DIR_RAW = "app/static/uploads/pods/raw/"
 UPLOAD_DIR_PDF = "app/static/uploads/pods/pdf/"

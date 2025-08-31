@@ -1,7 +1,7 @@
 # app/utils/file_utils.py
 import os
 import img2pdf
-from app.main import UPLOAD_DIR_RAW, UPLOAD_DIR_PDF  # or define the paths here too
+from app.config import UPLOAD_DIR_RAW, UPLOAD_DIR_PDF  # or define the paths here too
 
 def ensure_pdf_exists(raw_filename: str):
     raw_path = os.path.join(UPLOAD_DIR_RAW, raw_filename)
