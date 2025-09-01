@@ -31,27 +31,25 @@ def create_notification(
     db.refresh(db_notification)
     return db_notification
 
-
 @router.get("/", response_model=list[schemas.DailyNotificationResponse])
 def list_notifications(
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user)  # make sure this returns a User object
 ):
     query = db.query(models.DailyNotification)
 
-    if current_user["role"] == "admin":
+    if current_user.role == "admin":
         # Only see notifications for your org + global ones from super admin
         query = query.filter(
-            (models.DailyNotification.organization_id == current_user["organization_id"]) |
+            (models.DailyNotification.organization_id == current_user.organization_id) |
             (models.DailyNotification.organization_id.is_(None))  # super admin global messages
         )
 
-    elif current_user["role"] == "super_admin":
+    elif current_user.role == "super_admin":
         # Super admin only sees the global notifications they made
         query = query.filter(models.DailyNotification.organization_id.is_(None))
 
     return query.order_by(models.DailyNotification.created_at.desc()).all()
-
 
 @router.delete("/{notification_id}")
 def delete_notification(

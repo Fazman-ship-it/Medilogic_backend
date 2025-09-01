@@ -27,16 +27,36 @@ def create_trip(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))
 ):
-    # ✅ Inject organization_id directly into the trip data
+    # ✅ Validate "Others" delivery type
+    if trip.delivery_type.lower() == "others" and not trip.custom_delivery_description:
+        raise HTTPException(
+            status_code=400,
+            detail="Custom delivery description is required when delivery type is 'Others'."
+        )
+
+    # ✅ Prepare trip data
     trip_data = trip.dict()
+
+    # 🔹 Inject organization_id automatically
     trip_data["organization_id"] = current_user.organization_id
 
+    # 🔹 Optional driver: set None if not provided
+    if not trip_data.get("driver_id"):
+        trip_data["driver_id"] = None
+
+    # 🔹 Optional fields: ensure defaults if missing
+    trip_data.setdefault("status", "pending")
+    trip_data.setdefault("compliance_flag", False)
+    trip_data.setdefault("priority", "normal")
+    trip_data.setdefault("recurrence_rule", "none")
+
+    # ✅ Create and commit trip
     db_trip = models.Trip(**trip_data)
     db.add(db_trip)
     db.commit()
     db.refresh(db_trip)
 
-    # ✅ LOG ACTIVITY scoped to the org
+    # ✅ Log activity for audit
     log_activity(
         db=db,
         user_id=current_user.id,
