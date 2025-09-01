@@ -270,7 +270,8 @@ class Organization(Base):
     applications = relationship("InternationalApplication", back_populates="organization")
     views = relationship("ApplicationView", back_populates="organization", cascade="all, delete-orphan")
     medilogic_drivers = relationship("Medilogic_Driver", back_populates="organization", cascade="all, delete-orphan")
-    driver_views = relationship("DriverView", back_populates="organization", cascade="all, delete-orphan")    
+    driver_views = relationship("DriverView", back_populates="organization", cascade="all, delete-orphan")
+    daily_notifications = relationship("DailyNotification", back_populates="organization")    
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
@@ -817,3 +818,19 @@ class DriverView(Base):
 
     medilogic_driver = relationship("Medilogic_Driver", back_populates="views")
     organization = relationship("Organization", back_populates="driver_views")
+    
+
+
+class DailyNotification(Base):
+    __tablename__ = "daily_notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    subject = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_ai_generated = Column(Boolean, default=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    organization = relationship("Organization", back_populates="daily_notifications")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    organization = relationship("Organization", back_populates="daily_notifications")
+    is_active_today = Column(Boolean, default=False)   

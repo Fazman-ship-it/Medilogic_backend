@@ -25,7 +25,8 @@ from app.schemas import SubscriptionPlan, SubscriptionStatus
 from app.utilites.driver_subscription_utilities import start_subscription
 from app.utilites.subscribe_email import send_subscription_email  # utility to send emails
 from app.models import Medilogic_Driver
-
+import random
+from app.utilites.daily_notify import send_daily_notification_to_all
 
 # === JOB 1: Delete Unverified Accounts ===
 def delete_unverified_accounts():
@@ -227,6 +228,33 @@ def renew_subscriptions():
     finally:
         db.close()
 
+#Daily notification
+
+def pick_and_send_daily_notification():
+    db: Session = SessionLocal()
+    try:
+        # Reset all notifications
+        db.query(models.DailyNotification).update({models.DailyNotification.is_active_today: False})
+        db.commit()
+
+        # Pick a random notification (any manual or AI-generated)
+        all_notifications = db.query(models.DailyNotification).all()
+        if not all_notifications:
+            print("⚠️ No notifications found.")
+            return
+
+        chosen = random.choice(all_notifications)
+        chosen.is_active_today = True
+        db.commit()
+        db.refresh(chosen)
+
+        # Send email to all verified users
+        send_daily_notification_to_all(db, chosen.subject, chosen.body)
+
+        print(f"✅ Sent daily notification: {chosen.subject}")
+
+    finally:
+        db.close()
 
 # === Initialize Scheduler ===
 scheduler = BackgroundScheduler(timezone=timezone("Europe/London"))
@@ -335,8 +363,19 @@ scheduler.add_job(
     replace_existing=True
 )
 
+# Daily notification:
+scheduler.add_job(
+    pick_and_send_daily_notification,
+    trigger="cron",
+    hour=6,
+    minute=0,
+    id="daily_pick_notification"
+)
+    
+
 # === Start Scheduler ===
 def start_scheduler():
     scheduler.start()
     print("[Scheduler] Started.")
+
 

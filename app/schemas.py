@@ -1299,3 +1299,32 @@ class MedilogicDriverAnalyticsOut(BaseModel):
     class Config:
         from_attributes = True
         
+
+
+# ==========================
+# Daily Notifications Schemas
+# ==========================
+
+class DailyNotificationBase(BaseModel):
+    subject: str
+    body: str
+
+class DailyNotificationCreate(DailyNotificationBase):
+    """
+    Schema for creating notifications.
+    Admins create org-level notifications.
+    Super admins create global notifications.
+    """
+    pass  # only subject + body required from client
+
+class DailyNotificationResponse(DailyNotificationBase):
+    id: UUID
+    is_ai_generated: bool
+    created_at: datetime
+    organization_id: Optional[UUID] = None  # ✅ None = global, UUID = org-specific
+
+    class Config:
+        from_attributes = True
+        
+
+

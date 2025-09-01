@@ -1,5 +1,6 @@
-# seed_super_admin.py
+from app.auth import get_password_hash  # adjust path if needed
 
-from app.auth import get_password_hash
+password = "Ademola@15"  # your super admin password
+hashed = get_password_hash(password)
 
-print(get_password_hash("Ademola@15"))
+print("Hashed password:", hashed)
