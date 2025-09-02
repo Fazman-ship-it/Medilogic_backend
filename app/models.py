@@ -695,10 +695,12 @@ class InternationalApplication(Base):
     status = Column(String, default=InternationalApplicationStatus.submitted, nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # set on approval
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    payments = relationship("Payment",back_populates="application",cascade="all, delete-orphan",foreign_keys="[Payment.application_id]")   # <-- specify the FK her
     # Gate fee
     has_paid_application_fee = Column(Boolean, default=False)
     application_fee_payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True)
-    
+    application_fee_payment = relationship("Payment",foreign_keys=[application_fee_payment_id],uselist=False)  # single payment
+
     # Post-approval details (nullable until filled)
     email = Column(String, nullable=True)
     name = Column(String, nullable=True)
