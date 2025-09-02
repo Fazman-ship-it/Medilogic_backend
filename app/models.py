@@ -695,12 +695,12 @@ class InternationalApplication(Base):
     status = Column(String, default=InternationalApplicationStatus.submitted, nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # set on approval
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
-    payments = relationship("Payment",back_populates="application",cascade="all, delete-orphan",foreign_keys="[Payment.application_id]")   # <-- specify the FK her
+
     # Gate fee
     has_paid_application_fee = Column(Boolean, default=False)
     application_fee_payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True)
     application_fee_payment = relationship("Payment",foreign_keys=[application_fee_payment_id],uselist=False)  # single payment
-
+    payments = relationship("Payment",back_populates="application",cascade="all, delete-orphan",foreign_keys="Payment.application_id")
     # Post-approval details (nullable until filled)
     email = Column(String, nullable=True)
     name = Column(String, nullable=True)
@@ -734,7 +734,7 @@ class InternationalApplication(Base):
     stripe_subscription_id = Column(String, nullable=True)
     stripe_price_id = Column(String, nullable=True)
     cancel_at_period_end = Column(Boolean, default=False)
-    payments = relationship("Payment", back_populates="application", cascade="all, delete-orphan")
+    
     
 class Payment(Base):
     __tablename__ = "payments"
@@ -750,7 +750,7 @@ class Payment(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_verified = Column(Boolean, default=False) # confired via provider webhook
     medilogic_driver = relationship("Medilogic_Driver", back_populates="payments")
-    application = relationship("InternationalApplication", back_populates="payments")
+    application = relationship("InternationalApplication", back_populates="payments", foreign_keys=[application_id])
     payment_type = Column(String, nullable=False)  # e.g., "application_fee", "subscription", "one_time"
     
 # models.py
