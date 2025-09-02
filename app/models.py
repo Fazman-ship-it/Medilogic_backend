@@ -89,6 +89,7 @@ class SubscriptionStatus(str,enum.Enum):
     expired = "expired"
     cancelled = "cancelled"            
     none = "none"
+    
 class SubscriptionPlan(str, enum.Enum):
     free = "free"
     green = "green"
@@ -696,7 +697,8 @@ class InternationalApplication(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     # Gate fee
     has_paid_application_fee = Column(Boolean, default=False)
-
+    application_fee_payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True)
+    
     # Post-approval details (nullable until filled)
     email = Column(String, nullable=True)
     name = Column(String, nullable=True)
@@ -726,6 +728,11 @@ class InternationalApplication(Base):
     subscription_status = Column(SqlEnum(SubscriptionStatus, name="subscriptionstatus"),default=SubscriptionStatus.expired,nullable=False)
     subscription_start_date = Column(DateTime, nullable=True)
     subscription_end_date = Column(DateTime, nullable=True)
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+    stripe_price_id = Column(String, nullable=True)
+    cancel_at_period_end = Column(Boolean, default=False)
+    payments = relationship("Payment", back_populates="application", cascade="all, delete-orphan")
     
 class Payment(Base):
     __tablename__ = "payments"
@@ -741,6 +748,8 @@ class Payment(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     is_verified = Column(Boolean, default=False) # confired via provider webhook
     medilogic_driver = relationship("Medilogic_Driver", back_populates="payments")
+    application = relationship("InternationalApplication", back_populates="payments")
+    payment_type = Column(String, nullable=False)  # e.g., "application_fee", "subscription", "one_time"
     
 # models.py
 class ApplicationView(Base):

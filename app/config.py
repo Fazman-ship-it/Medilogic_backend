@@ -25,9 +25,11 @@ class Settings(BaseSettings):
     DELIVERY_CONFIRM_EXPIRY_MINUTES:int
     DELIVERY_CONFIRMATION_URL: str
     FRONTEND_CONFIRM_SUCCESS_URL: str
-    STRIPE_SECRET_KEY: str
-
-
+    STRIPE_SECRET_KEY : str
+    STRIPE_WEBHOOK_SECRET : str
+    STRIPE_APPLICATION_FEE_PRICE_ID : str  # one-time fee product in Stripe (£200)
+    STRIPE_GREEN_PRICE_ID : str          # £7.99 monthly
+    STRIPE_BLUE_PRICE_ID : str           # £12.99 monthly
     class Config:
         env_file = ".env"
 

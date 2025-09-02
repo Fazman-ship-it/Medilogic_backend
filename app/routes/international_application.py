@@ -198,44 +198,72 @@ def update_details(
 
 from app.models import Payment
 from app.dependencies import require_application_fee_paid
+from app.config import settings
+import stripe
+
+# routes/payments.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+import stripe
+from app import models
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.config import settings
+import uuid
+from datetime import datetime
 
 @router.post("/me/pay-application-fee")
 def pay_application_fee(
-    payload: schemas.PaymentCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    app = db.query(InternationalApplication).filter(
-        InternationalApplication.user_id == current_user.id
+    # 1. Find user’s application
+    app = db.query(models.InternationalApplication).filter(
+        models.InternationalApplication.user_id == current_user.id
     ).first()
+
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
 
     if app.has_paid_application_fee:
         return {"message": "Application fee already paid"}
 
-    # Record payment (stub). Integrate Stripe/Paystack later or handle via webhook.
-    payment = Payment(
+    # 2. Create a pending payment record in DB
+    payment = models.Payment(
+        id=uuid.uuid4(),
         application_id=app.id,
-        amount=200.00,
+        medilogic_driver_id=None,  # not relevant for app fee
+        amount=200.00,  # 💡 define in settings (e.g. settings.APPLICATION_FEE_AMOUNT)
         currency="GBP",
-        provider=payload.provider or "manual",
-        reference=payload.reference or str(uuid.uuid4()),
-        status="succeeded",
+        provider="stripe",
+        status="pending",
+        created_at=datetime.utcnow(),
+        is_verified=False,
+        payment_type="application_fee"
     )
     db.add(payment)
-
-    app.has_paid_application_fee = True
     db.commit()
+    db.refresh(payment)
 
-    log_activity(
-        db=db,
-        user_id=current_user.id,
-        action="pay_application_fee",
-        details=f"Paid application fee for application {app.id}"
+    # 3. Create Stripe Checkout Session
+    checkout = stripe.checkout.Session.create(
+        mode="payment",
+        payment_method_types=["card"],
+        customer_email=current_user.email,
+        line_items=[{
+            "price": settings.STRIPE_APPLICATION_FEE_PRICE_ID,  
+            "quantity": 1,
+        }],
+        metadata={  # ✅ link Stripe session to DB payment
+            "payment_id": str(payment.id),
+            "application_id": str(app.id),
+            "user_id": str(current_user.id)
+        },
+        success_url="https://your-frontend/success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url="https://your-frontend/cancel",
     )
 
-    return {"message": "Payment recorded. Gated uploads unlocked."}
+    return {"checkout_url": checkout.url}
 
 # GATED uploads (requires payment)
 def _save_upload(prefix: str, f: UploadFile):
