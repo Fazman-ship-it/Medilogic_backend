@@ -1024,22 +1024,48 @@ class IntlBasicCreate(BaseModel):
             raise ValueError("Passwords do not match")
         return values
 
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from uuid import UUID
+from datetime import datetime, date
+from app.models import BadgeType, SubscriptionStatus
+
+
+# ---------------------------
+# International Application Schemas
+# ---------------------------
 class IntlApplicationOut(BaseModel):
     id: UUID
-    email: EmailStr
-    name: str
-    country: str
-    state:str
-    zip_code:str
+    email: Optional[EmailStr] = None
+    name: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
     status: str
     user_id: Optional[UUID] = None
+    organization_id: Optional[UUID] = None
     has_paid_application_fee: bool
+    application_fee_payment_id: Optional[UUID] = None
+    
+    # gated uploads
+    cv_path: Optional[str] = None
+    passport_path: Optional[str] = None
+    drivers_license_path: Optional[str] = None
+    personal_statement_path: Optional[str] = None
+    certificate_path: Optional[str] = None
+
     created_at: datetime
     updated_at: datetime
+
+    # subscription / badge
     badge_type: BadgeType
     subscription_status: SubscriptionStatus
-    subscription_start: Optional[datetime] = None
-    subscription_end: Optional[datetime] = None
+    subscription_start_date: Optional[datetime] = None
+    subscription_end_date: Optional[datetime] = None
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
+    stripe_price_id: Optional[str] = None
+    cancel_at_period_end: Optional[bool] = None
 
     class Config:
         from_attributes = True
@@ -1047,39 +1073,46 @@ class IntlApplicationOut(BaseModel):
 
 class IntlDetailsUpdate(BaseModel):
     phone_number: Optional[str] = None
-    date_of_birth: Optional[date]= None
-    address:Optional[str]= None
+    date_of_birth: Optional[date] = None
+    address: Optional[str] = None
     visa_required: Optional[bool] = None
     sector: Optional[str] = None       # e.g., "health", "tech"
     role_applied_for: Optional[str] = None
-    state: Optional[str] = None        # NEW (added based on your request)
-    zip_code: Optional[str] = None     # NEW (added based on your request)
-    # documents path
-    cv_path: Optional[str]= None
-    passport_path: Optional[str]= None
-    driver_license_path: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+
+    # document paths
+    cv_path: Optional[str] = None
+    passport_path: Optional[str] = None
+    drivers_license_path: Optional[str] = None
+    personal_statement_path: Optional[str] = None
     certificate_path: Optional[str] = None
-    personal_statement:Optional[str]= None
-    
+
+
 # ---------------------------
 # Payment Schemas
 # ---------------------------
 class PaymentCreate(BaseModel):
     application_id: UUID
-    amount: float                     # using float here, db handles Decimal/Numeric
+    medilogic_driver_id: Optional[UUID] = None
+    amount: float                     # DB handles Numeric/Decimal
     currency: Optional[str] = "GBP"
     provider: Optional[str] = None    # e.g., "stripe", "paystack"
     reference: Optional[str] = None   # txn id or reference
+    payment_type: str                 # e.g., "application_fee", "subscription", "one_time"
+
 
 class PaymentOut(BaseModel):
     id: UUID
     application_id: UUID
+    medilogic_driver_id: Optional[UUID] = None
     amount: float
     currency: str
     provider: Optional[str]
     reference: Optional[str]
     status: str
     is_verified: bool
+    payment_type: str
     created_at: datetime
 
     class Config:
