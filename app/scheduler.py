@@ -22,7 +22,6 @@ from datetime import date
 from app import database
 from app.utilites.email_utilites import send_email
 from app.schemas import SubscriptionPlan, SubscriptionStatus
-from app.utilites.driver_subscription_utilities import start_subscription
 from app.utilites.subscribe_email import send_subscription_email  # utility to send emails
 from app.models import Medilogic_Driver
 import random
@@ -199,34 +198,6 @@ def expire_badges():
     finally:
         db.close()
 
-#== JOB 6: Renew Subscriptions ===
-def renew_subscriptions():
-    db: Session = SessionLocal()
-    try:
-        now = datetime.utcnow()
-        # Find active subscriptions expiring within 1 day
-        drivers = db.query(Medilogic_Driver).filter(
-            Medilogic_Driver.subscription_status == SubscriptionStatus.active,
-            Medilogic_Driver.subscription_end <= now + timedelta(days=1),
-            Medilogic_Driver.subscription_plan.in_([SubscriptionPlan.green, SubscriptionPlan.blue])
-        ).all()
-
-        for medilogic_driver in drivers:
-            # Use start_subscription to renew with prorated logic
-            start_subscription(medilogic_driver, medilogic_driver.subscription_plan, months=1)
-            db.commit()
-            # Optional: send email notifying renewal
-            send_subscription_email(
-                to_email=medilogic_driver.email,
-                full_name=medilogic_driver.name,
-                badge=medilogic_driver.badge_type,
-                plan=medilogic_driver.subscription_plan,
-                renewed=True
-            )
-            print(f"Auto-renewed subscription for Medilogic driver {medilogic_driver.id} ({medilogic_driver.email})")
-
-    finally:
-        db.close()
 
 #Daily notification
 
@@ -353,15 +324,7 @@ scheduler.add_job(
     minute=0,
     id="expire_badges"
 )
-# 11. Renew subscriptions daily at 1 AM
-scheduler.add_job(
-    renew_subscriptions,
-    trigger="cron",
-    hour=1,
-    minute=0,
-    id="renew_subscriptions",
-    replace_existing=True
-)
+
 
 # Daily notification:
 scheduler.add_job(

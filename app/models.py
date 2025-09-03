@@ -817,6 +817,10 @@ class Medilogic_Driver(Base):
     can_view_analytics = Column(Boolean, default=False)
     can_see_org_names = Column(Boolean, default=False)
     can_upload_docs = Column(Boolean, default=False)
+    stripe_customer_id = Column(String, nullable=True)      # Stripe Customer ID
+    stripe_subscription_id = Column(String, nullable=True)  # Stripe Subscription ID
+    stripe_price_id = Column(String, nullable=True)         # Stripe Price ID for the plan
+    cancel_at_period_end = Column(Boolean, default=False)   # if subscription is set to cancel
     
     
 class DriverView(Base):

@@ -3,45 +3,80 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
-from app.utilites.driver_subscription_utilities import start_subscription
 from app.schemas import SubscriptionPlan
 import stripe
 import os
 from app.utilites.subscribe_email import send_subscription_email
+from app.schemas import BadgeType
 router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
+
 @router.post("/stripe/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
+
+    # Verify Stripe webhook signature
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid webhook signature")
 
-    # Handle successful payment
-    if event["type"] == "payment_intent.succeeded":
-        intent = event["data"]["object"]
-        reference = intent["id"]
-        plan_value = intent["metadata"]["plan"]
-        medilogic_driver_id = intent["metadata"]["medilogic_driver_id"]
+    # -------------------------
+    # Handle successful subscription payment
+    # -------------------------
+    if event["type"] == "invoice.payment_succeeded":
+        invoice = event["data"]["object"]
+        subscription_id = invoice["subscription"]
+        customer_id = invoice["customer"]
 
-        # Find payment record
-        payment = db.query(models.Payment).filter(models.Payment.reference == reference).first()
+        # Find the Payment record
+        payment = db.query(models.Payment).filter(
+            models.Payment.reference == subscription_id,
+            models.Payment.provider == "stripe"
+        ).first()
+
         if payment and not payment.is_verified:
             payment.status = "succeeded"
             payment.is_verified = True
 
-            # Activate subscription for driver
+            # Activate subscription for the driver based on Stripe
             driver = db.query(models.Medilogic_Driver).filter(
-                models.Medilogic_Driver.id == medilogic_driver_id
+                models.Medilogic_Driver.id == payment.medilogic_driver_id
             ).first()
+
             if driver:
-                driver = start_subscription(driver, SubscriptionPlan(plan_value), months=1)
-                db.commit()
+                # Get Stripe subscription object
+                stripe_subscription = stripe.Subscription.retrieve(subscription_id)
+                plan_value = stripe_subscription.metadata.get("plan", SubscriptionPlan.free.value)
+                stripe_status = stripe_subscription.status  # 'active', 'canceled', 'past_due', etc.
+
+                # Update driver based purely on Stripe
+                if stripe_status == "active":
+                    driver.subscription_status = "active"
+                    driver.subscription_plan = SubscriptionPlan(plan_value)
+                    if plan_value == SubscriptionPlan.green.value:
+                        driver.badge_type = BadgeType.green.value
+                    elif plan_value == SubscriptionPlan.blue.value:
+                        driver.badge_type = BadgeType.blue.value
+                    else:
+                        driver.badge_type = BadgeType.none.value
+                elif stripe_status in ["cancelled", "expired"]:
+                    driver.subscription_status = "cancelled"
+                    driver.subscription_plan = SubscriptionPlan.free
+                    driver.badge_type = BadgeType.none.value
+                else:  # e.g., past_due
+                    driver.subscription_status = "expired"
+                    driver.subscription_plan = SubscriptionPlan.free
+                    driver.badge_type = BadgeType.none.value
+
+                # Enable features based on badge
+                driver.can_upload_docs = driver.badge_type in [BadgeType.green.value, BadgeType.blue.value]
+                driver.can_view_analytics = driver.badge_type in [BadgeType.green.value, BadgeType.blue.value]
+                driver.can_see_org_names = driver.badge_type == BadgeType.blue.value
 
                 # Send subscription confirmation email
                 send_subscription_email(
@@ -50,15 +85,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                     badge=driver.badge_type,
                     plan=driver.subscription_plan
                 )
-
-                # Optional: unlock features based on badge
-                if driver.badge_type in ["green", "blue"]:
-                    # e.g., allow document uploads
-                    driver.can_upload_docs = True
-                if driver.badge_type == "blue":
-                    # e.g., unlock analytics dashboard and org view counts
-                    driver.can_view_analytics = True
-                    driver.can_see_org_names = True
 
                 db.commit()
 

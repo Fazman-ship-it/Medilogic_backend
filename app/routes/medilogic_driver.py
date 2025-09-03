@@ -9,10 +9,10 @@ from app.utilites.medilogic_driver_applicant import send_driver_welcome_email
 from app import models, schemas
 from app.database import get_db
 from app.auth import get_password_hash, generate_temp_password
-from app.utilites.email_utilites import send_email
 from app.utilites.logging import log_activity
 from app.dependencies import require_role
 from sqlalchemy import case
+import os
 
 
 # Create router for driver endpoints
@@ -222,29 +222,18 @@ def get_driver(
 
     return driver
 
-# app/routes/medilogic_drivers.py
-
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
-from typing import Optional
-from app import models, schemas
-from app.database import get_db
-from app.schemas import SubscriptionPlan, BadgeType
-from app.utilites.subscribe_email import send_subscription_email  # utility to send emails
-
-
-# app/routes/medilogic_drivers.py
 from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, date
+import os
+import stripe
+
 from app.database import get_db
 from app.dependencies import require_role
 from app import models, schemas
-import stripe
-from app.utilites.driver_subscription_utilities import check_subscription_status
+from app.schemas import SubscriptionPlan, SubscriptionStatus, BadgeType
 
-stripe.api_key = "YOUR_STRIPE_SECRET_KEY"  # replace with env variable in production
 
 @router.put("/me", response_model=schemas.MedilogicDriverOut)
 async def update_profile_and_subscribe(
@@ -277,11 +266,11 @@ async def update_profile_and_subscribe(
     - Access analytics based on badge
     """
 
-    # Fetch the medilogic driver
-    medilogic_driver = db.query(models.Medilogic_Driver).filter(
+    # Fetch the Medilogic driver
+    driver = db.query(models.Medilogic_Driver).filter(
         models.Medilogic_Driver.user_id == current_user.id
     ).first()
-    if not medilogic_driver:
+    if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
     # -------------------------
@@ -304,66 +293,85 @@ async def update_profile_and_subscribe(
     }
     for field, value in update_data.items():
         if value is not None:
-            setattr(medilogic_driver, field, value)
+            setattr(driver, field, value)
 
     # -------------------------
-    # Handle subscription/payment
+    # Handle subscription/payment via Stripe
     # -------------------------
-    if plan:
+    client_secret = None
+    payment_id = None
+
+    if plan and plan != schemas.SubscriptionPlan.free:
         price_map = {
-            schemas.SubscriptionPlan.green: 1099,  # pence
+            schemas.SubscriptionPlan.green: 1099,
             schemas.SubscriptionPlan.blue: 1599
         }
         if plan not in price_map:
             raise HTTPException(status_code=400, detail="Invalid subscription plan")
         amount = price_map[plan]
 
-        # Create Stripe PaymentIntent
-        intent = stripe.PaymentIntent.create(
-            amount=amount,
-            currency="gbp",
-            metadata={
-                "medilogic_driver_id": str(medilogic_driver.id),
-                "plan": plan.value
-            }
+        # Stripe Customer
+        if not driver.stripe_customer_id:
+            customer = stripe.Customer.create(
+                email=driver.email,
+                name=driver.name,
+                metadata={"driver_id": str(driver.id)}
+            )
+            driver.stripe_customer_id = customer.id
+        else:
+            customer = stripe.Customer.retrieve(driver.stripe_customer_id)
+
+        # Stripe Subscription
+        price_id_map = {
+            schemas.SubscriptionPlan.green: os.getenv("STRIPE_GREEN_PRICE_ID"),
+            schemas.SubscriptionPlan.blue: os.getenv("STRIPE_BLUE_PRICE_ID")
+        }
+        subscription = stripe.Subscription.create(
+            customer=customer.id,
+            items=[{"price": price_id_map[plan]}],
+            metadata={"driver_id": str(driver.id), "plan": plan.value},
+            expand=["latest_invoice.payment_intent"]
         )
 
-        # Save payment record
+        # Save Payment record
         payment = models.Payment(
-            medilogic_driver_id=medilogic_driver.id,
+            medilogic_driver_id=driver.id,
             amount=amount / 100,
             currency="GBP",
             provider="stripe",
-            reference=intent.id,
+            reference=subscription.id,
             status="pending",
+            payment_type="subscription",
             created_at=datetime.utcnow()
         )
         db.add(payment)
 
-    # -------------------------
-    # Check subscription status before document upload
-    # -------------------------
-    medilogic_driver = check_subscription_status(medilogic_driver)
+        # Update driver Stripe subscription info
+        driver.stripe_subscription_id = subscription.id
+        driver.stripe_price_id = price_id_map[plan]
+        driver.cancel_at_period_end = False  # new subscription starts active
+
+        client_secret = subscription.latest_invoice.payment_intent.client_secret
+        payment_id = str(payment.id)
 
     # -------------------------
     # Restrict document uploads for free users
     # -------------------------
-    if medilogic_driver.subscription_plan == schemas.SubscriptionPlan.free:
-        if files:
-            raise HTTPException(
-                status_code=403,
-                detail="You must subscribe to Green (£10.99) or Blue (£15.99) to upload documents"
-            )
+    if driver.subscription_plan == schemas.SubscriptionPlan.free and files:
+        raise HTTPException(
+            status_code=403,
+            detail="You must subscribe to Green or Blue to upload documents"
+        )
 
     # -------------------------
     # Handle document uploads
     # -------------------------
-    if files and medilogic_driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
+    if files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
         for file in files:
             doc = models.Document(
-                medilogic_driver_id=medilogic_driver.id,
+                medilogic_driver_id=driver.id,
                 filename=file.filename,
-                file_path=f"/uploads/{file.filename}",  # adjust storage logic
+                file_path=f"/uploads/{file.filename}",
                 upload_time=datetime.utcnow(),
                 doc_type=file.content_type
             )
@@ -372,45 +380,44 @@ async def update_profile_and_subscribe(
     # -------------------------
     # Badge-based access
     # -------------------------
-    if medilogic_driver.badge_type == "blue":
-        medilogic_driver.can_view_analytics = True
-        medilogic_driver.can_see_org_names = True
-    elif medilogic_driver.badge_type == "green":
-        medilogic_driver.can_view_analytics = True  # Green gets basic analytics
-        medilogic_driver.can_see_org_names = False
-    else:  # free
-        medilogic_driver.can_view_analytics = False
-        medilogic_driver.can_see_org_names = False
+    if driver.badge_type == BadgeType.blue.value:
+        driver.can_view_analytics = True
+        driver.can_see_org_names = True
+    elif driver.badge_type == BadgeType.green.value:
+        driver.can_view_analytics = True
+        driver.can_see_org_names = False
+    else:
+        driver.can_view_analytics = False
+        driver.can_see_org_names = False
 
     # -------------------------
     # Analytics path
     # -------------------------
     analytics = None
-    if medilogic_driver.badge_type in ["green", "blue"]:
+    if driver.badge_type in [BadgeType.green.value, BadgeType.blue.value]:
         analytics = {
-            "profile_views": medilogic_driver.profile_views,
-            "org_views": medilogic_driver.org_views,
+            "profile_views": getattr(driver, "profile_views", 0),
+            "org_views": getattr(driver, "org_views", 0),
             "charts": {}
         }
-        if medilogic_driver.badge_type == "blue":
-            # Blue gets detailed charts (e.g., time series)
+        if driver.badge_type == BadgeType.blue.value:
             charts = db.query(
-                models.Medilogic_DriverProfileView.viewed_at
+                models.DriverView.viewed_at
             ).filter(
-                models.Medilogic_DriverProfileView.medilogic_driver_id == medilogic_driver.id
+                models.DriverView.medilogic_driver_id == driver.id
             ).all()
             analytics["charts"]["views_over_time"] = charts
 
     db.commit()
-    db.refresh(medilogic_driver)
+    db.refresh(driver)
 
     # -------------------------
     # Prepare response
     # -------------------------
-    response = {"driver": medilogic_driver, "analytics": analytics}
-    if plan:
-        response["client_secret"] = intent.client_secret
-        response["payment_id"] = str(payment.id)
+    response = {"driver": driver, "analytics": analytics}
+    if client_secret:
+        response["client_secret"] = client_secret
+        response["payment_id"] = payment_id
 
     return response
 
@@ -453,3 +460,139 @@ def get_medilogic_driver_analytics(
         "org_views": org_views,
         "charts": charts
     }
+    
+# app/routes/medilogic_drivers.py
+from fastapi import APIRouter, HTTPException, Depends, Form
+from sqlalchemy.orm import Session
+from datetime import datetime
+from app.database import get_db
+from app.dependencies import require_role
+from app import models, schemas
+import stripe
+import os
+
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+@router.put("/driver/subscription", response_model=schemas.MedilogicDriverOut)
+def change_subscription(
+    new_plan: schemas.SubscriptionPlan = Form(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role(["medilogic_driver"]))
+):
+    """
+    Upgrade or downgrade a Medilogic Driver subscription.
+    """
+    driver = db.query(models.Medilogic_Driver).filter(
+        models.Medilogic_Driver.user_id == current_user.id
+    ).first()
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+
+    if new_plan == driver.subscription_plan:
+        raise HTTPException(status_code=400, detail="You are already on this plan")
+
+    # Ensure Stripe Customer exists
+    if not driver.stripe_customer_id:
+        customer = stripe.Customer.create(
+            email=driver.email,
+            name=driver.name,
+            metadata={"driver_id": str(driver.id)}
+        )
+        driver.stripe_customer_id = customer.id
+    else:
+        customer = stripe.Customer.retrieve(driver.stripe_customer_id)
+
+    # Map plan to Stripe price IDs
+    price_id_map = {
+        schemas.SubscriptionPlan.green: os.getenv("STRIPE_GREEN_PRICE_ID"),
+        schemas.SubscriptionPlan.blue: os.getenv("STRIPE_BLUE_PRICE_ID")
+    }
+
+    if new_plan not in price_id_map:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+
+    # Fetch current subscription
+    if driver.stripe_subscription_id:
+        stripe.Subscription.modify(
+            driver.stripe_subscription_id,
+            cancel_at_period_end=False,
+            items=[{
+                "id": stripe.Subscription.retrieve(driver.stripe_subscription_id).items.data[0].id,
+                "price": price_id_map[new_plan]
+            }]
+        )
+    else:
+        # Create new subscription
+        subscription = stripe.Subscription.create(
+            customer=customer.id,
+            items=[{"price": price_id_map[new_plan]}],
+            metadata={"driver_id": str(driver.id), "plan": new_plan.value},
+            expand=["latest_invoice.payment_intent"]
+        )
+        driver.stripe_subscription_id = subscription.id
+
+    # Update driver plan and badge/features
+    driver.subscription_plan = new_plan
+    driver.subscription_status = schemas.SubscriptionStatus.active
+    driver.subscription_start = datetime.utcnow()
+    driver.subscription_end = None  # Stripe handles recurring
+    if new_plan == schemas.SubscriptionPlan.green:
+        driver.badge_type = schemas.BadgeType.green
+        driver.can_upload_docs = True
+        driver.can_view_analytics = True
+        driver.can_see_org_names = False
+    elif new_plan == schemas.SubscriptionPlan.blue:
+        driver.badge_type = schemas.BadgeType.blue
+        driver.can_upload_docs = True
+        driver.can_view_analytics = True
+        driver.can_see_org_names = True
+    db.commit()
+    db.refresh(driver)
+
+    return driver 
+
+
+@router.delete("/driver/subscription", response_model=schemas.MedilogicDriverOut)
+def cancel_subscription(
+    at_period_end: bool = True,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role(["medilogic_driver"]))
+):
+    """
+    Cancel the Medilogic Driver's subscription.
+    - at_period_end=True → cancel at the end of billing cycle
+    - at_period_end=False → cancel immediately
+    """
+    driver = db.query(models.Medilogic_Driver).filter(
+        models.Medilogic_Driver.user_id == current_user.id
+    ).first()
+
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+
+    if not driver.stripe_subscription_id:
+        raise HTTPException(status_code=400, detail="No active subscription to cancel")
+
+    # Cancel Stripe subscription
+    stripe.Subscription.modify(
+        driver.stripe_subscription_id,
+        cancel_at_period_end=at_period_end
+    )
+
+    # Update driver status/features
+    if at_period_end:
+        driver.subscription_status = schemas.SubscriptionStatus.cancelled
+    else:
+        driver.subscription_status = schemas.SubscriptionStatus.cancelled
+        driver.subscription_plan = schemas.SubscriptionPlan.free
+        driver.badge_type = schemas.BadgeType.none
+        driver.can_upload_docs = False
+        driver.can_view_analytics = False
+        driver.can_see_org_names = False
+        driver.subscription_end = datetime.utcnow()
+        driver.stripe_subscription_id = None  # remove reference to Stripe subscription
+
+    db.commit()
+    db.refresh(driver)
+
+    return driver   
