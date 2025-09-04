@@ -54,6 +54,12 @@ class TripPatch(TripBase):
 class TripResponse(TripBase):
     id: UUID
     created_at: datetime
+    
+class PaginatedTripsResponse(BaseModel):
+    total : int
+    skip : int
+    limit : int
+    items : List[TripResponse]    
 
     class Config:
         from_attributes = True

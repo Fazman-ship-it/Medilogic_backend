@@ -67,7 +67,7 @@ def create_trip(
 
     return db_trip
 
-@router.get("/trips", response_model=List[schemas.TripResponse])
+@router.get("/trips",response_model=List[schemas.TripResponse])
 def get_trips(
     status: Optional[str] = Query(None, description="Filter by trip status"),
     priority: Optional[str] = Query(None, description="Filter by priority level (e.g. 'normal', 'urgent', 'stat')"),
@@ -78,36 +78,53 @@ def get_trips(
     to_date: Optional[datetime] = Query(None, description="End date for filtering (e.g. 2025-06-20T23:59:59)"),
     cost_min: Optional[float] = Query(None, description="Minimum cost for filtering"),
     cost_max: Optional[float] = Query(None, description="Maximum cost for filtering"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-    sort_by: Optional[str] = Query(None, description="Sort by field name (e.g. 'scheduled_time')"),
+    skip: int = Query(0, ge=0, description="Number of records to skip for pagination"),
+    limit: int = Query(10, ge=1, le=100, description="Number of records to return for pagination"),
+    sort_by: Optional[str] = Query("scheduled_time", description="Sort by field name (e.g. 'scheduled_time', 'cost')"),
+    sort_order: Optional[str] = Query("desc", description="Sort order: 'asc' or 'desc'"),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ must access organization_id
+    current_user: models.User = Depends(require_role("admin"))
 ):
-    # ✅ Start with organization filter
     query = db.query(models.Trip).filter(models.Trip.organization_id == current_user.organization_id)
 
+    # 🔎 Apply filters
     if status:
-        query = query.filter(models.Trip.status == status)
+        query = query.filter(models.Trip.status.ilike(f"%{status}%"))
     if client_name:
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
     if driver_name:
         query = query.filter(models.Trip.driver_name.ilike(f"%{driver_name}%"))
     if delivery_type:
-        query = query.filter(models.Trip.delivery_type == delivery_type)
+        query = query.filter(models.Trip.delivery_type.ilike(f"%{delivery_type}%"))
     if from_date:
         query = query.filter(models.Trip.scheduled_time >= from_date)
     if to_date:
         query = query.filter(models.Trip.scheduled_time <= to_date)
     if cost_min is not None:
-        query = query.filter(models.Trip.cost >= cost_min)    
+        query = query.filter(models.Trip.cost >= cost_min)
     if cost_max is not None:
         query = query.filter(models.Trip.cost <= cost_max)
     if priority:
-        query = query.filter(models.Trip.priority == priority)    
-            
+        query = query.filter(models.Trip.priority.ilike(f"%{priority}%"))
+
+    # 🔎 Count before pagination (for frontend pagination controls)
+    total_count = query.count()
+
+    # 🔎 Sorting
+    sort_column = getattr(models.Trip, sort_by, models.Trip.scheduled_time)
+    if sort_order.lower() == "desc":
+        sort_column = sort_column.desc()
+    query = query.order_by(sort_column)
+
+    # 🔎 Apply pagination
     trips = query.offset(skip).limit(limit).all()
-    return trips
+
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": trips
+    }
 
 
 @router.get("/trips/{trip_id}", response_model=schemas.TripResponse)
