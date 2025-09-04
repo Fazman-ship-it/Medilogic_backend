@@ -29,6 +29,10 @@ def get_profile(
         org_data["ico_registered"] = organization.ico_registered
         org_data["data_retention_years"] = organization.data_retention_years
 
+    # ✅ Add invite code ONLY for admin (not super_admins)
+    if current_user.role == "admin" and organization:
+        org_data["invite_code"] = organization.invite_code
+
     return {
         "name": current_user.name,
         "email": current_user.email,

@@ -1367,3 +1367,30 @@ class DailyNotificationResponse(DailyNotificationBase):
         
 
 
+class OrganizationProfileResponse(BaseModel):
+    id: Optional[str]
+    name: Optional[str]
+    address: Optional[str]
+    phone_number: Optional[str]
+
+    # Only for admins/super_admins
+    license_number: Optional[str] = None
+    ico_registered: Optional[bool] = None
+    data_retention_years: Optional[int] = None
+
+    # Only for admins
+    invite_code: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserProfileResponse(BaseModel):
+    name: str
+    email: str
+    role: str
+    is_verified: bool
+    organization: Optional[OrganizationProfileResponse]
+
+    class Config:
+        from_attributes = True
