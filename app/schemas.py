@@ -7,7 +7,7 @@ from app.enums import DeliveryType, InvoiceStatus,OrganizationType
 from enum import Enum
 from app.models import PriorityLevel  # SQLAlchemy model
 from enum import Enum as PyEnum
-from .models import SupportTicket, SupportReply
+from app.models import SupportTicket, SupportReply
 from app.enums import OrganizationType
 from app.models import CustodyEventType
 from datetime import date, time, datetime
