@@ -67,7 +67,7 @@ def create_trip(
 
     return db_trip
 
-@router.get("/trips/", response_model=List[schemas.TripResponse], summary="List all trips with advanced filtering, sorting, and pagination")
+@router.get("/trips/",response_model=schemas.PaginatedTripsResponse,summary="List all trips with advanced filtering, sorting, and pagination")
 def get_trips(
     status: Optional[str] = Query(None, description="Filter by trip status"),
     priority: Optional[str] = Query(None, description="Filter by priority level (e.g. 'normal', 'urgent', 'stat')"),
