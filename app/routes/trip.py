@@ -78,6 +78,7 @@ def get_trips(
     to_date: Optional[datetime] = Query(None, description="End date for filtering (e.g. 2025-06-20T23:59:59)"),
     cost_min: Optional[float] = Query(None, description="Minimum cost for filtering"),
     cost_max: Optional[float] = Query(None, description="Maximum cost for filtering"),
+    search: Optional[str] = Query(None, description="Generic search across client name, driver name, delivery type, status, and priority"),
     skip: int = Query(0, ge=0, description="Number of records to skip for pagination"),
     limit: int = Query(10, ge=1, le=100, description="Number of records to return for pagination"),
     sort_by: Optional[str] = Query("scheduled_time", description="Sort by field name (e.g. 'scheduled_time', 'cost')"),
@@ -106,6 +107,17 @@ def get_trips(
         query = query.filter(models.Trip.cost <= cost_max)
     if priority:
         query = query.filter(models.Trip.priority.ilike(f"%{priority}%"))
+
+    # 🔎 Generic search across multiple fields
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            (models.Trip.client_name.ilike(search_term)) |
+            (models.Trip.driver_name.ilike(search_term)) |
+            (models.Trip.delivery_type.ilike(search_term)) |
+            (models.Trip.status.ilike(search_term)) |
+            (models.Trip.priority.ilike(search_term))
+        )
 
     # 🔎 Count before pagination (for frontend pagination controls)
     total_count = query.count()
