@@ -143,7 +143,7 @@ class Trip(Base):
     delivery_confirmed_at = Column(DateTime, nullable=True)
     delivery_ip = Column(String, nullable=True)
     wtn_serial = Column(String, nullable=True)
-    
+    is_deleted = Column(Boolean, default=False)
 
 class User(Base):
     __tablename__ = "users"
@@ -202,6 +202,7 @@ class User(Base):
     deleted_at = Column(DateTime, nullable=True)
     deletion_reason = Column(Text, nullable=True)
     medilogic_driver = relationship("Medilogic_Driver", back_populates="user", uselist=False)
+    
 class POD(Base):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
@@ -272,13 +273,14 @@ class Organization(Base):
     views = relationship("ApplicationView", back_populates="organization", cascade="all, delete-orphan")
     medilogic_drivers = relationship("Medilogic_Driver", back_populates="organization", cascade="all, delete-orphan")
     driver_views = relationship("DriverView", back_populates="organization", cascade="all, delete-orphan")
-    daily_notifications = relationship("DailyNotification", back_populates="organization")    
+    daily_notifications = relationship("DailyNotification", back_populates="organization")
+        
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"),nullable=True)
-    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"), nullable=True)
+    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id", ondelete="SET NULL"), nullable=True)
     action = Column(String, nullable=False)
     details = Column(Text, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())

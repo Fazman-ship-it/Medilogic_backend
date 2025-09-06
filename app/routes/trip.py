@@ -86,7 +86,10 @@ def get_trips(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))
 ):
-    query = db.query(models.Trip).filter(models.Trip.organization_id == current_user.organization_id)
+    query = db.query(models.Trip).filter(
+    models.Trip.organization_id == current_user.organization_id,
+    models.Trip.is_deleted == False  # ✅ exclude deleted trips
+)
 
     # 🔎 Apply filters
     if status:
@@ -211,16 +214,18 @@ def delete_trip(
     if not trip:
         raise HTTPException(status_code=404, detail=f"Trip with ID {trip_id} not found")
 
-    db.delete(trip)
+    # ✅ Soft delete instead of hard delete
+    trip.is_deleted = True  
+    db.add(trip)
     db.commit()
 
-    # ✅ Log the trip deletion
+    # ✅ Log the trip deletion (still references trip_id safely)
     log_activity(
         db=db,
         user_id=current_user.id,
         action="trip_deleted",
         details=f"Admin {current_user.name} deleted trip ID {trip.id}",
-        trip_id=trip.id
+        trip_id=trip.id  # still valid since we soft deleted
     )
 
     return {"message": f"Trip with ID {trip_id} has been deleted successfully"}

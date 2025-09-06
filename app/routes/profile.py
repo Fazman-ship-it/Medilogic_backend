@@ -30,7 +30,7 @@ def get_profile(
         org_data["data_retention_years"] = organization.data_retention_years
 
     # ✅ Add invite code ONLY for admin (not super_admins)
-    if current_user.role == "admin" and organization:
+    if current_user.role =="admin" and organization:
         org_data["invite_code"] = organization.invite_code
 
     return {
