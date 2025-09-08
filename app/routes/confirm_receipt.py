@@ -23,7 +23,7 @@ from app.models import Trip, User
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.utilites.storage_utilites import upload_file_to_s3, generate_presigned_url  # your S3 helpers
-from app.crudy import create_delivery_confirmation
+from app.crudy.delivery_confirmation import create_delivery_confirmation
 from app.config import settings
 import jwt
 
