@@ -151,7 +151,7 @@ from typing import Optional, List
 import uuid
 from app import models, schemas
 from app.database import get_db
-from app.auth import require_role, get_current_user
+from app.dependencies import require_role, get_current_user
 from app.storage import S3Storage
 
 storage = S3Storage()
