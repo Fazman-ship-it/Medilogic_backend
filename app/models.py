@@ -216,7 +216,8 @@ class POD(Base):
     trip = relationship("Trip", back_populates="pod")
     driver = relationship("User", back_populates="pods")
     organization_id = Column(UUID(as_uuid=True),ForeignKey("organizations.id"), nullable=True)
-    organization = relationship("Organization", back_populates="pods")        
+    organization = relationship("Organization", back_populates="pods") 
+    created_at = Column(DateTime, default=datetime.utcnow)       
 
 class Organization(Base):
     __tablename__ = "organizations"

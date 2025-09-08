@@ -15,30 +15,84 @@ from uuid import UUID
 
 router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
+from fastapi import APIRouter, Query, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from typing import Optional, Literal
+from uuid import UUID
+from datetime import datetime
+import io
+import csv
+import pandas as pd
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.lib import colors
+
+
+def export_to_csv(data: list) -> io.StringIO:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=data[0].keys())
+    writer.writeheader()
+    writer.writerows(data)
+    buffer.seek(0)
+    return buffer
+
+def export_to_excel(data: list) -> io.BytesIO:
+    df = pd.DataFrame(data)
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Trips")
+    buffer.seek(0)
+    return buffer
+
+def export_to_pdf(data: list) -> io.BytesIO:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
+
+    # Build table
+    table_data = [list(data[0].keys())]  # headers
+    for row in data:
+        table_data.append(list(row.values()))
+
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f2f2f2")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.black),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+    ]))
+
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
 @router.get("/export")
 def export_trips(
-    format: Literal["csv", "pdf", "excel"] = Query(..., description="Export format: csv, pdf, excel"),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
+    format: Literal["csv", "excel", "pdf"] = Query(..., description="Export format: csv, excel, pdf"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     client_name: Optional[str] = Query(None),
     delivery_type: Optional[str] = Query(None),
     driver_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
-    _: models.User = Depends(require_role("admin"))
+    current_user: models.User = Depends(require_role("admin"))
 ):
-    query = db.query(models.Trip)
-    query = query.filter(models.Trip.organization_id == _.organization_id)  # ✅ Multi-tenant
+    # --- Build Query ---
+    query = db.query(models.Trip).filter(models.Trip.organization_id == current_user.organization_id)
 
-    # Date filtering
-    try:
-        if start_date:
-            start_date = datetime.strptime(start_date, "%Y-%m-%d")
-            query = query.filter(models.Trip.scheduled_time >= start_date)
-        if end_date:
-            end_date = datetime.strptime(end_date, "%Y-%m-%d")
-            query = query.filter(models.Trip.scheduled_time <= end_date)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+    # Date filter
+    for date_str, field in [(start_date, "gte"), (end_date, "lte")]:
+        if date_str:
+            try:
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                if field == "gte":
+                    query = query.filter(models.Trip.scheduled_time >= date_obj)
+                else:
+                    query = query.filter(models.Trip.scheduled_time <= date_obj)
+            except ValueError:
+                raise HTTPException(status_code=400, detail=f"Invalid date format: {date_str}. Use YYYY-MM-DD.")
 
     # Other filters
     if client_name:
@@ -52,10 +106,10 @@ def export_trips(
     if not trips:
         raise HTTPException(status_code=404, detail="No trips found")
 
-    # Define output fields
+    # --- Prepare Data ---
     data = [{
-        "ID": trip.id,
-        "Driver ID": trip.driver_id,
+        "ID": str(trip.id),
+        "Driver ID": str(trip.driver_id),
         "Delivery Type": trip.delivery_type,
         "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M:%S"),
         "Cost": trip.cost,
@@ -64,55 +118,24 @@ def export_trips(
         "Dropoff Location": trip.dropoff_location,
         "Distance (km)": trip.distance_km,
         "Status": trip.status,
-        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "Location Zone": getattr(trip, "location_zone", "N/A"),
-        "Vehicle Type": getattr(trip, "vehicle_type", "N/A"),
-        "Shift Window": getattr(trip, "shift_window", "N/A"),
-        "Compliance Flag": getattr(trip, "compliance_flag", False),
-        "Created By": getattr(trip, "created_by", "System")
+        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M:%S")
     } for trip in trips]
 
-    # CSV export
+    # --- Export ---
     if format == "csv":
-        buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=data[0].keys())
-        writer.writeheader()
-        writer.writerows(data)
-        buffer.seek(0)
+        buffer = export_to_csv(data)
         return StreamingResponse(buffer, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=trips.csv"})
+    
+    if format == "excel":
+        buffer = export_to_excel(data)
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=trips.xlsx"}
+        )
 
-    # Excel export
-    elif format == "excel":
-        df = pd.DataFrame(data)
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="Trips")
-        buffer.seek(0)
-        return StreamingResponse(buffer, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 headers={"Content-Disposition": "attachment; filename=trips.xlsx"})
-
-    # PDF export
-    elif format == "pdf":
-        buffer = io.BytesIO()
-        p = canvas.Canvas(buffer, pagesize=letter)
-        width, height = letter
-        y = height - 40
-        p.setFont("Helvetica", 10)
-        p.drawString(40, y, "Exported Trip Report")
-        y -= 20
-
-        for i, trip in enumerate(data):
-            for key, value in trip.items():
-                p.drawString(40, y, f"{key}: {value}")
-                y -= 15
-                if y < 40:
-                    p.showPage()
-                    y = height - 40
-            y -= 10
-
-        p.save()
-        buffer.seek(0)
+    if format == "pdf":
+        buffer = export_to_pdf(data)
         return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=trips.pdf"})
 
-    # Fallback (should never happen)
     raise HTTPException(status_code=400, detail="Invalid export format")

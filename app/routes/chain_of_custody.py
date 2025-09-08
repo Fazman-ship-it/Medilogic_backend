@@ -19,9 +19,11 @@ from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 import plotly.graph_objs as go
 from uuid import UUID
-
+from app.storage import S3Storage
+import uuid
 
 router = APIRouter(prefix="/custody", tags=["Chain of Custody"])
+storage = S3Storage()
 
 @router.post("/", response_model=schemas.ChainOfCustodyOut)
 def log_custody_event(
@@ -38,15 +40,16 @@ def log_custody_event(
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized for this trip")
 
-    # Step 2: Save optional photo
-    attachment_url = None
+    # Step 2: Upload optional photo to S3
+    attachment_key = None
     if file:
-        folder = "static/custody_photos"
-        os.makedirs(folder, exist_ok=True)
-        file_path = os.path.join(folder, file.filename)
-        with open(file_path, "wb") as f:
-            f.write(file.file.read())
-        attachment_url = file_path
+        ext = os.path.splitext(file.filename)[-1].lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".pdf"]:
+            raise HTTPException(status_code=400, detail="Unsupported file type")
+        
+        unique_filename = f"{uuid.uuid4()}{ext}"
+        attachment_key = f"custody_photos/{trip.organization_id}/{unique_filename}"
+        storage.upload_fileobj(file.file, attachment_key)  # ✅ upload to S3
 
     # Step 3: Create custody log
     custody_log = models.ChainOfCustody(
@@ -55,7 +58,7 @@ def log_custody_event(
         event_type=event.event_type,
         location=event.location,
         notes=event.notes,
-        attachment_url=attachment_url,
+        attachment_url=attachment_key,  # store S3 key
         timestamp=datetime.utcnow()
     )
     db.add(custody_log)
@@ -73,9 +76,20 @@ def log_custody_event(
         timestamp=datetime.utcnow()
     )
 
-    # Step 5: Return response
-    return custody_log
+    # Step 5: Generate presigned URL for the file (if uploaded)
+    attachment_urls = [storage.generate_download_url(attachment_key)] if attachment_key else []
 
+    # Step 6: Return API-friendly response
+    return schemas.ChainOfCustodyOut(
+        id=custody_log.id,
+        trip_id=custody_log.trip_id,
+        driver_id=custody_log.driver_id,
+        event_type=custody_log.event_type,
+        location=custody_log.location,
+        notes=custody_log.notes,
+        attachment_urls=attachment_urls,  # ✅ presigned URLs
+        timestamp=custody_log.timestamp
+    )
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
 def get_custody_events(
     trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
@@ -97,20 +111,35 @@ def get_custody_events(
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized: Different organization")
 
-    # Fetch and return custody events
+    # Fetch custody events
     events = db.query(models.ChainOfCustody)\
         .filter(models.ChainOfCustody.trip_id == trip_id)\
         .order_by(models.ChainOfCustody.timestamp)\
         .all()
 
-    return events
+    # Convert attachment keys → presigned URLs
+    response_events = []
+    for e in events:
+        urls = [storage.generate_download_url(e.attachment_url)] if e.attachment_url else []
+        response_events.append(
+            schemas.ChainOfCustodyOut(
+                id=e.id,
+                trip_id=e.trip_id,
+                driver_id=e.driver_id,
+                event_type=e.event_type,
+                location=e.location,
+                notes=e.notes,
+                attachment_urls=urls,
+                timestamp=e.timestamp
+            )
+        )
 
-
+    return response_events
 
 @router.get("/export/{trip_id}")
 def export_custody_log(
     trip_id: UUID,
-    format: str = "csv",  # Now supports "csv" and "pdf"
+    format: str = "csv",  # Supports "csv" and "pdf"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -119,7 +148,7 @@ def export_custody_log(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    # Role-based filtering
+    # Role-based access
     if current_user.role == "driver" and trip.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have access to this trip")
     if current_user.role == "client" and trip.client_name != current_user.name:
@@ -127,60 +156,75 @@ def export_custody_log(
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized organization")
 
-    # Get custody events
-    events = db.query(models.ChainOfCustody).filter_by(trip_id=trip_id).all()
+    # Fetch custody events
+    events = db.query(models.ChainOfCustody)\
+        .filter(models.ChainOfCustody.trip_id == trip_id)\
+        .order_by(models.ChainOfCustody.timestamp)\
+        .all()
     if not events:
         raise HTTPException(status_code=404, detail="No custody events found for this trip")
 
     # --- EXPORT TO CSV ---
-    if format == "csv":
+    if format.lower() == "csv":
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachment URL"])
+        writer.writerow([
+            "Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachments"
+        ])
         for event in events:
             driver = db.query(User).filter(User.id == event.driver_id).first()
+            # Generate presigned URL if attachment exists
+            attachment_url = storage.generate_download_url(event.attachment_url) if event.attachment_url else ""
             writer.writerow([
                 event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 event.event_type,
                 event.location,
-                driver.name if driver else "Unknown",
-                event.notes,
-                event.attachment_url or ""
+                driver.full_name if driver else "Unknown",
+                event.notes or "",
+                attachment_url
             ])
         output.seek(0)
-        return StreamingResponse(output, media_type="text/csv", headers={
-            "Content-Disposition": f"attachment; filename=custody_trip_{trip_id}.csv"
-        })
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=custody_trip_{trip_id}.csv"}
+        )
 
     # --- EXPORT TO PDF ---
-    elif format == "pdf":
-        # Create chart of event counts
-        event_counts = {}
-        for event in events:
-            event_counts[event.event_type] = event_counts.get(event.event_type, 0) + 1
+    elif format.lower() == "pdf":
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.platypus import Table, TableStyle
+        from reportlab.lib import colors
 
-        # Create bar chart
+        # Generate chart of event counts
+        event_counts = {}
+        for e in events:
+            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
+
         plt.figure(figsize=(6, 3))
-        plt.bar(event_counts.keys(), event_counts.values(), color="skyblue")
-        plt.title("Custody Event Frequency")
-        plt.xlabel("Event Type")
-        plt.ylabel("Count")
-        chart_path = f"static/custody_chart_{trip_id}.png"
-        os.makedirs("static", exist_ok=True)
+        plt.bar(event_counts.keys(), event_counts.values(), color="#4e73df")
+        plt.title("Custody Event Frequency", fontsize=12)
+        plt.xlabel("Event Type", fontsize=10)
+        plt.ylabel("Count", fontsize=10)
         plt.tight_layout()
-        plt.savefig(chart_path)
+
+        # Save chart to bytes
+        chart_bytes = io.BytesIO()
+        plt.savefig(chart_bytes, format="PNG")
         plt.close()
+        chart_bytes.seek(0)
 
         # Create PDF
-        pdf_path = f"static/custody_log_{trip_id}.pdf"
-        c = canvas.Canvas(pdf_path, pagesize=A4)
+        pdf_bytes = io.BytesIO()
+        c = canvas.Canvas(pdf_bytes, pagesize=A4)
         width, height = A4
 
+        # Header
         c.setFont("Helvetica-Bold", 16)
         c.drawString(50, height - 50, "Medilogic - Chain of Custody Report")
-
         c.setFont("Helvetica", 11)
-        y = height - 90
+        y = height - 80
         c.drawString(50, y, f"Trip ID: {trip_id}")
         y -= 15
         c.drawString(50, y, f"Client: {trip.client_name}")
@@ -188,42 +232,55 @@ def export_custody_log(
         c.drawString(50, y, f"Driver: {current_user.name}")
         y -= 15
         c.drawString(50, y, f"Total Events: {len(events)}")
+        y -= 30
 
-        # Insert chart
-        y -= 170
-        c.drawImage(chart_path, 50, y, width=500, height=140)
-
-        # Insert event table
+        # Draw chart
+        from reportlab.lib.utils import ImageReader
+        chart_image = ImageReader(chart_bytes)
+        c.drawImage(chart_image, 50, y - 140, width=500, height=140)
         y -= 160
-        table_data = [["Time", "Event Type", "Location", "Driver", "Notes"]]
+
+        # Table of events
+        table_data = [["Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachment URL"]]
         for e in events:
             driver = db.query(User).filter(User.id == e.driver_id).first()
+            attachment_url = storage.generate_download_url(e.attachment_url) if e.attachment_url else ""
             table_data.append([
                 e.timestamp.strftime("%Y-%m-%d %H:%M"),
                 e.event_type,
                 e.location,
                 driver.full_name if driver else "Unknown",
-                e.notes or ""
+                e.notes or "",
+                attachment_url
             ])
-        table = Table(table_data, colWidths=[80, 90, 120, 80, 140])
+
+        table = Table(table_data, colWidths=[80, 70, 100, 80, 140, 120])
         table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#dee2e6")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor("#212529")),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#dee2e6")),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#212529")),
+            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ]))
         table.wrapOn(c, width, height)
-        table.drawOn(c, 50, max(y - len(events)*12, 60))
+        table.drawOn(c, 50, max(y - len(events)*12, 50))
 
+        c.showPage()
         c.save()
+        pdf_bytes.seek(0)
 
-        return FileResponse(pdf_path, media_type="application/pdf", filename=f"custody_trip_{trip_id}.pdf")
+        return StreamingResponse(
+            pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=custody_trip_{trip_id}.pdf"}
+        )
 
-    # Invalid format
-    raise HTTPException(status_code=400, detail="Unsupported export format. Use ?format=csv or ?format=pdf")
-
-
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported export format. Use ?format=csv or ?format=pdf"
+        )
 @router.get("/analytics/{trip_id}")
 def custody_chart_data(
     trip_id: UUID,
@@ -242,32 +299,46 @@ def custody_chart_data(
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    events = db.query(models.ChainOfCustody).filter_by(trip_id=trip_id).order_by(models.ChainOfCustody.timestamp).all()
+    events = db.query(models.ChainOfCustody)\
+        .filter_by(trip_id=trip_id)\
+        .order_by(models.ChainOfCustody.timestamp).all()
 
     if not events:
         raise HTTPException(status_code=404, detail="No events found")
 
-    # Prepare data for chart
-    timestamps = [e.timestamp.strftime("%Y-%m-%d %H:%M") for e in events]
+    # Prepare chart data
+    timestamps = [e.timestamp for e in events]
     event_types = [e.event_type for e in events]
+    drivers = [
+        (db.query(models.User).filter_by(id=e.driver_id).first().full_name 
+         if db.query(models.User).filter_by(id=e.driver_id).first() else "Unknown")
+        for e in events
+    ]
+    severity_colors = {"low": "green", "moderate": "orange", "critical": "red"}
+    colors = [severity_colors.get(e.severity.lower(), "blue") for e in events]
 
+    # Plotly Scatter Timeline
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=timestamps,
         y=event_types,
-        mode="lines+markers",
-        line=dict(shape="hv", color="blue"),
+        mode="markers",
+        marker=dict(color=colors, size=12),
+        text=[f"Driver: {d}<br>Notes: {e.notes or ''}" for d, e in zip(drivers, events)],
+        hoverinfo="text+x+y",
         name="Custody Events"
     ))
+
     fig.update_layout(
-        title="Chain of Custody Timeline",
+        title=f"Chain of Custody Timeline - Trip {trip_id}",
         xaxis_title="Timestamp",
         yaxis_title="Event Type",
-        height=500
+        height=500,
+        template="plotly_white",
+        hovermode="closest"
     )
 
     return fig.to_dict()
-
 
 @router.get("/export/{trip_id}")
 def export_custody_log(

@@ -15,12 +15,22 @@ from app.utilites.helper import save_upload_file
 from app.utilites.pdf_file_generator import generate_confirmation_pdf
 from app.utilites.logging import log_activity
 
+import uuid
+from fastapi import APIRouter, Form, File, UploadFile, Request, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse, HTMLResponse
+from app.dependencies import get_current_user
+from app.models import Trip, User
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.utilites.storage_utilites import upload_file_to_s3, generate_presigned_url  # your S3 helpers
+from app.crud import create_delivery_confirmation
+from app.config import settings
+import jwt
+
+templates = Jinja2Templates(directory="app/templates")
 router = APIRouter(tags=["Delivery Confirmation"])
-templates = Jinja2Templates(directory="templates")
 SECRET_KEY = os.getenv("DELIVERY_CONFIRM_SECRET", "fallback_key")
 ALGORITHM = "HS256"
-UPLOAD_DIR = "app/static/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # === STEP 1: Redirect from QR Code Token ===
 @router.get("/confirm", response_class=RedirectResponse)
@@ -33,7 +43,6 @@ def get_confirmation_form(token: str, db: Session = Depends(get_db)):
         if not trip_id or not org_id:
             raise HTTPException(status_code=400, detail="Invalid token payload")
 
-        # Secure tenant-based query
         trip = db.query(Trip).filter(Trip.id == trip_id, Trip.organization_id == org_id).first()
         if not trip:
             raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
@@ -41,7 +50,6 @@ def get_confirmation_form(token: str, db: Session = Depends(get_db)):
         if trip.is_delivered:
             raise HTTPException(status_code=400, detail="Trip already confirmed")
 
-        # Redirect to frontend confirmation form
         return RedirectResponse(
             url=f"{settings.FRONTEND_CONFIRM_SUCCESS_URL}?token={token}",
             status_code=302
@@ -52,10 +60,7 @@ def get_confirmation_form(token: str, db: Session = Depends(get_db)):
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-# === STEP 2: Show HTML Form (Optional if you use Frontend SPA) ===
-from app.dependencies import get_current_user  # assuming you have this
-from app.models import Trip, User
-
+# === STEP 2: Show HTML Form (Optional if using SPA) ===
 @router.get("/confirm-receipt/{trip_id}", response_class=HTMLResponse)
 async def show_confirmation_form(
     request: Request,
@@ -65,7 +70,7 @@ async def show_confirmation_form(
 ):
     trip = db.query(Trip).filter(
         Trip.id == trip_id,
-        Trip.organization_id == current_user.organization_id  # restrict to same org
+        Trip.organization_id == current_user.organization_id
     ).first()
 
     if not trip:
@@ -76,11 +81,8 @@ async def show_confirmation_form(
         "trip_id": trip_id,
         "trip": trip
     })
-# === STEP 3: Submit Delivery Confirmation ===
-from app.dependencies import get_current_user  # Ensure this returns User with .organization_id
-from app.models import Trip, User
-from fastapi import status
 
+# === STEP 3: Submit Delivery Confirmation ===
 @router.post("/confirm", tags=["Delivery Confirmation"])
 async def submit_delivery_confirmation(
     trip_id: UUID = Form(...),
@@ -97,10 +99,9 @@ async def submit_delivery_confirmation(
     ip_address = request.client.host
     user_agent = request.headers.get("user-agent")
 
-    # 🔒 Enforce multi-tenancy
     trip = db.query(Trip).filter(
         Trip.id == trip_id,
-        Trip.organization_id == current_user.organization_id  # ✅ Enforce tenant restriction
+        Trip.organization_id == current_user.organization_id
     ).first()
 
     if not trip:
@@ -109,17 +110,31 @@ async def submit_delivery_confirmation(
             detail="Trip not found or unauthorized"
         )
 
-    # Save uploaded files
-    signature_path = save_upload_file(signature_image, subfolder="static/signatures") if signature_image else None
-    photo_path = save_upload_file(photo, subfolder="static/photos") if photo else None
+    # -------------------------
+    # Upload files to S3
+    # -------------------------
+    signature_s3_key = None
+    photo_s3_key = None
 
+    if signature_image:
+        signature_bytes = await signature_image.read()
+        signature_s3_key = f"delivery/signatures/{uuid.uuid4()}_{signature_image.filename}"
+        upload_file_to_s3(signature_bytes, signature_s3_key, signature_image.content_type)
+
+    if photo:
+        photo_bytes = await photo.read()
+        photo_s3_key = f"delivery/photos/{uuid.uuid4()}_{photo.filename}"
+        upload_file_to_s3(photo_bytes, photo_s3_key, photo.content_type)
+
+    # -------------------------
     # Create delivery confirmation record
+    # -------------------------
     confirmation = create_delivery_confirmation(
         db=db,
         trip_id=str(trip_id),
         pin=pin,
-        signature_path=signature_path,
-        photo_path=photo_path,
+        signature_path=signature_s3_key,
+        photo_path=photo_s3_key,
         wtn_code=wtn_code,
         ip_address=ip_address,
         user_agent=user_agent,
@@ -127,10 +142,17 @@ async def submit_delivery_confirmation(
         longitude=longitude
     )
 
-    # Generate PDF receipt
-    pdf_path = generate_confirmation_pdf(confirmation)
+    # -------------------------
+    # Generate PDF receipt and upload to S3
+    # -------------------------
+    pdf_bytes = generate_confirmation_pdf(confirmation)  # must return bytes
+    pdf_s3_key = f"delivery/receipts/{uuid.uuid4()}_receipt.pdf"
+    upload_file_to_s3(pdf_bytes, pdf_s3_key, "application/pdf")
+    pdf_url = generate_presigned_url(pdf_s3_key)
 
+    # -------------------------
     # Log action
+    # -------------------------
     log_activity(
         db=db,
         user_id=current_user.id,
@@ -140,5 +162,7 @@ async def submit_delivery_confirmation(
 
     return {
         "message": "Delivery confirmed",
-        "pdf_receipt": pdf_path.replace("static/", "/static/")
+        "pdf_receipt": pdf_url,
+        "signature_url": generate_presigned_url(signature_s3_key) if signature_s3_key else None,
+        "photo_url": generate_presigned_url(photo_s3_key) if photo_s3_key else None
     }

@@ -228,12 +228,12 @@ from typing import List, Optional
 from datetime import datetime, date
 import os
 import stripe
-
+import uuid
+from app.utilites.storage_utilites import upload_file_to_s3
 from app.database import get_db
 from app.dependencies import require_role
 from app import models, schemas
 from app.schemas import SubscriptionPlan, SubscriptionStatus, BadgeType
-
 
 @router.put("/me", response_model=schemas.MedilogicDriverOut)
 async def update_profile_and_subscribe(
@@ -350,7 +350,6 @@ async def update_profile_and_subscribe(
         driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id_map[plan]
         driver.cancel_at_period_end = False  # new subscription starts active
-
         client_secret = subscription.latest_invoice.payment_intent.client_secret
         payment_id = str(payment.id)
 
@@ -364,14 +363,21 @@ async def update_profile_and_subscribe(
         )
 
     # -------------------------
-    # Handle document uploads
+    # Handle document uploads (S3 production)
     # -------------------------
     if files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
         for file in files:
+            file_bytes = await file.read()
+            content_type = file.content_type
+            # Create a unique S3 key
+            key = f"drivers/{driver.id}/{uuid.uuid4().hex}_{file.filename}"
+            # Upload to S3
+            upload_file_to_s3(file_bytes, key, content_type)
+
             doc = models.Document(
                 medilogic_driver_id=driver.id,
                 filename=file.filename,
-                file_path=f"/uploads/{file.filename}",
+                file_path=key,  # store S3 key
                 upload_time=datetime.utcnow(),
                 doc_type=file.content_type
             )
@@ -420,7 +426,6 @@ async def update_profile_and_subscribe(
         response["payment_id"] = payment_id
 
     return response
-
 
 @router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(

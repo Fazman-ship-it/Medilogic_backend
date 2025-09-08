@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException,Form
 from sqlalchemy.orm import Session
 from uuid import uuid4
 from datetime import datetime
@@ -8,42 +8,43 @@ from app.models import Document, User
 from app.schemas import DocumentUploadOut
 from app.dependencies import get_current_user
 from typing import List
+from app import models, schemas
+from app.storage import S3Storage
+from typing import Optional
+from app.config import settings
 
 router = APIRouter(
     prefix="/documents",
     tags=["Document Upload"]
 )
+storage = S3Storage()
 
-UPLOAD_DIR = "static/uploads/documents"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-@router.post("/upload", response_model=DocumentUploadOut)
+@router.post("/upload", response_model=schemas.DocumentUploadOut)
 def upload_document(
     file: UploadFile = File(...),
-    doc_type: str = "general",
+    doc_type: str = Form("general"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    📁 Upload a document (PDFs, Certificates, etc.)
-    - Stores in static/uploads/documents
-    - Tracks user, doc_type, org_id
-    """
-    if not file.filename.endswith(".pdf"):
+    """Upload a document to S3 and store metadata in DB."""
+    
+    # ✅ Only allow PDFs
+    if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-
-    file_id = str(uuid4())
+    
+    # Generate unique S3 key
     file_ext = os.path.splitext(file.filename)[1]
-    new_filename = f"{file_id}{file_ext}"
-    file_path = os.path.join(UPLOAD_DIR, new_filename)
-
-    with open(file_path, "wb") as f:
-        f.write(file.file.read())
-
-    document = Document(
+    file_id = str(uuid4())
+    s3_key = f"documents/{current_user.organization_id}/{file_id}{file_ext}"
+    
+    # Upload file to S3
+    storage.upload_fileobj(file.file, s3_key)
+    
+    # Save metadata to DB
+    document = models.Document(
         id=file_id,
         filename=file.filename,
-        file_path=f"/static/uploads/documents/{new_filename}",
+        attachment_key=s3_key,  # store S3 key
         doc_type=doc_type,
         user_id=current_user.id,
         organization_id=current_user.organization_id,
@@ -52,26 +53,44 @@ def upload_document(
     db.add(document)
     db.commit()
     db.refresh(document)
+    
+    # ✅ Return presigned URL
+    return schemas.DocumentUploadOut(
+        id=document.id,
+        filename=document.filename,
+        doc_type=document.doc_type,
+        upload_time=document.upload_time,
+        attachment_url=storage.generate_download_url(document.attachment_key)
+    )
 
-    return document
 
-@router.get("/", response_model=List[DocumentUploadOut])
+@router.get("/", response_model=List[schemas.DocumentUploadOut])
 def list_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    doc_type: str = None
+    doc_type: Optional[str] = None
 ):
-    """
-    📄 List uploaded documents
-    - Filter by doc_type (optional)
-    - Admin: only org documents
-    - Super Admin: all documents
-    """
-    query = db.query(Document)
+    """List uploaded documents with optional filtering and presigned URLs."""
+    
+    query = db.query(models.Document)
+    
+    # Admin sees only their org, Super Admin sees all
     if current_user.role == "admin":
-        query = query.filter(Document.organization_id == current_user.organization_id)
-
+        query = query.filter(models.Document.organization_id == current_user.organization_id)
+    
     if doc_type:
-        query = query.filter(Document.doc_type == doc_type)
-
-    return query.order_by(Document.upload_time.desc()).all()
+        query = query.filter(models.Document.doc_type == doc_type)
+    
+    documents = query.order_by(models.Document.upload_time.desc()).all()
+    
+    # Generate presigned URLs for all documents
+    return [
+        schemas.DocumentUploadOut(
+            id=d.id,
+            filename=d.filename,
+            doc_type=d.doc_type,
+            upload_time=d.upload_time,
+            attachment_url=storage.generate_download_url(d.attachment_key)
+        )
+        for d in documents
+    ]

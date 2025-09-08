@@ -57,7 +57,7 @@ from app.routes import subscriptions
 from app.routes import stripe_webhook
 from app.routes import medilogic_driver
 from app.routes import daily_notification
-
+from app.routes import chatbot
 # app/main.py
 
 app = FastAPI(
@@ -76,7 +76,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static",StaticFiles(directory="app/static"), name="static")
+
 app.include_router(trip.router)
 
 @app.get("/")
@@ -131,6 +131,7 @@ app.include_router(subscriptions.router)
 app.include_router(stripe_webhook.router)
 app.include_router(medilogic_driver.router)
 app.include_router(daily_notification.router)
+app.include_router(chatbot.router)
 
 # Create database tables
 # ✅ Swagger UI JWT Bearer token support

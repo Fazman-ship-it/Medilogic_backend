@@ -30,18 +30,17 @@ class Settings(BaseSettings):
     STRIPE_APPLICATION_FEE_PRICE_ID : str  # one-time fee product in Stripe (£200)
     STRIPE_GREEN_PRICE_ID : str          # £7.99 monthly
     STRIPE_BLUE_PRICE_ID : str           # £12.99 monthly
+    
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str
+    AWS_SECRET_ACCESS_KEY: str
+    AWS_REGION: str # "eu-west-2"  # London
+    AWS_S3_BUCKET: str
+    USE_S3: bool   # force prod mode
+    PRESIGNED_EXPIRY: int  # 10 minutes, can move to settings.py later
+
     class Config:
         env_file = ".env"
 
 settings = Settings()
 
-# Automatically create upload directory if it doesn't exist
-UPLOAD_DIR = os.path.join("app", "uploads", "pods")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Subfolders for raw and processed files
-UPLOAD_DIR_RAW = os.path.join(UPLOAD_DIR, "raw")
-UPLOAD_DIR_PDF = os.path.join(UPLOAD_DIR, "pdf")
-
-os.makedirs(UPLOAD_DIR_RAW, exist_ok=True)
-os.makedirs(UPLOAD_DIR_PDF, exist_ok=True)

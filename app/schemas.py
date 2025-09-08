@@ -166,21 +166,38 @@ class TripAnalyticsResponse(BaseModel):
 # --------------------------
 # Proof of Delivery (POD)
 # --------------------------
+# Base for creating PODs
+
 class PODBase(BaseModel):
     trip_id: UUID
-    attachment_url: Optional[str] = None
     signature: Optional[str] = None
     notes: Optional[str] = None
     delivered_to: Optional[str] = None
-    driver_id: Optional[UUID] = None
 
 class PODCreate(PODBase):
+    # No file upload here (handled separately in /upload with Form+File)
     pass
 
+# DB-shaped response (internal use)
+class PODDB(PODBase):
+    id: UUID
+    driver_id: Optional[UUID] = None
+    attachment_url: Optional[str] = None  # raw S3 keys, joined by ";"
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# API-friendly response (what frontend actually sees)
 class PODResponse(PODBase):
     id: UUID
+    driver_id: Optional[UUID] = None
+    created_at: datetime
+    file_urls: List[str] = []  # ✅ always presigned URLs, safe for frontend
 
-# --------------------------
+    class Config:
+        from_attributes = True
+        
 # Client Booking & Trips
 # --------------------------
 class ClientRegister(BaseModel):
@@ -523,15 +540,16 @@ class EnquiryOut(BaseModel):
     class Config:
         from_attributes = True
         
+# --------------------------
 class IncidentCreate(BaseModel):
     title: str
     description: str
-    attachment_url: Optional[str]
-    incident_type: Optional[str]= None 
-    location: Optional[str]= None
-    severity:Optional[str]="low" # can be low, moderate, critical
-    is_visible_to_regulator: Optional[bool]= False
-    
+    attachment_url: Optional[str]  # store S3 key internally
+    incident_type: Optional[str] = None 
+    location: Optional[str] = None
+    severity: Optional[str] = "low"  # can be low, moderate, critical
+    is_visible_to_regulator: Optional[bool] = False
+
 class IncidentUpdate(BaseModel):
     title: Optional[str]
     description: Optional[str]
@@ -540,8 +558,10 @@ class IncidentUpdate(BaseModel):
     severity: Optional[str]
     is_visible_to_regulator: Optional[bool]
     status: Optional[str]
-    attachment_url: Optional[str]    
-    
+    attachment_url: Optional[str]  # S3 key internally
+
+# --------------------------
+# API-friendly output schema for frontend
 class IncidentOut(BaseModel):
     id: UUID
     title: str
@@ -550,15 +570,14 @@ class IncidentOut(BaseModel):
     created_at: datetime
     submitted_by_id: UUID
     organization_id: UUID
-    attachment_url: Optional[str]
+    attachment_urls: Optional[List[str]] = []  # ✅ presigned URLs here
     is_visible_to_regulator: Optional[bool] = False
     incident_type: Optional[str] = None  # e.g., "accident", "theft", "compliance_issue"
     location: Optional[str] = None  # Optional field for incident location
-    severity: Optional[str] = "low"  # New severity field
+    severity: Optional[str] = "low"  # low, moderate, critical
 
     class Config:
-        from_attributes = True 
-        
+        from_attributes = True
 
 class AuditStatusEnum(str, enum.Enum):
     pending = "pending"
@@ -720,27 +739,30 @@ class ChainOfCustodyCreate(BaseModel):
 class ChainOfCustodyOut(BaseModel):
     id: UUID
     trip_id: UUID
-    driver_id: Optional[UUID]
+    driver_id: Optional[UUID] = None
     event_type: CustodyEventType
     timestamp: datetime
-    location: Optional[str]
-    notes: Optional[str]
-    attachment_url: Optional[str]
-    signature_image_url: Optional[str]
-    signature_timestamp: Optional[datetime]
-    signed_by: Optional[str]
-    witness_name: Optional[str]
-    organization_id:UUID
-        
+    location: Optional[str] = None
+    notes: Optional[str] = None
+    attachment_url: Optional[str] = None
+    signature_image_url: Optional[str] = None
+    signature_timestamp: Optional[datetime] = None
+    signed_by: Optional[str] = None
+    witness_name: Optional[str] = None
+    organization_id: UUID
+
+    class Config:
+        from_attributes = True
+
 class NonCompliantTripOut(BaseModel):
     trip_id: UUID
     client_name: str
     driver_name: str
-    missing_events: List[str]
+    missing_events: List[str]  # List of mandatory events not logged
 
 class RecentCustodyEventOut(BaseModel):
     timestamp: datetime
-    event_type: str
+    event_type: CustodyEventType
     driver_name: str
     trip_id: UUID
 
@@ -754,22 +776,27 @@ class CustodySummaryOut(BaseModel):
 
     class Config:
         from_attributes = True
-        
+
+# --- Document output for listing / retrieval ---
 class DocumentOut(BaseModel):
     id: UUID
     filename: str
-    file_path: str
+    attachment_url: str  # presigned S3 URL
     upload_time: datetime
     doc_type: Optional[str]
-    organization_id:UUID
-    user_id: Optional[UUID] = None # User who uploaded the document
-    is_active:bool
-    
+    organization_id: UUID
+    user_id: Optional[UUID] = None  # Who uploaded the document
+    is_active: bool
 
+    class Config:
+        from_attributes = True
+
+
+# --- Document output after upload ---
 class DocumentUploadOut(BaseModel):
     id: UUID
     filename: str
-    file_path: str
+    attachment_url: str  # presigned S3 URL
     upload_time: datetime
     doc_type: Optional[str]
     organization_id: Optional[UUID]
@@ -777,7 +804,6 @@ class DocumentUploadOut(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 class TestimonialCreate(BaseModel):
     name: str
@@ -923,40 +949,36 @@ class RegulatoryComplianceSummaryResponse(BaseModel):
 class DriverCredentialsBase(BaseModel):
     licence_number: str
     licence_category: Optional[str] = None
-    licence_expiry: date
+    licence_expiry: Optional[date] = None
 
-    adr_certificate: Optional[str] = None
+    adr_certificate: Optional[str] = None  # S3 URL
     adr_expiry: Optional[date] = None
-    cpc_certificate: Optional[str] = None
+    cpc_certificate: Optional[str] = None  # S3 URL
     cpc_expiry: Optional[date] = None
-    dbs_check: Optional[str] = None
+    dbs_check: Optional[str] = None        # S3 URL
     dbs_expiry: Optional[date] = None
-    medical_certificate: Optional[str] = None
+    medical_certificate: Optional[str] = None  # S3 URL
     medical_expiry: Optional[date] = None
 
-    waste_training_cert: Optional[str] = None
-    infection_control_cert: Optional[str] = None
-    first_aid_cert: Optional[str] = None
+    waste_training_cert: Optional[str] = None  # S3 URL
+    infection_control_cert: Optional[str] = None  # S3 URL
+    first_aid_cert: Optional[str] = None  # S3 URL
     first_aid_expiry: Optional[date] = None
 
-    vehicle_insurance: Optional[str] = None
+    vehicle_insurance: Optional[str] = None  # S3 URL
     insurance_expiry: Optional[date] = None
 
-    employment_contract: Optional[str] = None
-    right_to_work_doc: Optional[str] = None
+    employment_contract: Optional[str] = None  # S3 URL
+    right_to_work_doc: Optional[str] = None     # S3 URL
     right_to_work_expiry: Optional[date] = None
 
     is_verified: bool = False
     is_active: bool = True
-
-
-# ---------- Create ----------
+    
 class DriverCredentialsCreate(DriverCredentialsBase):
     user_id: UUID
     organization_id: UUID
-
-
-# ---------- Update ----------
+    
 class DriverCredentialsUpdate(BaseModel):
     licence_number: Optional[str] = None
     licence_category: Optional[str] = None
@@ -985,16 +1007,14 @@ class DriverCredentialsUpdate(BaseModel):
 
     is_verified: Optional[bool] = None
     is_active: Optional[bool] = None
-
-
-# ---------- Response ----------
+    
 class DriverCredentialsOut(DriverCredentialsBase):
     id: UUID
     user_id: UUID
     organization_id: UUID
 
     class Config:
-        form_attributes = True
+        from_attributes = True            
 
 
 # app/schemas/international_application.py
@@ -1391,6 +1411,20 @@ class UserProfileResponse(BaseModel):
     role: str
     is_verified: bool
     organization: Optional[OrganizationProfileResponse]
+
+    class Config:
+        from_attributes = True
+        
+
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    reply: str
+    # optional quick reply buttons for the frontend
+    options: Optional[List[str]] = None
+    # optional structured payload (e.g. lists of trips/incidents/invoices)
+    data: Optional[dict] = None
 
     class Config:
         from_attributes = True

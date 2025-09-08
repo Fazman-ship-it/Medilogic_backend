@@ -211,6 +211,8 @@ from app.dependencies import get_current_user
 from app.config import settings
 import uuid
 from datetime import datetime
+import uuid
+from app.utilites.storage_utilites import upload_file_to_s3, generate_presigned_url
 
 @router.post("/me/pay-application-fee")
 def pay_application_fee(
@@ -265,14 +267,26 @@ def pay_application_fee(
 
     return {"checkout_url": checkout.url}
 
-# GATED uploads (requires payment)
-def _save_upload(prefix: str, f: UploadFile):
+# ---------- GATED uploads (requires payment) ----------
+def _save_upload_s3(prefix: str, f: UploadFile) -> str:
+    """
+    Upload file to S3 and return the S3 key.
+    """
     ext = os.path.splitext(f.filename)[1]
-    new_name = f"{prefix}_{uuid.uuid4()}{ext}"
-    path = os.path.join(UPLOAD_DIR, new_name)
-    with open(path, "wb") as buf:
-        shutil.copyfileobj(f.file, buf)
-    return path
+    new_name = f"{prefix}_{uuid.uuid4().hex}{ext}"
+    key = f"intl_applications/{prefix}/{new_name}"
+
+    file_bytes = f.file.read()
+    upload_file_to_s3(file_bytes, key, f.content_type)
+    return key
+
+
+def _generate_file_url(key: str, expires_in: int = 3600) -> str:
+    """
+    Generate presigned S3 URL for download.
+    """
+    return generate_presigned_url(key, expires_in)
+
 
 @router.post("/me/upload/cv", response_model=schemas.IntlApplicationOut)
 def upload_cv(
@@ -281,11 +295,16 @@ def upload_cv(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    app.cv_path = _save_upload("cv", file)
+    app.cv_path = _save_upload_s3("cv", file)
     db.commit()
     db.refresh(app)
     log_activity(db=db, user_id=current_user.id, action="upload_cv", details=f"Uploaded CV for application {app.id}")
+    
+    # Add presigned URL
+    app.cv_url = _generate_file_url(app.cv_path)
+    
     return app
+
 
 @router.post("/me/upload/passport", response_model=schemas.IntlApplicationOut)
 def upload_passport(
@@ -294,11 +313,15 @@ def upload_passport(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    app.passport_path = _save_upload("passport", file)
+    app.passport_path = _save_upload_s3("passport", file)
     db.commit()
     db.refresh(app)
     log_activity(db=db, user_id=current_user.id, action="upload_passport", details=f"Uploaded passport for application {app.id}")
+    
+    app.passport_url = _generate_file_url(app.passport_path)
+    
     return app
+
 
 @router.post("/me/upload/drivers-license", response_model=schemas.IntlApplicationOut)
 def upload_drivers_license(
@@ -307,11 +330,15 @@ def upload_drivers_license(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    app.drivers_license_path = _save_upload("license", file)
+    app.drivers_license_path = _save_upload_s3("license", file)
     db.commit()
     db.refresh(app)
     log_activity(db=db, user_id=current_user.id, action="upload_drivers_license", details=f"Uploaded driver license for application {app.id}")
+    
+    app.drivers_license_url = _generate_file_url(app.drivers_license_path)
+    
     return app
+
 
 @router.post("/me/upload/personal_statement", response_model=schemas.IntlApplicationOut)
 def upload_personal_statement_docs(
@@ -320,11 +347,15 @@ def upload_personal_statement_docs(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    app.personal_statement_path = _save_upload("personal_statement", file)
+    app.personal_statement_path = _save_upload_s3("personal_statement", file)
     db.commit()
     db.refresh(app)
     log_activity(db=db, user_id=current_user.id, action="upload_personal_statement_docs", details=f"Uploaded personal statement docs for application {app.id}")
+    
+    app.personal_statement_url = _generate_file_url(app.personal_statement_path)
+    
     return app
+
 
 @router.post("/me/upload/certificate", response_model=schemas.IntlApplicationOut)
 def upload_certificate(
@@ -333,12 +364,14 @@ def upload_certificate(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    app.certificate_path = _save_upload("certificate", file)
+    app.certificate_path = _save_upload_s3("certificate", file)
     db.commit()
     db.refresh(app)
     log_activity(db=db, user_id=current_user.id, action="upload_certificate", details=f"Uploaded certificate for application {app.id}")
+    
+    app.certificate_url = _generate_file_url(app.certificate_path)
+    
     return app
-
 from fastapi import Query
 
 @router.get("/super", response_model=list[schemas.IntlApplicationOut])
