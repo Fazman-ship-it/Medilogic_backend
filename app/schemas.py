@@ -41,6 +41,7 @@ class TripBase(BaseModel):
     recurrence_rule: Optional[RecurrenceRule] = None
     priority: Optional[str] = None
     custom_delivery_description: Optional[str] = None
+    notes: Optional[str] = None
 
 class TripCreate(TripBase):
     pass

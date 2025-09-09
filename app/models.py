@@ -144,6 +144,7 @@ class Trip(Base):
     delivery_ip = Column(String, nullable=True)
     wtn_serial = Column(String, nullable=True)
     is_deleted = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True, doc="Special instruction or notes for this trip")
 
 class User(Base):
     __tablename__ = "users"
