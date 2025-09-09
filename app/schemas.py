@@ -42,6 +42,7 @@ class TripBase(BaseModel):
     priority: Optional[str] = None
     custom_delivery_description: Optional[str] = None
     notes: Optional[str] = None
+    
 
 class TripCreate(TripBase):
     pass

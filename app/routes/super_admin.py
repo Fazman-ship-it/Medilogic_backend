@@ -15,70 +15,74 @@ from uuid import UUID
 router = APIRouter(prefix="/super", tags=["Super Admin"])
 
 
-@router.post("/create-user", status_code=201)
-def create_user_by_super_admin(
+@router.post("/super/admins", response_model=schemas.UserOut, status_code=201)
+def create_admin_by_super_admin(
     data: schemas.SuperAdminCreateUser,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("super_admin"))
 ):
-    # Check if email already exists
+    # 🚫 Ensure role is only 'admin'
+    if data.role != "admin":
+        raise HTTPException(
+            status_code=400,
+            detail="This endpoint can only be used to create organization admins."
+        )
+
+    # 🚫 Check if email already exists
     if db.query(models.User).filter_by(email=data.email).first():
         raise HTTPException(status_code=400, detail="Email already in use.")
 
-    # Check if organization exists
-    org = db.query(models.Organization).filter_by(id=data.organization_id).first()
+    # ✅ Find organization (by ID or name for flexibility)
+    org = db.query(models.Organization).filter(
+        (models.Organization.id == data.organization_id) | 
+        (models.Organization.name == data.organization_id)
+    ).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found.")
 
-    # ✅ Prevent multiple admins per organization
-    if data.role == "admin":
-        existing_admin = db.query(models.User).filter_by(
-            organization_id=org.id, role="admin"
-        ).first()
-        if existing_admin:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Organization {org.name} already has an admin assigned."
-            )
+    # 🚫 Prevent multiple admins per organization
+    existing_admin = db.query(models.User).filter_by(
+        organization_id=org.id, role="admin"
+    ).first()
+    if existing_admin:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Organization '{org.name}' already has an admin assigned."
+        )
 
-    # Create user
+    # ✅ Create admin user
     hashed_pw = get_password_hash(data.password)
-    new_user = models.User(
+    new_admin = models.User(
         name=data.name,
         email=data.email,
         hashed_password=hashed_pw,
-        role=data.role,
+        role="admin",
         organization_id=org.id,
         is_verified=True,
         email_verification_token=None,
         is_active=True
     )
-    db.add(new_user)
+    db.add(new_admin)
     db.commit()
-    db.refresh(new_user)
+    db.refresh(new_admin)
 
-    # Log activity
+    # ✅ Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
-        action=f"Created {data.role} '{data.email}' for organization {org.name}"
+        action=f"Created admin '{data.email}' for organization {org.name}"
     )
 
-    # ✅ Send welcome email to the new user
+    # ✅ Send welcome email only to admins
     send_welcome_email(
         to_email=data.email,
         full_name=data.name,
-        role=data.role,
-        organization_id=str(org.id),
-        invite_code=org.invite_code,
+        role="admin",
         temp_password=data.password,
         login_link="https://medilogic.vercel.app/login"
     )
 
-    return {
-        "message": f"{data.role.capitalize()} user created successfully",
-        "user_id": new_user.id
-    }
+    return new_admin
 
 
 from sqlalchemy import func
