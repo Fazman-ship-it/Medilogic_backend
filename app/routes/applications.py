@@ -33,10 +33,15 @@ def submit_application(
         role=application.role,
         organization_name=application.organization_name,
         organization_type=application.organization_type,
+        organization_country=application.organization_country,
+        organization_state=application.organization_state,
+        organization_region=application.organization_region,
         regulated_country=application.regulated_country,
         regulated_state=application.regulated_state,
         regulated_region=application.regulated_region,
         message=application.message,
+        ico_registration_number=application.ico_registration_number,
+        data_retention_years=application.data_retention_years,
         status="pending"
     )
 

@@ -433,6 +433,7 @@ class OrganizationCreate(BaseModel):
     region:Optional[str]=None
     ico_registered:Optional[bool]=False
     data_retention_years:Optional[int]=3
+    ico_registration_number:Optional[str]=None
     
 class OrganizationOut(BaseModel):
     id: UUID
@@ -448,7 +449,8 @@ class OrganizationOut(BaseModel):
     phone_number: Optional[str]
     address_line: Optional[str]
     postal_code: Optional[str]
-    license_number: Optional[str]    
+    license_number: Optional[str]
+    ico_registration_number: Optional[str]=None    
     
     class Config:
         from_attributes = True
@@ -833,6 +835,11 @@ class PendingApplicationCreate(BaseModel):
     regulated_country: Optional[str] = None
     regulated_state: Optional[str] = None
     regulated_region: Optional[str] = None
+    ico_registration_number: Optional[str] = None
+    data_retention_years: Optional[int] = None
+    organization_country: Optional[str] = None
+    organization_state: Optional[str] = None
+    organization_region: Optional[str] = None
 
 class PendingApplicationOut(BaseModel):
     id: UUID
@@ -841,12 +848,18 @@ class PendingApplicationOut(BaseModel):
     role: PendingRole
     message: Optional[str]= None
     organization_name: Optional[str]
+    organization_country: Optional[str]
+    organization_state: Optional[str]
+    organization_region: Optional[str]
     organization_type: Optional[str]
     regulated_country: Optional[str]
     regulated_state: Optional[str]
     regulated_region: Optional[str]
+    ico_registration_number: Optional[str] = None
+    data_retention_years: Optional[int] = None
     status: str
     submitted_at: datetime
+    
 
     class Config:
         form_attributes = True 

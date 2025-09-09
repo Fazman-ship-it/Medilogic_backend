@@ -276,6 +276,7 @@ class Organization(Base):
     medilogic_drivers = relationship("Medilogic_Driver", back_populates="organization", cascade="all, delete-orphan")
     driver_views = relationship("DriverView", back_populates="organization", cascade="all, delete-orphan")
     daily_notifications = relationship("DailyNotification", back_populates="organization")
+    ico_registration_number = Column(String, nullable=True)  # ICO registration ID if available
         
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
@@ -601,10 +602,18 @@ class PendingApplication(Base):
     # Admin-specific
     organization_name = Column(String, nullable=True)
     organization_type = Column(String, nullable=True)
+    organization_country = Column(String, nullable=True)
+    organization_state = Column(String, nullable=True)
+    organization_region = Column(String, nullable=True)
     # Regulator-specific
     regulated_country = Column(String, nullable=True)
     regulated_state = Column(String, nullable=True)
     regulated_region = Column(String, nullable=True)
+    
+    #Compliance
+    ico_registration_number = Column(String, nullable=True)  # ICO registration ID if available
+    data_retention_years = Column(Integer, nullable=True)
+    
     status = Column(String, default="pending")  # pending, approved, rejected
     submitted_at = Column(DateTime, default=datetime.utcnow)
     
