@@ -9,6 +9,12 @@ def send_welcome_email(
     temp_password: str,
     login_link: str = "https://medilogic.vercel.app/login"
 ):
+
+    print(f"📨 DEBUG: send_welcome_email() called with to_email={to_email}")
+
+    if not to_email or "@" not in to_email:
+        print(f"❌ Invalid email received in send_welcome_email: {to_email}")
+        return     
     subject = f"Welcome to Medilogic as {role.capitalize()}"
 
     # Build the email body as HTML with styling
