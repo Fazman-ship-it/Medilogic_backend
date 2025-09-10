@@ -63,7 +63,6 @@ def delete_own_account(
         user_id=current_user.id,
         action="soft_delete_account",
         details=f"User {current_user.email} marked their account as deleted. Reason: {request.reason}",
-        timestamp=datetime.utcnow(),
         organization_id=current_user.organization_id
     )
 
@@ -140,7 +139,6 @@ def restore_user(
         user_id=current_user.id,
         action="restore_user",
         details=f"Restored user: {user_to_restore.email} (ID: {user_to_restore.id})",
-        timestamp=datetime.utcnow(),
         organization_id=current_user.organization_id
     )
 
