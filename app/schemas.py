@@ -840,6 +840,7 @@ class PendingApplicationCreate(BaseModel):
     organization_country: Optional[str] = None
     organization_state: Optional[str] = None
     organization_region: Optional[str] = None
+    ico_registered: Optional[bool] = False
 
 class PendingApplicationOut(BaseModel):
     id: UUID
@@ -857,6 +858,7 @@ class PendingApplicationOut(BaseModel):
     regulated_region: Optional[str]
     ico_registration_number: Optional[str] = None
     data_retention_years: Optional[int] = None
+    ico_registered: Optional[bool] = False
     status: str
     submitted_at: datetime
     

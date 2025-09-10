@@ -612,11 +612,12 @@ class PendingApplication(Base):
     
     #Compliance
     ico_registration_number = Column(String, nullable=True)  # ICO registration ID if available
+    ico_registered = Column(Boolean, default=False)
     data_retention_years = Column(Integer, nullable=True)
     
     status = Column(String, default="pending")  # pending, approved, rejected
     submitted_at = Column(DateTime, default=datetime.utcnow)
-    
+
 class DeliveryConfirmation(Base):
     __tablename__ = "delivery_confirmations"
 

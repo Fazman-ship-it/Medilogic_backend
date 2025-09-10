@@ -42,6 +42,7 @@ def submit_application(
         message=application.message,
         ico_registration_number=application.ico_registration_number,
         data_retention_years=application.data_retention_years,
+        ico_registered=application.ico_registered,
         status="pending"
     )
 
@@ -59,3 +60,4 @@ def get_pending_applications(
 ):
     pending_apps = db.query(PendingApplication).order_by(PendingApplication.submitted_at.desc()).all()
     return pending_apps
+
