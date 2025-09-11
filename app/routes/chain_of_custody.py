@@ -25,6 +25,10 @@ import uuid
 router = APIRouter(prefix="/custody", tags=["Chain of Custody"])
 storage = S3Storage()
 
+ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
+MAX_FILE_SIZE_MB = 8
+PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
+
 @router.post("/", response_model=schemas.ChainOfCustodyOut)
 def log_custody_event(
     event: schemas.ChainOfCustodyCreate,
@@ -36,48 +40,83 @@ def log_custody_event(
     trip = db.query(models.Trip).filter(models.Trip.id == event.trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    
+
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized for this trip")
 
-    # Step 2: Upload optional photo to S3
-    attachment_key = None
+    # Step 2: Prepare optional upload
+    s3_key = None
+    mime_type = None
+    file_size = None
+
     if file:
         ext = os.path.splitext(file.filename)[-1].lower()
-        if ext not in [".jpg", ".jpeg", ".png", ".pdf"]:
+        if ext not in ALLOWED_EXTS:
             raise HTTPException(status_code=400, detail="Unsupported file type")
-        
+
+        # read file bytes and size (async read)
+        contents = file.file.read() if not hasattr(file.file, "read") else file.file.read()
+        # Note: if UploadFile is starlette UploadFile, file.file may be a SpooledTemporaryFile; 
+        # for async use you can await file.read() — here endpoint is sync so using file.file.read()
+
+        file_size = len(contents)
+        size_mb = file_size / (1024 * 1024)
+        if size_mb > MAX_FILE_SIZE_MB:
+            raise HTTPException(status_code=400, detail=f"File too large. Max size is {MAX_FILE_SIZE_MB} MB")
+
+        # safe S3 key with org + trip context
         unique_filename = f"{uuid.uuid4()}{ext}"
-        attachment_key = f"custody_photos/{trip.organization_id}/{unique_filename}"
-        storage.upload_fileobj(file.file, attachment_key)  # ✅ upload to S3
+        s3_key = f"custody_photos/{trip.organization_id}/{unique_filename}"
+        mime_type = file.content_type or ("application/pdf" if ext == ".pdf" else f"image/{ext.replace('.', '')}")
 
-    # Step 3: Create custody log
-    custody_log = models.ChainOfCustody(
-        trip_id=event.trip_id,
-        driver_id=current_user.id,
-        event_type=event.event_type,
-        location=event.location,
-        notes=event.notes,
-        attachment_url=attachment_key,  # store S3 key
-        timestamp=datetime.utcnow()
-    )
-    db.add(custody_log)
-    db.commit()
-    db.refresh(custody_log)
+    # Step 3: Upload + DB in a safe transaction
+    try:
+        # upload first (so we don't create DB row if S3 fails)
+        if s3_key:
+            # storage.upload_fileobj expects a file-like or bytes depending on impl
+            # use the storage api you have (upload_fileobj or upload_bytes). Example:
+            storage.upload_fileobj(io.BytesIO(contents), s3_key, mime_type)
 
-    # Step 4: Log activity
+        custody_log = models.ChainOfCustody(
+            trip_id=event.trip_id,
+            driver_id=current_user.id,
+            event_type=event.event_type,
+            location=event.location,
+            notes=event.notes,
+            attachment_url=s3_key,   # store S3 key only
+            timestamp=datetime.utcnow(),
+            organization_id=current_user.organization_id
+        )
+        db.add(custody_log)
+        db.commit()
+        db.refresh(custody_log)
+
+    except Exception as exc:
+        db.rollback()
+        # Attempt cleanup if S3 upload succeeded but DB failed
+        try:
+            if s3_key:
+                storage.delete_object(s3_key)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to create custody log: {str(exc)}")
+
+    # Step 4: Activity log (multi-tenant-safe)
+    # NOTE: call log_activity in the form your project expects.
+    # If your log_activity infers organization from user, don't pass organization_id.
     log_activity(
         db=db,
         user_id=current_user.id,
-        trip_id=event.trip_id,
-        organization_id=current_user.organization_id,
         action=f"Logged custody event: {event.event_type}",
-        details=f"Custody logged for Trip #{event.trip_id} by {current_user.name}",
-        timestamp=datetime.utcnow()
+        details=f"Custody logged for Trip #{event.trip_id} by {current_user.full_name}",
+        trip_id=event.trip_id
     )
 
-    # Step 5: Generate presigned URL for the file (if uploaded)
-    attachment_urls = [storage.generate_download_url(attachment_key)] if attachment_key else []
+    # Step 5: Generate presigned URL(s) for response
+    attachment_urls = []
+    if s3_key:
+        url = storage.generate_download_url(s3_key, expires_in=PRESIGNED_EXPIRES)
+        attachment_urls.append(url)
 
     # Step 6: Return API-friendly response
     return schemas.ChainOfCustodyOut(
@@ -87,52 +126,61 @@ def log_custody_event(
         event_type=custody_log.event_type,
         location=custody_log.location,
         notes=custody_log.notes,
-        attachment_urls=attachment_urls,  # ✅ presigned URLs
+        attachment_urls=attachment_urls,
         timestamp=custody_log.timestamp
     )
+    
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
 def get_custody_events(
     trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # Fetch trip to verify access
+    # Step 1: Verify trip exists
     trip = db.query(models.Trip).filter(models.Trip.id == trip_id).first()
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    # Role-based access control
+    # Step 2: Role-based access control
     if current_user.role == "driver" and trip.driver_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You don't have access to this trip")
+        raise HTTPException(status_code=403, detail="Unauthorized: Not your trip")
     
-    if current_user.role == "client" and trip.client_name != current_user.name:
-        raise HTTPException(status_code=403, detail="Unauthorized: This is not your trip")
-
-    if trip.organization_id != current_user.organization_id:
+    if current_user.role == "client" and trip.client_id != current_user.id:  # safer than name
+        raise HTTPException(status_code=403, detail="Unauthorized: Not your trip")
+    
+    if current_user.role != "super_admin" and trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized: Different organization")
 
-    # Fetch custody events
-    events = db.query(models.ChainOfCustody)\
-        .filter(models.ChainOfCustody.trip_id == trip_id)\
-        .order_by(models.ChainOfCustody.timestamp)\
+    # Step 3: Fetch custody events
+    events = (
+        db.query(models.ChainOfCustody)
+        .filter(models.ChainOfCustody.trip_id == trip_id)
+        .order_by(models.ChainOfCustody.timestamp)
         .all()
+    )
 
-    # Convert attachment keys → presigned URLs
+    # Step 4: Convert to schema + presigned URLs
     response_events = []
     for e in events:
-        urls = [storage.generate_download_url(e.attachment_url)] if e.attachment_url else []
-        response_events.append(
-            schemas.ChainOfCustodyOut(
-                id=e.id,
-                trip_id=e.trip_id,
-                driver_id=e.driver_id,
-                event_type=e.event_type,
-                location=e.location,
-                notes=e.notes,
-                attachment_urls=urls,
-                timestamp=e.timestamp
-            )
-        )
+        urls = []
+        if e.attachment_url:
+            urls.append(storage.generate_download_url(
+                e.attachment_url,
+                expires_in=300,  # 5 minutes
+                response_headers={"Content-Disposition": f"inline; filename={os.path.basename(e.attachment_url)}"}
+            ))
+        event_out = schemas.ChainOfCustodyOut.from_orm(e)
+        event_out.attachment_urls = urls
+        response_events.append(event_out)
+
+    # Step 5: Log read access
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        trip_id=trip.id,
+        action="Viewed custody events",
+        details=f"User {current_user.name} retrieved custody events for trip {trip.id}"
+    )
 
     return response_events
 

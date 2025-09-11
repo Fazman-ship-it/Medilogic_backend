@@ -773,12 +773,12 @@ class ChainOfCustodyOut(BaseModel):
     timestamp: datetime
     location: Optional[str] = None
     notes: Optional[str] = None
-    attachment_url: Optional[str] = None
+    attachment_url: List[str]= []
     signature_image_url: Optional[str] = None
     signature_timestamp: Optional[datetime] = None
     signed_by: Optional[str] = None
     witness_name: Optional[str] = None
-    organization_id: UUID
+    organization_id: Optional[UUID]=None
 
     class Config:
         from_attributes = True
@@ -807,29 +807,51 @@ class CustodySummaryOut(BaseModel):
         from_attributes = True
 
 # --- Document output for listing / retrieval ---
-class DocumentOut(BaseModel):
-    id: UUID
+
+# --- Base (shared fields) ---
+class DocumentBase(BaseModel):
     filename: str
-    attachment_url: str  # presigned S3 URL
+    doc_type: Optional[str] = None
+    is_active: bool = True
+    expiry_date: Optional[datetime] = None
+    revoked: Optional[bool] = False
+    file_size: Optional[int] = None      # size in bytes
+    mime_type: Optional[str] = None      # e.g. "application/pdf"
+
+
+class DocumentOut(DocumentBase):
+    id: UUID
     upload_time: datetime
-    doc_type: Optional[str]
     organization_id: UUID
-    user_id: Optional[UUID] = None  # Who uploaded the document
-    is_active: bool
+    user_id: Optional[UUID] = None
+    file_url: Optional[str] = None  # ✅ presigned S3 URL
 
     class Config:
         from_attributes = True
 
 
-# --- Document output after upload ---
-class DocumentUploadOut(BaseModel):
+class DocumentUploadOut(DocumentBase):
     id: UUID
-    filename: str
-    attachment_url: str  # presigned S3 URL
     upload_time: datetime
-    doc_type: Optional[str]
     organization_id: Optional[UUID]
     user_id: Optional[UUID]
+    file_url: Optional[str] = None  # ✅ presigned S3 URL
+
+    class Config:
+        from_attributes = True
+
+# --- Download schema ---
+class DocumentDownloadOut(BaseModel):
+    file_url: str   # ✅ presigned S3 URL
+
+    class Config:
+        from_attributes = True
+
+
+# --- Delete schema ---
+class DocumentDeleteOut(BaseModel):
+    message: str
+    document_id: UUID
 
     class Config:
         from_attributes = True
@@ -988,39 +1010,78 @@ class RegulatoryComplianceSummaryResponse(BaseModel):
 
 
 # ---------- Base ----------
+from pydantic import BaseModel
+from typing import List, Optional
+from uuid import UUID
+from datetime import date, datetime
+
+
+# --- Document included in driver credentials ---
+class DocumentForDriverCredential(BaseModel):
+    doc_type: Optional[str]
+    url: str                  # presigned S3 URL
+    uploaded_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Base driver credentials schema ---
 class DriverCredentialsBase(BaseModel):
     licence_number: str
     licence_category: Optional[str] = None
     licence_expiry: Optional[date] = None
 
-    adr_certificate: Optional[str] = None  # S3 URL
+    # Regulatory compliance
+    adr_certificate: Optional[str] = None
     adr_expiry: Optional[date] = None
-    cpc_certificate: Optional[str] = None  # S3 URL
+    cpc_certificate: Optional[str] = None
     cpc_expiry: Optional[date] = None
-    dbs_check: Optional[str] = None        # S3 URL
+    dbs_check: Optional[str] = None
     dbs_expiry: Optional[date] = None
-    medical_certificate: Optional[str] = None  # S3 URL
+    medical_certificate: Optional[str] = None
     medical_expiry: Optional[date] = None
 
-    waste_training_cert: Optional[str] = None  # S3 URL
-    infection_control_cert: Optional[str] = None  # S3 URL
-    first_aid_cert: Optional[str] = None  # S3 URL
+    # Training certifications
+    waste_training_cert: Optional[str] = None
+    infection_control_cert: Optional[str] = None
+    first_aid_cert: Optional[str] = None
     first_aid_expiry: Optional[date] = None
 
-    vehicle_insurance: Optional[str] = None  # S3 URL
+    # Vehicle insurance
+    vehicle_insurance: Optional[str] = None
     insurance_expiry: Optional[date] = None
 
-    employment_contract: Optional[str] = None  # S3 URL
-    right_to_work_doc: Optional[str] = None     # S3 URL
+    # Employment info
+    employment_contract: Optional[str] = None
+    right_to_work_doc: Optional[str] = None
     right_to_work_expiry: Optional[date] = None
 
+    # Status flags
     is_verified: bool = False
     is_active: bool = True
-    
+
+
+# --- Output schema for GET /driver_credentials ---
+class DriverCredentialsOut(DriverCredentialsBase):
+    id: UUID
+    user_id: UUID
+    organization_id: UUID
+
+    # Include documents as presigned URLs
+    documents: List[DocumentForDriverCredential] = []
+    class Config:
+        from_attributes = True
+
+
+
+# --- Schema for creation ---
 class DriverCredentialsCreate(DriverCredentialsBase):
     user_id: UUID
     organization_id: UUID
-    
+
+
+# --- Schema for update ---
 class DriverCredentialsUpdate(BaseModel):
     licence_number: Optional[str] = None
     licence_category: Optional[str] = None
@@ -1049,14 +1110,56 @@ class DriverCredentialsUpdate(BaseModel):
 
     is_verified: Optional[bool] = None
     is_active: Optional[bool] = None
-    
-class DriverCredentialsOut(DriverCredentialsBase):
+
+class DriverDocumentOut(BaseModel):
     id: UUID
-    user_id: UUID
+    filename: str
+    doc_type: str
+    uploaded_at: datetime
+    is_active: bool
+    file_url: Optional[str]
+
+class AdminDriverDocumentOut(BaseModel):
+    document_id: UUID
+    doc_type: str
+    file_url: Optional[str]
+    uploaded_at: datetime
+    is_active: bool
+    driver_id: UUID
+    driver_name: str
+    driver_email: str
+    
+    class Config:
+        from_attributes = True
+
+class DocumentExpiryStatus(BaseModel):
+    document_id: UUID
+    doc_type: str
+    expiry_date: date
+    status: str  # "valid" | "expiring_soon" | "expired"
+    days_remaining: int
+    file_url: Optional[str] = None
+
+
+class DriverDocumentExpiryResponse(BaseModel):
+    driver_id: UUID
     organization_id: UUID
+    expiry_status: List[DocumentExpiryStatus]
+    
+    class Config:
+        from_attributes = True
+
+
+
+class DriverDocumentActivationOut(BaseModel):
+    document_id: UUID
+    doc_type: str
+    is_active: bool
+    file_url: Optional[str]
 
     class Config:
-        from_attributes = True            
+        from_attributes = True
+            
 
 
 # app/schemas/international_application.py

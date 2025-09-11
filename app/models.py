@@ -577,6 +577,8 @@ class Document(Base):
     revoked = Column(Boolean, default=False)
     medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id",ondelete="CASCADE"))
     medilogic_driver = relationship("Medilogic_Driver", back_populates="documents")
+    file_size = Column(Integer, nullable=True)        # size in bytes
+    mime_type = Column(String, nullable=True)
     
 class Testimonial(Base):
     __tablename__ = "testimonials"

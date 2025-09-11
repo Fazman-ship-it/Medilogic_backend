@@ -99,6 +99,9 @@ async def submit_delivery_confirmation(
     ip_address = request.client.host
     user_agent = request.headers.get("user-agent")
 
+    # -------------------------
+    # Validate trip
+    # -------------------------
     trip = db.query(Trip).filter(
         Trip.id == trip_id,
         Trip.organization_id == current_user.organization_id
@@ -111,44 +114,53 @@ async def submit_delivery_confirmation(
         )
 
     # -------------------------
-    # Upload files to S3
+    # File uploads
     # -------------------------
     signature_s3_key = None
     photo_s3_key = None
+    pdf_s3_key = None
 
-    if signature_image:
-        signature_bytes = await signature_image.read()
-        signature_s3_key = f"delivery/signatures/{uuid.uuid4()}_{signature_image.filename}"
-        upload_file_to_s3(signature_bytes, signature_s3_key, signature_image.content_type)
+    try:
+        if signature_image:
+            signature_bytes = await signature_image.read()
+            signature_s3_key = f"delivery/signatures/{uuid.uuid4()}_{signature_image.filename}"
+            upload_file_to_s3(signature_bytes, signature_s3_key, signature_image.content_type)
 
-    if photo:
-        photo_bytes = await photo.read()
-        photo_s3_key = f"delivery/photos/{uuid.uuid4()}_{photo.filename}"
-        upload_file_to_s3(photo_bytes, photo_s3_key, photo.content_type)
+        if photo:
+            photo_bytes = await photo.read()
+            photo_s3_key = f"delivery/photos/{uuid.uuid4()}_{photo.filename}"
+            upload_file_to_s3(photo_bytes, photo_s3_key, photo.content_type)
 
-    # -------------------------
-    # Create delivery confirmation record
-    # -------------------------
-    confirmation = create_delivery_confirmation(
-        db=db,
-        trip_id=str(trip_id),
-        pin=pin,
-        signature_path=signature_s3_key,
-        photo_path=photo_s3_key,
-        wtn_code=wtn_code,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        latitude=latitude,
-        longitude=longitude
-    )
+        # -------------------------
+        # DB transaction
+        # -------------------------
+        confirmation = create_delivery_confirmation(
+            db=db,
+            trip_id=trip_id,  # ✅ leave as UUID
+            pin=pin,
+            signature_path=signature_s3_key,
+            photo_path=photo_s3_key,
+            wtn_code=wtn_code,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            latitude=latitude,
+            longitude=longitude
+        )
 
-    # -------------------------
-    # Generate PDF receipt and upload to S3
-    # -------------------------
-    pdf_bytes = generate_confirmation_pdf(confirmation)  # must return bytes
-    pdf_s3_key = f"delivery/receipts/{uuid.uuid4()}_receipt.pdf"
-    upload_file_to_s3(pdf_bytes, pdf_s3_key, "application/pdf")
-    pdf_url = generate_presigned_url(pdf_s3_key)
+        # -------------------------
+        # Generate PDF receipt
+        # -------------------------
+        pdf_bytes = generate_confirmation_pdf(confirmation)
+        pdf_s3_key = f"delivery/receipts/{uuid.uuid4()}_receipt.pdf"
+        upload_file_to_s3(pdf_bytes, pdf_s3_key, "application/pdf")
+        pdf_url = generate_presigned_url(pdf_s3_key)
+
+        db.commit()  # ✅ commit only after all uploads succeed
+
+    except Exception as e:
+        db.rollback()
+        # optional: cleanup S3 if partial uploads happened
+        raise HTTPException(status_code=500, detail=f"Delivery confirmation failed: {str(e)}")
 
     # -------------------------
     # Log action
@@ -157,7 +169,9 @@ async def submit_delivery_confirmation(
         db=db,
         user_id=current_user.id,
         action="delivery_confirmed",
-        details=f"Trip {trip_id} confirmed | IP: {ip_address} | UA: {user_agent}"
+        details=f"Trip {trip_id} confirmed | "
+                f"IP: {ip_address} | UA: {user_agent} | "
+                f"Files: {signature_s3_key}, {photo_s3_key}, {pdf_s3_key}"
     )
 
     return {

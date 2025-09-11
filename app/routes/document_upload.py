@@ -34,7 +34,7 @@ def upload_document(
     
     # Generate unique S3 key
     file_ext = os.path.splitext(file.filename)[1]
-    file_id = str(uuid4())
+    file_id = uuid4()  # ✅ keep as UUID
     s3_key = f"documents/{current_user.organization_id}/{file_id}{file_ext}"
     
     # Upload file to S3
@@ -44,25 +44,26 @@ def upload_document(
     document = models.Document(
         id=file_id,
         filename=file.filename,
-        attachment_key=s3_key,  # store S3 key
+        file_path=s3_key,  # ✅ match your model column
         doc_type=doc_type,
         user_id=current_user.id,
         organization_id=current_user.organization_id,
-        upload_time=datetime.utcnow()
+        upload_time=datetime.utcnow(),
     )
     db.add(document)
     db.commit()
     db.refresh(document)
     
-    # ✅ Return presigned URL
+    # ✅ Return presigned URL for frontend access
     return schemas.DocumentUploadOut(
         id=document.id,
         filename=document.filename,
         doc_type=document.doc_type,
         upload_time=document.upload_time,
-        attachment_url=storage.generate_download_url(document.attachment_key)
+        organization_id=document.organization_id,
+        user_id=document.user_id,
+        file_url=storage.generate_download_url(document.file_path)  # ✅ match schema
     )
-
 
 @router.get("/", response_model=List[schemas.DocumentUploadOut])
 def list_documents(
@@ -83,14 +84,17 @@ def list_documents(
     
     documents = query.order_by(models.Document.upload_time.desc()).all()
     
-    # Generate presigned URLs for all documents
+    # ✅ Generate presigned URLs for all documents
     return [
         schemas.DocumentUploadOut(
             id=d.id,
             filename=d.filename,
             doc_type=d.doc_type,
             upload_time=d.upload_time,
-            attachment_url=storage.generate_download_url(d.attachment_key)
+            organization_id=d.organization_id,
+            user_id=d.user_id,
+            file_url=storage.generate_download_url(d.file_path)  # ✅ match DB + schema
         )
         for d in documents
     ]
+    
