@@ -27,7 +27,7 @@ storage = S3Storage()
 def submit_incident(
     title: str = Form(...),
     description: str = Form(...),
-    file: Optional[UploadFile] = File(None),
+    files: List[UploadFile] = File(None),  # ✅ allow multiple files
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -35,34 +35,40 @@ def submit_incident(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only organization admins can submit incidents.")
 
-    # ✅ Upload file to S3 (if provided)
-    attachment_key = None
-    if file:
-        # Validate allowed extensions
-        ext = os.path.splitext(file.filename)[-1].lower()
-        if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
-            raise HTTPException(status_code=400, detail="File type not allowed")
-
-        # Save to S3 (e.g., incidents/org_id/filename.ext)
-        unique_filename = f"{uuid.uuid4()}{ext}"
-        attachment_key = f"incidents/{current_user.organization_id}/{unique_filename}"
-        storage.client.upload_fileobj(file.file, storage.bucket, attachment_key)
-
-    # ✅ Create incident record
+    # ✅ Create incident record first
     new_incident = models.Incident(
         title=title,
         description=description,
         organization_id=current_user.organization_id,
         submitted_by_id=current_user.id,
-        attachment_url=attachment_key,  # store key only
-        status="pending",
-        created_at=datetime.utcnow()
+        status="pending"
     )
-
     db.add(new_incident)
     db.commit()
     db.refresh(new_incident)
 
+    # ✅ Upload files if provided
+    if files:
+        for file in files:
+            ext = os.path.splitext(file.filename)[-1].lower()
+            if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
+                raise HTTPException(status_code=400, detail=f"File type {ext} not allowed")
+
+            unique_filename = f"{uuid.uuid4()}{ext}"
+            s3_key = f"incidents/{current_user.organization_id}/{new_incident.id}/{unique_filename}"
+
+            storage.client.upload_fileobj(file.file, storage.bucket, s3_key)
+
+            # Save to IncidentFile
+            db.add(models.IncidentFile(
+                incident_id=new_incident.id,
+                s3_key=s3_key,
+                file_type=ext.replace(".", "")
+            ))
+
+        db.commit()
+
+    db.refresh(new_incident)
     return new_incident
 
 @router.get("/", response_model=List[schemas.IncidentOut])
@@ -70,24 +76,37 @@ def get_incidents(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    # 🔒 Role-based visibility
     if current_user.role == "super_admin":
         incidents = db.query(models.Incident).all()
     elif current_user.role == "regulator":
-        incidents = db.query(models.Incident).join(models.Organization).filter(
-            models.Organization.country == current_user.regulated_country,
-            models.Organization.state == current_user.regulated_state,
-            models.Organization.region == current_user.regulated_region
-        ).all()
+        incidents = (
+            db.query(models.Incident)
+            .join(models.Organization)
+            .filter(
+                models.Organization.country == current_user.regulated_country,
+                models.Organization.state == current_user.regulated_state,
+                models.Organization.region == current_user.regulated_region,
+            )
+            .all()
+        )
     else:
         raise HTTPException(status_code=403, detail="Not authorized to view incidents.")
 
-    # 🔄 Convert DB shape → API response
+    # 🔄 Build API response (with presigned URLs for files)
     result = []
     for inc in incidents:
-        presigned_url = (
-            storage.generate_download_url(inc.attachment_url)
-            if inc.attachment_url else None
-        )
+        file_responses = []
+        for f in inc.files:
+            presigned_url = storage.generate_download_url(f.s3_key)
+            file_responses.append(
+                schemas.IncidentFileOut(
+                    id=f.id,
+                    s3_key=presigned_url,  # return URL, not raw key
+                    file_type=f.file_type,
+                )
+            )
+
         result.append(
             schemas.IncidentOut(
                 id=inc.id,
@@ -97,9 +116,10 @@ def get_incidents(
                 submitted_by_id=inc.submitted_by_id,
                 status=inc.status,
                 created_at=inc.created_at,
-                attachment_url=presigned_url,  # now real link
+                files=file_responses,
             )
         )
+
     return result
 
 @router.post("/incidents/driver", response_model=schemas.IncidentOut)
@@ -110,26 +130,14 @@ def submit_incident_as_driver(
     location: str = Form(...),
     severity: str = Form(...),
     is_visible_to_regulator: bool = Form(False),
-    file: Optional[UploadFile] = File(None),
+    files: List[UploadFile] = File([]),  # ✅ support multiple files
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can submit incidents")
 
-    # ✅ Upload to S3 (if file is attached)
-    attachment_key = None
-    if file:
-        ext = os.path.splitext(file.filename)[-1].lower()
-        if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
-            raise HTTPException(status_code=400, detail="File type not allowed")
-
-        unique_filename = f"{uuid.uuid4()}{ext}"
-        attachment_key = f"incidents/{current_user.organization_id}/{unique_filename}"
-
-        storage.upload_fileobj(file.file, attachment_key)
-
-    # ✅ Save to DB (store key only)
+    # ✅ Create incident record first
     new_incident = models.Incident(
         organization_id=current_user.organization_id,
         submitted_by_id=current_user.id,
@@ -139,9 +147,28 @@ def submit_incident_as_driver(
         location=location,
         severity=severity,
         is_visible_to_regulator=is_visible_to_regulator,
-        attachment_url=attachment_key
     )
     db.add(new_incident)
+    db.commit()
+    db.refresh(new_incident)
+
+    # ✅ Handle file uploads (store in IncidentFile table)
+    for file in files:
+        ext = os.path.splitext(file.filename)[-1].lower()
+        if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
+            raise HTTPException(status_code=400, detail=f"File type {ext} not allowed")
+
+        unique_filename = f"{uuid.uuid4()}{ext}"
+        s3_key = f"incidents/{current_user.organization_id}/{unique_filename}"
+
+        storage.upload_fileobj(file.file, s3_key)
+
+        db.add(models.IncidentFile(
+            incident_id=new_incident.id,
+            s3_key=s3_key,
+            file_type=ext.replace(".", ""),  # e.g., pdf, jpg
+        ))
+
     db.commit()
     db.refresh(new_incident)
 
@@ -156,10 +183,10 @@ def submit_incident_as_driver(
     recipient_emails = [user.email for user in recipients if user.email]
 
     if recipient_emails and (severity.lower() == "critical" or is_visible_to_regulator):
-        presigned_url = (
-            storage.generate_download_url(attachment_key)
-            if attachment_key else "None"
-        )
+        file_urls = []
+        for f in new_incident.files:
+            file_urls.append(storage.generate_download_url(f.s3_key))
+
         subject = f"🚨 New Incident from {current_user.full_name} - Severity: {severity.title()}"
         body = f"""
 A new incident has been reported by {current_user.full_name} ({current_user.email}):
@@ -169,7 +196,7 @@ A new incident has been reported by {current_user.full_name} ({current_user.emai
 ⚠️ Severity: {severity}
 👁 Visible to Regulator: {"Yes" if is_visible_to_regulator else "No"}
 🏢 Organization: {current_user.organization.name}
-📎 Attachment: {presigned_url}
+📎 Attachments: {", ".join(file_urls) if file_urls else "None"}
 
 Description:
 {description}

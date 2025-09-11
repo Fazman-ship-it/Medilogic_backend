@@ -209,7 +209,6 @@ class POD(Base):
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"), nullable=False)
-    attachment_url = Column(String, nullable=True)  # Optional photo proof
     signature = Column(Text, nullable=True)# Optional e-signature or driver note.,
     timestamp = Column(DateTime, default=datetime.utcnow)
     notes = Column(Text, nullable=True)  # Optional notes from the driver or client
@@ -218,7 +217,8 @@ class POD(Base):
     driver = relationship("User", back_populates="pods")
     organization_id = Column(UUID(as_uuid=True),ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="pods") 
-    created_at = Column(DateTime, default=datetime.utcnow)       
+    created_at = Column(DateTime, default=datetime.utcnow)
+    files = relationship("PODFile", back_populates="pod", cascade="all, delete-orphan")       
 
 class Organization(Base):
     __tablename__ = "organizations"
@@ -412,7 +412,6 @@ class Incident(Base):
     submitted_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
-    attachment_url = Column(String, nullable=True)
     status = Column(String, default="pending")  # pending, resolved, escalated
     created_at = Column(DateTime, default=datetime.utcnow)
     organization = relationship("Organization", back_populates="incidents")
@@ -422,6 +421,7 @@ class Incident(Base):
     severity = Column(SqlEnum(SeverityLevel,name="severitylevel"),nullable=False, default='low')  # New severity field
     escalated= Column(Boolean, default=False)  # New field to track escalation status
     is_visible_to_regulator = Column(Boolean, default=False)  # New field to control visibility to regulators
+    files = relationship("IncidentFile", back_populates="incident", cascade="all, delete-orphan")
 
 
 class ComplianceStatus(Base):
@@ -844,7 +844,6 @@ class DriverView(Base):
     medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id", ondelete="CASCADE"))
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"))
     viewed_at = Column(DateTime, default=datetime.utcnow)
-
     medilogic_driver = relationship("Medilogic_Driver", back_populates="views")
     organization = relationship("Organization", back_populates="driver_views")
     
@@ -862,4 +861,23 @@ class DailyNotification(Base):
     organization = relationship("Organization", back_populates="daily_notifications")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     organization = relationship("Organization", back_populates="daily_notifications")
-    is_active_today = Column(Boolean, default=False)   
+    is_active_today = Column(Boolean, default=False)
+    
+
+class PODFile(Base):
+    __tablename__ = "pod_files"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    pod_id = Column(UUID(as_uuid=True), ForeignKey("pods.id", ondelete="CASCADE"))
+    s3_key = Column(String, nullable=False)  # path in S3
+    file_type = Column(String, nullable=True)  # e.g. "raw", "pdf", "receipt"
+    pod = relationship("POD", back_populates="files")
+    
+class IncidentFile(Base):
+    __tablename__ = "incident_files"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
+    s3_key = Column(String, nullable=False)
+    file_type = Column(String, nullable=True)  # e.g., "image", "pdf", "docx"
+    incident = relationship("Incident", back_populates="files")           

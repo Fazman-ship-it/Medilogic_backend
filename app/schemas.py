@@ -170,36 +170,49 @@ class TripAnalyticsResponse(BaseModel):
 # --------------------------
 # Base for creating PODs
 
+# --------------------------
+# Shared base
 class PODBase(BaseModel):
     trip_id: UUID
     signature: Optional[str] = None
     notes: Optional[str] = None
     delivered_to: Optional[str] = None
 
+# --------------------------
+# Input schema (no files here, handled separately in /upload)
 class PODCreate(PODBase):
-    # No file upload here (handled separately in /upload with Form+File)
     pass
 
-# DB-shaped response (internal use)
+# --------------------------
+# Output schema for individual POD files
+class PODFileOut(BaseModel):
+    id: UUID
+    s3_key: str
+    file_type: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+# --------------------------
+# DB-shaped response (mainly for internal queries, not frontend)
 class PODDB(PODBase):
     id: UUID
     driver_id: Optional[UUID] = None
-    attachment_url: Optional[str] = None  # raw S3 keys, joined by ";"
     created_at: datetime
 
     class Config:
         from_attributes = True
 
-# API-friendly response (what frontend actually sees)
+# --------------------------
+# API-friendly response (what frontend sees)
 class PODResponse(PODBase):
     id: UUID
     driver_id: Optional[UUID] = None
     created_at: datetime
-    file_urls: List[str] = []  # ✅ always presigned URLs, safe for frontend
+    files: List[PODFileOut] = []  # ✅ clean: all files linked to this POD
 
     class Config:
         from_attributes = True
-        
 # Client Booking & Trips
 # --------------------------
 class ClientRegister(BaseModel):
@@ -544,16 +557,29 @@ class EnquiryOut(BaseModel):
     class Config:
         from_attributes = True
         
+
 # --------------------------
+# Input schema for creating incidents (no files here)
 class IncidentCreate(BaseModel):
     title: str
     description: str
-    attachment_url: Optional[str]  # store S3 key internally
     incident_type: Optional[str] = None 
     location: Optional[str] = None
     severity: Optional[str] = "low"  # can be low, moderate, critical
     is_visible_to_regulator: Optional[bool] = False
 
+# --------------------------
+# Output schema for files
+class IncidentFileOut(BaseModel):
+    id: UUID
+    s3_key: str
+    file_type: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+# --------------------------
+# Schema for updating an incident
 class IncidentUpdate(BaseModel):
     title: Optional[str]
     description: Optional[str]
@@ -562,7 +588,6 @@ class IncidentUpdate(BaseModel):
     severity: Optional[str]
     is_visible_to_regulator: Optional[bool]
     status: Optional[str]
-    attachment_url: Optional[str]  # S3 key internally
 
 # --------------------------
 # API-friendly output schema for frontend
@@ -574,11 +599,11 @@ class IncidentOut(BaseModel):
     created_at: datetime
     submitted_by_id: UUID
     organization_id: UUID
-    attachment_urls: Optional[List[str]] = []  # ✅ presigned URLs here
     is_visible_to_regulator: Optional[bool] = False
     incident_type: Optional[str] = None  # e.g., "accident", "theft", "compliance_issue"
-    location: Optional[str] = None  # Optional field for incident location
+    location: Optional[str] = None
     severity: Optional[str] = "low"  # low, moderate, critical
+    files: List[IncidentFileOut] = []  # ✅ list of uploaded files
 
     class Config:
         from_attributes = True

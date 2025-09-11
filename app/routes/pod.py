@@ -23,7 +23,7 @@ def create_pod(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("driver"))  # ✅ Only drivers
 ):
-    # ✅ Ensure trip belongs to this driver + org
+    # ✅ Step 1: Ensure trip belongs to this driver + org
     trip = db.query(models.Trip).filter(
         models.Trip.id == pod.trip_id,
         models.Trip.driver_id == current_user.id,
@@ -33,13 +33,12 @@ def create_pod(
     if not trip:
         raise HTTPException(status_code=403, detail="You are not authorized to create POD for this trip.")
 
-    # ✅ Create POD without trusting user-supplied URLs
+    # ✅ Step 2: Create POD (no files yet, no attachment_url)
     new_pod = models.POD(
         trip_id=pod.trip_id,
         delivered_to=pod.delivered_to,
         signature=pod.signature,
         notes=pod.notes,
-        attachment_url="",  # files will be uploaded separately
         driver_id=current_user.id,
         organization_id=current_user.organization_id
     )
@@ -47,7 +46,7 @@ def create_pod(
     db.commit()
     db.refresh(new_pod)
 
-    # ✅ Return clean response (no keys, just metadata, empty list of files)
+    # ✅ Step 3: Return schema response (empty files list for now)
     return schemas.PODResponse(
         id=new_pod.id,
         trip_id=new_pod.trip_id,
@@ -56,66 +55,25 @@ def create_pod(
         notes=new_pod.notes,
         delivered_to=new_pod.delivered_to,
         created_at=new_pod.created_at,
-        attachment_urls=[]  # nothing uploaded yet
+        file_urls=[]  # ✅ fixed: no attachment_url anymore
     )
 
-@router.get("/by-trip/{trip_id}", response_model=schemas.PODResponse)
-def get_pod_by_trip_id(
-    trip_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    # ✅ Step 1: Get the POD linked to this trip
-    pod = db.query(models.POD).filter(models.POD.trip_id == trip_id).first()
-    if not pod:
-        raise HTTPException(status_code=404, detail="No POD found for this trip")
-
-    # ✅ Step 2: Check organization match
-    if pod.organization_id != current_user.organization_id:
-        raise HTTPException(status_code=403, detail="Access denied — wrong organization")
-
-    # ✅ Step 3: Role-based access
-    if current_user.role == "driver" and pod.driver_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You are not the driver for this POD")
-
-    if current_user.role == "client":
-        trip = db.query(models.Trip).filter(
-            models.Trip.id == trip_id,
-            models.Trip.organization_id == current_user.organization_id
-        ).first()
-        if not trip or trip.client_name != current_user.full_name:
-            raise HTTPException(status_code=403, detail="You are not authorized to access this POD")
-
-    # ✅ Step 4: Convert attachment_url keys → presigned URLs
-    keys = pod.attachment_url.split(";") if pod.attachment_url else []
-    urls = [storage.generate_download_url(k) for k in keys]
-
-    # ✅ Step 5: Return API-friendly schema
-    return schemas.PODResponse(
-        id=pod.id,
-        trip_id=pod.trip_id,
-        driver_id=pod.driver_id,
-        signature=pod.signature,
-        notes=pod.notes,
-        delivered_to=pod.delivered_to,
-        created_at=pod.created_at,
-        file_urls=urls  # ✅ fixed: matches schema
-    )
 @router.get("/pods/{pod_id}", response_model=schemas.PODResponse)
 def get_pod_by_id(
     pod_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    # ✅ Step 1: Fetch POD
     pod = db.query(models.POD).filter(models.POD.id == pod_id).first()
     if not pod:
         raise HTTPException(status_code=404, detail="POD not found")
 
-    # ✅ Organization safety
+    # ✅ Step 2: Multi-tenant org check
     if pod.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="You don't have access to this POD")
 
-    # 🔒 Role-based access
+    # ✅ Step 3: Role-based access
     if current_user.role == "driver" and pod.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not the driver for this POD")
 
@@ -124,14 +82,17 @@ def get_pod_by_id(
             models.Trip.id == pod.trip_id,
             models.Trip.organization_id == current_user.organization_id
         ).first()
-        if not trip or trip.client_name != current_user.full_name:  # ✅ match with schema field
+        if not trip or trip.client_name != current_user.full_name:  
             raise HTTPException(status_code=403, detail="You don't have access to this POD")
 
-    # ✅ Convert stored keys → presigned URLs
-    keys = pod.attachment_url.split(";") if pod.attachment_url else []
-    urls = [storage.generate_download_url(k) for k in keys]
+    # ✅ Step 4: Fetch related files
+    pod_files = db.query(models.PODFile).filter(models.PODFile.pod_id == pod.id).all()
+    urls = [
+        storage.generate_download_url(f.s3_key)
+        for f in pod_files
+    ]
 
-    # ✅ Return API-friendly schema
+    # ✅ Step 5: Return schema-friendly response
     return schemas.PODResponse(
         id=pod.id,
         trip_id=pod.trip_id,
@@ -140,7 +101,7 @@ def get_pod_by_id(
         notes=pod.notes,
         delivered_to=pod.delivered_to,
         created_at=pod.created_at,
-        file_urls=urls  # ✅ fixed: matches schema
+        file_urls=urls
     )
 
 # app/routes/pods.py
@@ -207,19 +168,19 @@ def create_pod_with_file(
     with open(receipt_filename, "rb") as pdf_file:
         storage.client.upload_fileobj(pdf_file, storage.bucket, receipt_key)
 
-    # ✅ Step 5: Store keys (not URLs) in DB
-    keys = []
+    # ✅ Step 5: Store files in DB (separately, not as string)
     if raw_key:
-        keys.append(raw_key)
-    if pdf_key:
-        keys.append(pdf_key)
-    keys.append(receipt_key)
+        db.add(models.PODFile(pod_id=new_pod.id, s3_key=raw_key, file_type="raw"))
 
-    new_pod.attachment_url = ";".join(keys)
+    if pdf_key:
+        db.add(models.PODFile(pod_id=new_pod.id, s3_key=pdf_key, file_type="pdf"))
+
+    db.add(models.PODFile(pod_id=new_pod.id, s3_key=receipt_key, file_type="receipt"))
+
     db.commit()
+    db.refresh(new_pod)
 
     return new_pod
-
 
 @router.get("/download/{filename}")
 def download_pod_file(
@@ -227,14 +188,21 @@ def download_pod_file(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # ✅ Step 1: Search for a POD in the same org that contains this file
-    pod = db.query(models.POD).filter(
-        models.POD.organization_id == current_user.organization_id,
-        models.POD.attachment_url.contains(filename)  # quicker filter
-    ).first()
+    # ✅ Step 1: Find the PODFile by filename and org
+    pod_file = (
+        db.query(models.PODFile)
+        .join(models.POD)
+        .filter(
+            models.POD.organization_id == current_user.organization_id,
+            models.PODFile.s3_key.like(f"%{filename}")  # match by file name
+        )
+        .first()
+    )
 
-    if not pod:
+    if not pod_file:
         raise HTTPException(status_code=404, detail="File not found")
+
+    pod = pod_file.pod  # thanks to relationship
 
     # ✅ Step 2: Verify role-based access
     if current_user.role == "driver" and pod.driver_id != current_user.id:
@@ -248,15 +216,8 @@ def download_pod_file(
         if not trip or trip.client_name != current_user.name:
             raise HTTPException(status_code=403, detail="You don’t have access to this POD file")
 
-    # ✅ Step 3: Extract the exact file key
-    stored_files = pod.attachment_url.split(";") if pod.attachment_url else []
-    file_key = next((f for f in stored_files if f.split("/")[-1] == filename), None)
-
-    if not file_key:
-        raise HTTPException(status_code=404, detail="File not linked to this POD")
-
-    # ✅ Step 4: Generate presigned download URL (10 mins expiry)
-    download_url = storage.generate_download_url(file_key, expires_in=600)
+    # ✅ Step 3: Generate presigned download URL (10 mins expiry)
+    download_url = storage.generate_download_url(pod_file.s3_key, expires_in=600)
 
     return {"download_url": download_url}
 
@@ -288,11 +249,16 @@ def list_pod_files(
         if not trip or trip.client_name != current_user.full_name:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    # ✅ Step 3: Generate presigned URLs for all files
-    file_keys = pod.attachment_url.split(";") if pod.attachment_url else []
+    # ✅ Step 3: Fetch all related PODFiles
+    pod_files = db.query(models.PODFile).filter(models.PODFile.pod_id == pod.id).all()
+
+    if not pod_files:
+        return []
+
+    # ✅ Step 4: Generate presigned URLs for each file
     presigned_urls = [
-        storage.generate_download_url(file_key, expires_in=PRESIGNED_EXPIRY)
-        for file_key in file_keys
+        storage.generate_download_url(pf.s3_key, expires_in=PRESIGNED_EXPIRY)
+        for pf in pod_files
     ]
 
     return presigned_urls
