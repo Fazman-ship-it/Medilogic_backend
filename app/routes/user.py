@@ -38,7 +38,7 @@ router = APIRouter(
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-@router.delete("/users/me", status_code=204)
+router.delete("/users/me", status_code=204)
 def delete_own_account(
     request: DeleteAccountRequest,
     db: Session = Depends(get_db),
@@ -57,13 +57,12 @@ def delete_own_account(
     current_user.deleted_at = datetime.utcnow()
     current_user.deletion_reason = request.reason
 
-    # 📝 Log activity
+    # 📝 Log activity (multi-tenant safe)
     log_activity(
         db=db,
         user_id=current_user.id,
         action="soft_delete_account",
-        details=f"User {current_user.email} marked their account as deleted. Reason: {request.reason}",
-        organization_id=current_user.organization_id
+        details=f"User {current_user.email} marked their account as deleted. Reason: {request.reason}"
     )
 
     db.commit()
@@ -138,8 +137,7 @@ def restore_user(
         db=db,
         user_id=current_user.id,
         action="restore_user",
-        details=f"Restored user: {user_to_restore.email} (ID: {user_to_restore.id})",
-        organization_id=current_user.organization_id
+        details=f"Restored user: {user_to_restore.email} (ID: {user_to_restore.id})"
     )
 
     return {"message": f"User {user_to_restore.email} has been restored successfully."}
