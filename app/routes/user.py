@@ -32,13 +32,11 @@ from app.dependencies import get_db, get_current_user
 from app.schemas import UserUpdate, DeleteAccountRequest
 from app.utilites.logging import log_activity
 
-router = APIRouter(
-    prefix="/users", tags=['users'])
-# app/routes/user.py
+router = APIRouter(prefix="/users", tags=['users'])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-router.delete("/users/me", status_code=204)
+@router.delete("/users/me", status_code=204)
 def delete_own_account(
     request: DeleteAccountRequest,
     db: Session = Depends(get_db),
