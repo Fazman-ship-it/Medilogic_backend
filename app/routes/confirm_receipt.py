@@ -11,8 +11,6 @@ from app.models import Trip, User
 from app.dependencies import get_current_user
 from app.config import settings
 from app.crudy.delivery_confirmation import create_delivery_confirmation
-import schemas,models
-from app.utilites.helper import save_upload_file
 from app.utilites.pdf_file_generator import generate_confirmation_pdf
 from app.utilites.logging import log_activity
 
@@ -28,7 +26,7 @@ from app.crudy.delivery_confirmation import create_delivery_confirmation
 from app.config import settings
 import jwt
 from app.storage import S3Storage
-import schemas # Ensure schemas is imported
+
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter(tags=["Delivery Confirmation"])
 SECRET_KEY = os.getenv("DELIVERY_CONFIRM_SECRET", "fallback_key")
