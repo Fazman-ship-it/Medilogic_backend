@@ -59,7 +59,7 @@ def create_pod(
     )
 
 @router.get("/pods/{pod_id}", response_model=schemas.PODResponse)
-def get_pod_by_id(
+async def get_pod_by_id(
     pod_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -85,12 +85,13 @@ def get_pod_by_id(
         if not trip or trip.client_name != current_user.full_name:  
             raise HTTPException(status_code=403, detail="You don't have access to this POD")
 
-    # ✅ Step 4: Fetch related files
+    # ✅ Step 4: Fetch related files + presigned URLs
     pod_files = db.query(models.PODFile).filter(models.PODFile.pod_id == pod.id).all()
-    urls = [
-        storage.generate_download_url(f.s3_key)
-        for f in pod_files
-    ]
+    urls = []
+    for f in pod_files:
+        if f.s3_key:
+            url = await generate_presigned_url_async(f.s3_key)  # 🔄 use your helper
+            urls.append(url)
 
     # ✅ Step 5: Return schema-friendly response
     return schemas.PODResponse(
@@ -103,7 +104,6 @@ def get_pod_by_id(
         created_at=pod.created_at,
         file_urls=urls
     )
-
 # app/routes/pods.py
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
@@ -113,12 +113,10 @@ import uuid
 from app import models, schemas
 from app.database import get_db
 from app.dependencies import require_role, get_current_user
-from app.storage import S3Storage
-
-storage = S3Storage()
+from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async
 
 @router.post("/upload", response_model=schemas.PODResponse)
-def create_pod_with_file(
+async def create_pod_with_file(
     trip_id: UUID = Form(...),
     delivered_to: str = Form(...),
     notes: Optional[str] = Form(None),
@@ -137,22 +135,27 @@ def create_pod_with_file(
     if not trip:
         raise HTTPException(status_code=403, detail="You are not authorized for this trip.")
 
-    # ✅ Step 2: Upload file to S3
+    # ✅ Step 2: Upload file to S3 (raw or pdf)
     raw_key = None
     pdf_key = None
     if file:
         if file.content_type not in ["image/jpeg", "image/png", "application/pdf"]:
             raise HTTPException(status_code=400, detail="Unsupported file type")
 
-        raw_key, pdf_key = storage.save_file(file)
+        # Upload original file
+        uploaded_key = await upload_file_to_s3_async(file, prefix="pods/uploads")
 
-    # ✅ Step 3: Save POD to DB (keys only, no URLs)
+        if file.content_type == "application/pdf":
+            pdf_key = uploaded_key
+        else:
+            raw_key = uploaded_key
+
+    # ✅ Step 3: Save POD to DB (keys only, no URLs yet)
     new_pod = models.POD(
         trip_id=trip_id,
         delivered_to=delivered_to,
         signature=signature,
         notes=notes,
-        attachment_url="",  # will update below
         driver_id=current_user.id,
         organization_id=current_user.organization_id
     )
@@ -166,16 +169,17 @@ def create_pod_with_file(
 
     receipt_key = f"pods/receipts/{receipt_filename}"
     with open(receipt_filename, "rb") as pdf_file:
-        storage.client.upload_fileobj(pdf_file, storage.bucket, receipt_key)
+        upload_file = UploadFile(filename=receipt_filename, file=pdf_file, content_type="application/pdf")
+        uploaded_receipt_key = await upload_file_to_s3_async(upload_file, prefix="pods/receipts")
 
-    # ✅ Step 5: Store files in DB (separately, not as string)
+    # ✅ Step 5: Store files in DB
     if raw_key:
         db.add(models.PODFile(pod_id=new_pod.id, s3_key=raw_key, file_type="raw"))
 
     if pdf_key:
         db.add(models.PODFile(pod_id=new_pod.id, s3_key=pdf_key, file_type="pdf"))
 
-    db.add(models.PODFile(pod_id=new_pod.id, s3_key=receipt_key, file_type="receipt"))
+    db.add(models.PODFile(pod_id=new_pod.id, s3_key=uploaded_receipt_key, file_type="receipt"))
 
     db.commit()
     db.refresh(new_pod)
@@ -183,7 +187,7 @@ def create_pod_with_file(
     return new_pod
 
 @router.get("/download/{filename}")
-def download_pod_file(
+async def download_pod_file(
     filename: str,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -217,14 +221,12 @@ def download_pod_file(
             raise HTTPException(status_code=403, detail="You don’t have access to this POD file")
 
     # ✅ Step 3: Generate presigned download URL (10 mins expiry)
-    download_url = storage.generate_download_url(pod_file.s3_key, expires_in=600)
+    download_url = await generate_presigned_url_async(pod_file.s3_key, expires_in=600)
 
     return {"download_url": download_url}
-
 from app.config import settings
-PRESIGNED_EXPIRY = 600  # 10 minutes, can move to settings.py later
 @router.get("/{pod_id}/files", response_model=List[str])
-def list_pod_files(
+async def list_pod_files(
     pod_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -255,9 +257,9 @@ def list_pod_files(
     if not pod_files:
         return []
 
-    # ✅ Step 4: Generate presigned URLs for each file
+    # ✅ Step 4: Generate presigned URLs for each file (async)
     presigned_urls = [
-        storage.generate_download_url(pf.s3_key, expires_in=PRESIGNED_EXPIRY)
+        await generate_presigned_url_async(pf.s3_key, expires_in=settings.PRESIGNED_EXPIRY)
         for pf in pod_files
     ]
 

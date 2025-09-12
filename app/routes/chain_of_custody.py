@@ -19,22 +19,30 @@ from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 import plotly.graph_objs as go
 from uuid import UUID
-from app.storage import S3Storage
 import uuid
 
 router = APIRouter(prefix="/custody", tags=["Chain of Custody"])
-storage = S3Storage()
+
+# routes/chain_of_custody.py
+import os
+import io
+from app.utilites.storage_utilites import (
+    upload_file_to_s3_async,
+    delete_file_from_s3,
+    generate_presigned_url_async,
+)
 
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
 MAX_FILE_SIZE_MB = 8
 PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
 
+
 @router.post("/", response_model=schemas.ChainOfCustodyOut)
-def log_custody_event(
+async def log_custody_event(
     event: schemas.ChainOfCustodyCreate,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user),
-    file: UploadFile = File(None)
+    file: UploadFile = File(None),
 ):
     # Step 1: Validate trip and multi-tenancy
     trip = db.query(models.Trip).filter(models.Trip.id == event.trip_id).first()
@@ -47,35 +55,34 @@ def log_custody_event(
     # Step 2: Prepare optional upload
     s3_key = None
     mime_type = None
-    file_size = None
+    contents = None
 
     if file:
         ext = os.path.splitext(file.filename)[-1].lower()
         if ext not in ALLOWED_EXTS:
             raise HTTPException(status_code=400, detail="Unsupported file type")
 
-        # read file bytes and size (async read)
-        contents = file.file.read() if not hasattr(file.file, "read") else file.file.read()
-        # Note: if UploadFile is starlette UploadFile, file.file may be a SpooledTemporaryFile; 
-        # for async use you can await file.read() — here endpoint is sync so using file.file.read()
+        # ✅ async read (since UploadFile is async)
+        contents = await file.read()
 
-        file_size = len(contents)
-        size_mb = file_size / (1024 * 1024)
+        size_mb = len(contents) / (1024 * 1024)
         if size_mb > MAX_FILE_SIZE_MB:
-            raise HTTPException(status_code=400, detail=f"File too large. Max size is {MAX_FILE_SIZE_MB} MB")
+            raise HTTPException(
+                status_code=400, detail=f"File too large. Max size is {MAX_FILE_SIZE_MB} MB"
+            )
 
         # safe S3 key with org + trip context
         unique_filename = f"{uuid.uuid4()}{ext}"
         s3_key = f"custody_photos/{trip.organization_id}/{unique_filename}"
-        mime_type = file.content_type or ("application/pdf" if ext == ".pdf" else f"image/{ext.replace('.', '')}")
+        mime_type = file.content_type or (
+            "application/pdf" if ext == ".pdf" else f"image/{ext.replace('.', '')}"
+        )
 
     # Step 3: Upload + DB in a safe transaction
     try:
-        # upload first (so we don't create DB row if S3 fails)
         if s3_key:
-            # storage.upload_fileobj expects a file-like or bytes depending on impl
-            # use the storage api you have (upload_fileobj or upload_bytes). Example:
-            storage.upload_fileobj(io.BytesIO(contents), s3_key, mime_type)
+            # ✅ use async helper
+            await upload_file_to_s3_async(file, prefix=f"custody_photos/{trip.organization_id}")
 
         custody_log = models.ChainOfCustody(
             trip_id=event.trip_id,
@@ -83,9 +90,9 @@ def log_custody_event(
             event_type=event.event_type,
             location=event.location,
             notes=event.notes,
-            attachment_url=s3_key,   # store S3 key only
+            attachment_url=s3_key,  # store S3 key only
             timestamp=datetime.utcnow(),
-            organization_id=current_user.organization_id
+            organization_id=current_user.organization_id,
         )
         db.add(custody_log)
         db.commit()
@@ -93,29 +100,26 @@ def log_custody_event(
 
     except Exception as exc:
         db.rollback()
-        # Attempt cleanup if S3 upload succeeded but DB failed
         try:
             if s3_key:
-                storage.delete_object(s3_key)
+                await delete_file_from_s3(s3_key)  # ✅ async cleanup
         except Exception:
             pass
         raise HTTPException(status_code=500, detail=f"Failed to create custody log: {str(exc)}")
 
-    # Step 4: Activity log (multi-tenant-safe)
-    # NOTE: call log_activity in the form your project expects.
-    # If your log_activity infers organization from user, don't pass organization_id.
+    # Step 4: Activity log
     log_activity(
         db=db,
         user_id=current_user.id,
         action=f"Logged custody event: {event.event_type}",
         details=f"Custody logged for Trip #{event.trip_id} by {current_user.full_name}",
-        trip_id=event.trip_id
+        trip_id=event.trip_id,
     )
 
-    # Step 5: Generate presigned URL(s) for response
+    # Step 5: Generate presigned URL(s)
     attachment_urls = []
     if s3_key:
-        url = storage.generate_download_url(s3_key, expires_in=PRESIGNED_EXPIRES)
+        url = await generate_presigned_url_async(s3_key, expires_in=PRESIGNED_EXPIRES)
         attachment_urls.append(url)
 
     # Step 6: Return API-friendly response
@@ -127,11 +131,11 @@ def log_custody_event(
         location=custody_log.location,
         notes=custody_log.notes,
         attachment_urls=attachment_urls,
-        timestamp=custody_log.timestamp
+        timestamp=custody_log.timestamp,
     )
-    
+
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
-def get_custody_events(
+async def get_custody_events(
     trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -143,19 +147,19 @@ def get_custody_events(
 
     # Step 2: Role-based access control
     if current_user.role == "driver" and trip.driver_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Unauthorized: Not your trip")
-    
-    if current_user.role == "client" and trip.client_id != current_user.id:  # safer than name
-        raise HTTPException(status_code=403, detail="Unauthorized: Not your trip")
-    
+        raise HTTPException(status_code=403, detail="Unauthorized: This trip does not belong to you")
+
+    if current_user.role == "client" and trip.client_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized: This trip does not belong to you")
+
     if current_user.role != "super_admin" and trip.organization_id != current_user.organization_id:
-        raise HTTPException(status_code=403, detail="Unauthorized: Different organization")
+        raise HTTPException(status_code=403, detail="Unauthorized: Trip belongs to a different organization")
 
     # Step 3: Fetch custody events
     events = (
         db.query(models.ChainOfCustody)
         .filter(models.ChainOfCustody.trip_id == trip_id)
-        .order_by(models.ChainOfCustody.timestamp)
+        .order_by(models.ChainOfCustody.timestamp.asc())
         .all()
     )
 
@@ -164,11 +168,11 @@ def get_custody_events(
     for e in events:
         urls = []
         if e.attachment_url:
-            urls.append(storage.generate_download_url(
+            presigned_url = await generate_presigned_url_async(
                 e.attachment_url,
-                expires_in=300,  # 5 minutes
-                response_headers={"Content-Disposition": f"inline; filename={os.path.basename(e.attachment_url)}"}
-            ))
+                expires_in=PRESIGNED_EXPIRES
+            )
+            urls.append(presigned_url)
         event_out = schemas.ChainOfCustodyOut.from_orm(e)
         event_out.attachment_urls = urls
         response_events.append(event_out)
@@ -179,13 +183,13 @@ def get_custody_events(
         user_id=current_user.id,
         trip_id=trip.id,
         action="Viewed custody events",
-        details=f"User {current_user.name} retrieved custody events for trip {trip.id}"
+        details=f"User {getattr(current_user, 'full_name', current_user.id)} retrieved custody events for trip {trip.id}"
     )
 
     return response_events
 
 @router.get("/export/{trip_id}")
-def export_custody_log(
+async def export_custody_log(
     trip_id: UUID,
     format: str = "csv",  # Supports "csv" and "pdf"
     db: Session = Depends(get_db),
@@ -216,13 +220,21 @@ def export_custody_log(
     if format.lower() == "csv":
         output = io.StringIO()
         writer = csv.writer(output)
+
+        # Write header row
         writer.writerow([
             "Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachments"
         ])
+
         for event in events:
             driver = db.query(User).filter(User.id == event.driver_id).first()
-            # Generate presigned URL if attachment exists
-            attachment_url = storage.generate_download_url(event.attachment_url) if event.attachment_url else ""
+
+            # ✅ Use async helper for presigned URLs
+            attachment_url = (
+                await generate_presigned_url_async(event.attachment_url)
+                if event.attachment_url else ""
+            )
+
             writer.writerow([
                 event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 event.event_type,
@@ -231,6 +243,7 @@ def export_custody_log(
                 event.notes or "",
                 attachment_url
             ])
+
         output.seek(0)
         return StreamingResponse(
             output,
@@ -292,7 +305,13 @@ def export_custody_log(
         table_data = [["Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachment URL"]]
         for e in events:
             driver = db.query(User).filter(User.id == e.driver_id).first()
-            attachment_url = storage.generate_download_url(e.attachment_url) if e.attachment_url else ""
+
+            # ✅ Use async helper for presigned URLs
+            attachment_url = (
+                await generate_presigned_url_async(e.attachment_url)
+                if e.attachment_url else ""
+            )
+
             table_data.append([
                 e.timestamp.strftime("%Y-%m-%d %H:%M"),
                 e.event_type,
@@ -329,6 +348,9 @@ def export_custody_log(
             status_code=400,
             detail="Unsupported export format. Use ?format=csv or ?format=pdf"
         )
+
+
+
 @router.get("/analytics/{trip_id}")
 def custody_chart_data(
     trip_id: UUID,

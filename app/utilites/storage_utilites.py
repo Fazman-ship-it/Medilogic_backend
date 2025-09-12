@@ -56,3 +56,14 @@ async def handle_file_upload(app, file: UploadFile, prefix: str, field_name: str
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to upload {prefix}: {str(e)}")
+
+async def delete_file_from_s3(key: str):
+    """Delete a file from S3 asynchronously by key"""
+    session = aioboto3.Session()
+    async with session.client(
+        "s3",
+        aws_access_key_id=AWS_ACCESS_KEY,
+        aws_secret_access_key=AWS_SECRET_KEY,
+        region_name=AWS_REGION
+    ) as s3:
+        await s3.delete_object(Bucket=AWS_BUCKET, Key=key)

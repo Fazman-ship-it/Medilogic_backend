@@ -17,14 +17,15 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.utilites.email_utilites import send_email
-from app.storage import S3Storage
 from app.config import settings
 
-router = APIRouter(prefix="/incidents", tags=["Incidents"]) 
-storage = S3Storage()
+router = APIRouter(prefix="/incidents", tags=["Incidents"])
+
+from app.config import settings
+from app.utilites.storage_utilites import upload_file_to_s3_async  # ✅ import your new helper
 
 @router.post("/submit", response_model=schemas.IncidentOut)
-def submit_incident(
+async def submit_incident(   # ✅ must be async now because S3 upload is async
     title: str = Form(...),
     description: str = Form(...),
     files: List[UploadFile] = File(None),  # ✅ allow multiple files
@@ -54,10 +55,11 @@ def submit_incident(
             if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
                 raise HTTPException(status_code=400, detail=f"File type {ext} not allowed")
 
-            unique_filename = f"{uuid.uuid4()}{ext}"
-            s3_key = f"incidents/{current_user.organization_id}/{new_incident.id}/{unique_filename}"
-
-            storage.client.upload_fileobj(file.file, storage.bucket, s3_key)
+            # ✅ use async uploader
+            s3_key = await upload_file_to_s3_async(
+                file,
+                prefix=f"incidents/{current_user.organization_id}/{new_incident.id}"
+            )
 
             # Save to IncidentFile
             db.add(models.IncidentFile(
@@ -71,8 +73,11 @@ def submit_incident(
     db.refresh(new_incident)
     return new_incident
 
+from app.config import settings
+from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
+
 @router.get("/", response_model=List[schemas.IncidentOut])
-def get_incidents(
+async def get_incidents(   # ✅ must be async now
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -98,7 +103,10 @@ def get_incidents(
     for inc in incidents:
         file_responses = []
         for f in inc.files:
-            presigned_url = storage.generate_download_url(f.s3_key)
+            presigned_url = await generate_presigned_url_async(   # ✅ async call
+                f.s3_key,
+                expires_in=settings.PRESIGNED_EXPIRY   # ✅ use expiry from config
+            )
             file_responses.append(
                 schemas.IncidentFileOut(
                     id=f.id,
@@ -123,7 +131,7 @@ def get_incidents(
     return result
 
 @router.post("/incidents/driver", response_model=schemas.IncidentOut)
-def submit_incident_as_driver(
+async def submit_incident_as_driver(   # ✅ must be async now
     title: str = Form(...),
     description: str = Form(...),
     incident_type: str = Form(...),
@@ -158,10 +166,11 @@ def submit_incident_as_driver(
         if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
             raise HTTPException(status_code=400, detail=f"File type {ext} not allowed")
 
-        unique_filename = f"{uuid.uuid4()}{ext}"
-        s3_key = f"incidents/{current_user.organization_id}/{unique_filename}"
-
-        storage.upload_fileobj(file.file, s3_key)
+        # Upload to S3 (async helper)
+        s3_key = await upload_file_to_s3_async(
+            file,
+            prefix=f"incidents/{current_user.organization_id}/{new_incident.id}"
+        )
 
         db.add(models.IncidentFile(
             incident_id=new_incident.id,
@@ -185,7 +194,11 @@ def submit_incident_as_driver(
     if recipient_emails and (severity.lower() == "critical" or is_visible_to_regulator):
         file_urls = []
         for f in new_incident.files:
-            file_urls.append(storage.generate_download_url(f.s3_key))
+            presigned_url = await generate_presigned_url_async(   # ✅ async download URL
+                f.s3_key,
+                expires_in=settings.PRESIGNED_EXPIRY
+            )
+            file_urls.append(presigned_url)
 
         subject = f"🚨 New Incident from {current_user.full_name} - Severity: {severity.title()}"
         body = f"""

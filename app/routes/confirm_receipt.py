@@ -21,18 +21,16 @@ from app.dependencies import get_current_user
 from app.models import Trip, User
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.utilites.storage_utilites import upload_file_to_s3, generate_presigned_url  # your S3 helpers
+from app.utilites.storage_utilites import handle_file_upload
 from app.crudy.delivery_confirmation import create_delivery_confirmation
 from app.config import settings
 import jwt
-from app.storage import S3Storage
 
 templates = Jinja2Templates(directory="app/templates")
 router = APIRouter(tags=["Delivery Confirmation"])
 SECRET_KEY = os.getenv("DELIVERY_CONFIRM_SECRET", "fallback_key")
 ALGORITHM = "HS256"
 
-storage = S3Storage()
 # === STEP 1: Redirect from QR Code Token ===
 @router.get("/confirm", response_class=RedirectResponse)
 def get_confirmation_form(token: str, db: Session = Depends(get_db)):
@@ -74,29 +72,20 @@ def get_confirmation_form(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid token")
     
 # === STEP 2: Show HTML Form (Optional if using SPA) ===
-@router.get("/confirm-receipt/{trip_id}", response_class=HTMLResponse)
-async def show_confirmation_form(
-    request: Request,
-    trip_id: UUID,  # ✅ Use UUID for type safety
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    trip = db.query(Trip).filter(
-        Trip.id == trip_id,
-        Trip.organization_id == current_user.organization_id
-    ).first()
+from fastapi import APIRouter, UploadFile, Form, File, Depends, Request, HTTPException
+from sqlalchemy.orm import Session
+from uuid import UUID
+from app.database import get_db
+from app.models import Trip, User
+from app.schemas import DeliveryConfirmationResponse
+from app.dependencies import get_current_user
+from app.utilites.logging import log_activity
+from app.utilites.storage_utilites import handle_file_upload, generate_presigned_url_async, upload_file_to_s3_async
+from app.crud import create_delivery_confirmation
+import uuid
+import io
 
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
-
-    return templates.TemplateResponse("confirm_receipt.html", {
-        "request": request,
-        "trip_id": str(trip_id),
-        "trip": trip
-    })
-
-# === STEP 3: Submit Delivery Confirmation ===
-@router.post("/confirm", tags=["Delivery Confirmation"])
+@router.post("/confirm", tags=["Delivery Confirmation"], response_model=DeliveryConfirmationResponse)
 async def submit_delivery_confirmation(
     trip_id: UUID = Form(...),
     pin: str = Form(...),
@@ -125,7 +114,7 @@ async def submit_delivery_confirmation(
         raise HTTPException(status_code=400, detail="Trip already confirmed")
 
     # -------------------------
-    # Validate inputs (optional)
+    # Validate inputs
     # -------------------------
     if len(pin.strip()) < 4:
         raise HTTPException(status_code=400, detail="PIN too short")
@@ -135,36 +124,16 @@ async def submit_delivery_confirmation(
         raise HTTPException(status_code=400, detail="Invalid longitude")
 
     uploaded_s3_keys = []
+    confirmation = None
 
     try:
         # -------------------------
-        # File uploads
-        # -------------------------
-        signature_s3_key = None
-        photo_s3_key = None
-        pdf_s3_key = None
-
-        if signature_image:
-            signature_bytes = await signature_image.read()
-            signature_s3_key = f"delivery/signatures/{uuid.uuid4()}_{signature_image.filename}"
-            upload_file_to_s3(signature_bytes, signature_s3_key, signature_image.content_type)
-            uploaded_s3_keys.append(signature_s3_key)
-
-        if photo:
-            photo_bytes = await photo.read()
-            photo_s3_key = f"delivery/photos/{uuid.uuid4()}_{photo.filename}"
-            upload_file_to_s3(photo_bytes, photo_s3_key, photo.content_type)
-            uploaded_s3_keys.append(photo_s3_key)
-
-        # -------------------------
-        # DB transaction
+        # DB transaction: create confirmation record first
         # -------------------------
         confirmation = create_delivery_confirmation(
             db=db,
             trip_id=trip_id,
             pin=pin,
-            signature_path=signature_s3_key,
-            photo_path=photo_s3_key,
             wtn_code=wtn_code,
             ip_address=ip_address,
             user_agent=user_agent,
@@ -173,23 +142,63 @@ async def submit_delivery_confirmation(
         )
 
         # -------------------------
-        # Generate PDF receipt
+        # Upload signature and photo using helper
+        # -------------------------
+        if signature_image:
+            confirmation = await handle_file_upload(
+                app=confirmation,
+                file=signature_image,
+                prefix="delivery/signatures",
+                field_name="signature",
+                db=db,
+                user_id=current_user.id,
+                action="upload_signature"
+            )
+            uploaded_s3_keys.append(getattr(confirmation, "signature_path"))
+
+        if photo:
+            confirmation = await handle_file_upload(
+                app=confirmation,
+                file=photo,
+                prefix="delivery/photos",
+                field_name="photo",
+                db=db,
+                user_id=current_user.id,
+                action="upload_photo"
+            )
+            uploaded_s3_keys.append(getattr(confirmation, "photo_path"))
+
+        # -------------------------
+        # Generate PDF receipt and upload using helper
         # -------------------------
         pdf_bytes = generate_confirmation_pdf(confirmation)
-        pdf_s3_key = f"delivery/receipts/{uuid.uuid4()}_receipt.pdf"
-        upload_file_to_s3(pdf_bytes, pdf_s3_key, "application/pdf")
-        uploaded_s3_keys.append(pdf_s3_key)
+        class BytesUploadFile:
+            """Wrap raw bytes into a file-like object compatible with handle_file_upload"""
+            def __init__(self, content: bytes):
+                self.file = io.BytesIO(content)
+                self.filename = f"receipt_{uuid.uuid4().hex}.pdf"
+                self.content_type = "application/pdf"
+                
+        pdf_file = BytesUploadFile(pdf_bytes)
 
-        # Save PDF path in confirmation table
-        confirmation.pdf_receipt_path = pdf_s3_key
-        db.commit()  # ✅ commit only after all uploads succeed
+        confirmation = await handle_file_upload(
+            app=confirmation,
+            file=pdf_file,
+            prefix="delivery/receipts",
+            field_name="pdf_receipt",
+            db=db,
+            user_id=current_user.id,
+            action="generate_pdf_receipt"
+        )
+        uploaded_s3_keys.append(getattr(confirmation, "pdf_receipt_path"))
 
     except Exception as e:
         db.rollback()
-        # Cleanup any files uploaded to S3
+        # Cleanup uploaded files if anything fails
+        from app.utilites.storage_utilites import delete_file_from_s3
         for key in uploaded_s3_keys:
             try:
-                storage.delete_file_from_s3(key)
+                await delete_file_from_s3(key)
             except Exception:
                 pass
         raise HTTPException(status_code=500, detail=f"Delivery confirmation failed: {str(e)}")
@@ -201,15 +210,20 @@ async def submit_delivery_confirmation(
         db=db,
         user_id=current_user.id,
         action="delivery_confirmed",
-        details=f"Trip {trip_id} confirmed | IP: {ip_address} | UA: {user_agent} | Files: {signature_s3_key}, {photo_s3_key}, {pdf_s3_key}"
+        details=f"Trip {trip_id} confirmed | IP: {ip_address} | UA: {user_agent} | "
+                f"Files: {getattr(confirmation,'signature_path')}, {getattr(confirmation,'photo_path')}, {getattr(confirmation,'pdf_receipt_path')}"
     )
 
     # -------------------------
     # Return presigned URLs
     # -------------------------
+    pdf_url = await generate_presigned_url_async(getattr(confirmation, "pdf_receipt_path")) if getattr(confirmation, "pdf_receipt_path") else None
+    signature_url = await generate_presigned_url_async(getattr(confirmation, "signature_path")) if getattr(confirmation, "signature_path") else None
+    photo_url = await generate_presigned_url_async(getattr(confirmation, "photo_path")) if getattr(confirmation, "photo_path") else None
+
     return {
         "message": "Delivery confirmed",
-        "pdf_receipt": generate_presigned_url(pdf_s3_key) if pdf_s3_key else None,
-        "signature_url": generate_presigned_url(signature_s3_key) if signature_s3_key else None,
-        "photo_url": generate_presigned_url(photo_s3_key) if photo_s3_key else None
+        "pdf_receipt": pdf_url,
+        "signature_url": signature_url,
+        "photo_url": photo_url
     }

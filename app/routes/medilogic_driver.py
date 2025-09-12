@@ -229,12 +229,11 @@ from datetime import datetime, date
 import os
 import stripe
 import uuid
-from app.utilites.storage_utilites import upload_file_to_s3
 from app.database import get_db
 from app.dependencies import require_role
 from app import models, schemas
 from app.schemas import SubscriptionPlan, SubscriptionStatus, BadgeType
-
+from app.utilites.storage_utilites import upload_file_to_s3_async
 @router.put("/me", response_model=schemas.MedilogicDriverOut)
 async def update_profile_and_subscribe(
     # Profile fields
@@ -367,17 +366,14 @@ async def update_profile_and_subscribe(
     # -------------------------
     if files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
         for file in files:
-            file_bytes = await file.read()
-            content_type = file.content_type
-            # Create a unique S3 key
-            key = f"drivers/{driver.id}/{uuid.uuid4().hex}_{file.filename}"
-            # Upload to S3
-            upload_file_to_s3(file_bytes, key, content_type)
+        # ✅ Upload directly with async helper
+            key = await upload_file_to_s3_async(file, prefix=f"drivers/{driver.id}")
 
+        # ✅ Save metadata to DB
             doc = models.Document(
                 medilogic_driver_id=driver.id,
                 filename=file.filename,
-                file_path=key,  # store S3 key
+                file_path=key,  # S3 key
                 upload_time=datetime.utcnow(),
                 doc_type=file.content_type
             )
