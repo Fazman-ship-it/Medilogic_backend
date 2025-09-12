@@ -6,11 +6,10 @@ from app.models import DriverCredentials, Document
 from app.utilites.logging import log_activity
 from app.dependencies import get_current_user
 from app import models,schemas
-from app.storage import S3Storage
 from app.config import settings
 from app.models import User, Document, DriverCredentials
 from uuid import UUID  
-storage = S3Storage()
+from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async, delete_file_from_s3
 router = APIRouter(prefix="/drivers", tags=["Driver Credentials"])
 
 @router.post("/{driver_id}/upload-credential")
@@ -32,27 +31,26 @@ async def upload_driver_credential(
     if current_user.organization_id != credentials.organization_id:
         raise HTTPException(status_code=403, detail="Not authorized to upload for this driver")
 
-    file_ext = os.path.splitext(file.filename)[1]
-    unique_filename = f"{uuid.uuid4()}{file_ext}"
-    s3_key = f"driver_docs/{credentials.organization_id}/{driver_id}/{unique_filename}"
-    
+    # ✅ Upload file to S3 (async helper)
     try:
-        storage.upload_fileobj(file.file, s3_key)
+        s3_key = await upload_file_to_s3_async(file, prefix=f"driver_docs/{credentials.organization_id}/{driver_id}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to S3: {str(e)}")
 
+    # ✅ Mark old active doc of same type inactive
     db.query(Document).filter(
         Document.user_id == driver_id,
         Document.doc_type == doc_type,
         Document.is_active == True
     ).update({"is_active": False}, synchronize_session="fetch")
 
+    # ✅ Save new document in DB
     document = Document(
         user_id=driver_id,
         organization_id=credentials.organization_id,
         credential_id=credentials.id,
         filename=file.filename,
-        file_path=s3_key,
+        file_path=s3_key,  # ✅ store S3 key
         doc_type=doc_type,
         is_active=True
     )
@@ -67,7 +65,8 @@ async def upload_driver_credential(
         details=f"{current_user.role} uploaded new {doc_type} for driver {driver_id} (org={credentials.organization_id})"
     )
 
-    file_url = storage.generate_download_url(s3_key, original_filename=file.filename)
+    # ✅ Generate presigned URL for response
+    file_url = await generate_presigned_url_async(s3_key)
 
     return {
         "message": f"{doc_type} uploaded successfully",
@@ -75,7 +74,6 @@ async def upload_driver_credential(
         "file_url": file_url,
         "is_active": document.is_active
     }
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -86,9 +84,8 @@ from app.models import Document, User
 from app.dependencies import get_current_user
 from app.schemas import DriverDocumentOut  # Define this schema to include S3 URL
 
-
 @router.get("/{driver_id}/documents", response_model=List[DriverDocumentOut])
-def list_driver_documents(
+async def list_driver_documents(
     driver_id: UUID,
     doc_type: Optional[str] = Query(None, description="Filter by document type"),
     active_only: bool = Query(False, description="Only show active documents"),
@@ -141,17 +138,23 @@ def list_driver_documents(
     )
 
     # --- 6. Return documents with presigned S3 URLs ---
-    return [
-        DriverDocumentOut(
-            id=doc.id,
-            filename=doc.filename,
-            doc_type=doc.doc_type,
-            uploaded_at=doc.upload_time,
-            is_active=doc.is_active,
-            file_url=storage.generate_download_url(doc.attachment_url) if doc.attachment_url else None
+    document_out_list = []
+    for doc in documents:
+        file_url = await generate_presigned_url_async(doc.file_path) if doc.file_path else None
+        document_out_list.append(
+            DriverDocumentOut(
+                id=doc.id,
+                filename=doc.filename,
+                doc_type=doc.doc_type,
+                uploaded_at=doc.upload_time,
+                is_active=doc.is_active,
+                file_url=file_url
+            )
         )
-        for doc in documents
-    ]
+
+    return document_out_list
+
+
     
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -162,10 +165,10 @@ from app.models import Document, User
 from app.dependencies import get_current_user  # Assuming you already have RBAC utils
 from app.schemas import DocumentOut  # schema for returning documents
 from app.schemas import AdminDriverDocumentOut # schema for admin view with driver info
-from app.storage import S3Storage
+
 
 @router.get("/admin/documents", response_model=List[AdminDriverDocumentOut])
-def list_all_driver_documents(
+async def list_all_driver_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
@@ -191,22 +194,26 @@ def list_all_driver_documents(
     )
 
     # --- 3. Prepare output with S3 presigned URLs ---
-    return [
-        AdminDriverDocumentOut(
-            document_id=doc.id,
-            doc_type=doc.doc_type,
-            file_url=storage.generate_download_url(doc.attachment_url) if doc.attachment_url else None,
-            uploaded_at=doc.upload_time,
-            is_active=doc.is_active,
-            driver_id=doc.user.id,
-            driver_name=doc.user.full_name,
-            driver_email=doc.user.email
+    results: List[AdminDriverDocumentOut] = []
+    for doc in documents:
+        file_url = await generate_presigned_url_async(doc.file_path) if doc.file_path else None
+        results.append(
+            AdminDriverDocumentOut(
+                document_id=doc.id,
+                doc_type=doc.doc_type,
+                file_url=file_url,
+                uploaded_at=doc.upload_time,
+                is_active=doc.is_active,
+                driver_id=doc.user.id,
+                driver_name=doc.user.full_name,
+                driver_email=doc.user.email
+            )
         )
-        for doc in documents
-    ]
+
+    return results
 from app.schemas import DriverDocumentActivationOut
 @router.patch("/drivers/{driver_id}/documents/{document_id}/activate", response_model=DriverDocumentActivationOut)
-def activate_document(
+async def activate_document(
     driver_id: UUID,
     document_id: UUID,
     db: Session = Depends(get_db),
@@ -253,7 +260,7 @@ def activate_document(
     )
 
     # --- Generate presigned S3 URL ---
-    file_url = storage.generate_download_url(document.attachment_url) if document.attachment_url else None
+    file_url = await generate_presigned_url_async(document.file_path) if document.file_path else None
 
     return {
         "document_id": document.id,
@@ -263,9 +270,8 @@ def activate_document(
     }
 from datetime import datetime, timedelta
 from app.schemas import DriverDocumentExpiryResponse
-@router.get("/drivers/{driver_id}/documents/expiry-status",response_model=DriverDocumentExpiryResponse)
-
-def check_document_expiry(
+@router.get("/drivers/{driver_id}/documents/expiry-status", response_model=DriverDocumentExpiryResponse)
+async def check_document_expiry(
     driver_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -307,7 +313,7 @@ def check_document_expiry(
         else:
             status = "valid"
 
-        file_url = storage.generate_download_url(doc.file_path) if doc.file_path else None
+        file_url = await generate_presigned_url_async(doc.file_path) if doc.file_path else None
 
         results.append({
             "document_id": str(doc.id),
@@ -331,6 +337,7 @@ def check_document_expiry(
         "organization_id": str(driver.organization_id),
         "expiry_status": results
     }
+    
 # app/routes/driver_credentials.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -384,7 +391,7 @@ def create_driver_credentials(
 from sqlalchemy.orm import joinedload
 
 @router.get("/", response_model=List[schemas.DriverCredentialsOut])
-def get_all_driver_credentials(
+async def get_all_driver_credentials(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -408,7 +415,7 @@ def get_all_driver_credentials(
         doc_urls = []
         for doc in cred.documents:
             if doc.is_active and doc.file_path:
-                s3_url = storage.generate_download_url(doc.file_path, original_filename=doc.filename)
+                s3_url = await generate_presigned_url_async(doc.file_path)
                 doc_urls.append({
                     "doc_type": doc.doc_type,
                     "url": s3_url,
@@ -464,15 +471,18 @@ def get_all_driver_credentials(
 from sqlalchemy.orm import joinedload
 
 @router.get("/{credentials_id}", response_model=schemas.DriverCredentialsOut)
-def get_driver_credentials(
+async def get_driver_credentials(
     credentials_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     # --- Fetch credentials with documents in one query ---
-    creds = db.query(models.DriverCredentials).options(
-        joinedload(models.DriverCredentials.documents)
-    ).filter(models.DriverCredentials.id == credentials_id).first()
+    creds = (
+        db.query(models.DriverCredentials)
+        .options(joinedload(models.DriverCredentials.documents))
+        .filter(models.DriverCredentials.id == credentials_id)
+        .first()
+    )
 
     if not creds:
         raise HTTPException(status_code=404, detail="Credentials not found")
@@ -488,8 +498,8 @@ def get_driver_credentials(
     # --- Map documents to presigned URLs ---
     doc_urls = []
     for doc in creds.documents:
-        if doc.is_active and doc.file_path:
-            s3_url = storage.generate_download_url(doc.file_path, original_filename=doc.filename)
+        if doc.is_active and doc.attachment_url:  # ✅ use attachment_url instead of file_path
+            s3_url = await generate_presigned_url_async(doc.attachment_url)  # ✅ new async helper
             doc_urls.append({
                 "doc_type": doc.doc_type,
                 "url": s3_url,
@@ -537,7 +547,7 @@ def get_driver_credentials(
 from sqlalchemy.orm import joinedload
 
 @router.put("/{credentials_id}", response_model=schemas.DriverCredentialsOut)
-def update_driver_credentials(
+async def update_driver_credentials(
     credentials_id: UUID,
     update_data: schemas.DriverCredentialsUpdate,
     db: Session = Depends(get_db),
@@ -566,14 +576,14 @@ def update_driver_credentials(
     db.commit()
     db.refresh(creds)
 
-    # --- Generate presigned URLs for associated documents ---
+    # --- Generate async presigned URLs for associated documents ---
     doc_urls = []
     for doc in creds.documents:
         if doc.is_active and doc.file_path:
-            s3_url = storage.generate_download_url(doc.file_path, original_filename=doc.filename)
+            url = await generate_presigned_url_async(doc.file_path)
             doc_urls.append({
                 "doc_type": doc.doc_type,
-                "url": s3_url,
+                "url": url,
                 "uploaded_at": doc.upload_time
             })
 
@@ -617,9 +627,8 @@ def update_driver_credentials(
 # ✅ Delete driver credentials
 from sqlalchemy.orm import joinedload
 from fastapi import status
-
 @router.delete("/{credentials_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_driver_credentials(
+async def delete_driver_credentials(
     credentials_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -644,7 +653,7 @@ def delete_driver_credentials(
     for doc in creds.documents:
         if doc.file_path:
             try:
-                storage.delete_file(doc.file_path)  # Delete from S3
+                await delete_file_from_s3(doc.file_path)  # Async delete from S3
             except Exception as e:
                 print(f"❌ Failed to delete {doc.file_path} from S3: {e}")
         db.delete(doc)
