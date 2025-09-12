@@ -14,9 +14,18 @@ from app.utilites.secure_qr_token import generate_qr_token
 
 router = APIRouter(prefix="/qr", tags=["QR Codes"])
 
+from uuid import UUID
+
 @router.get("/generate/{trip_id}")
-def generate_qr_code(trip_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    trip = db.query(Trip).filter(Trip.id == trip_id, Trip.organization_id == current_user.organization_id).first()
+def generate_qr_code(
+    trip_id: UUID,  # ✅ Use UUID here
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    trip = db.query(Trip).filter(
+        Trip.id == trip_id,
+        Trip.organization_id == current_user.organization_id
+    ).first()
     if not trip:
         return JSONResponse(status_code=404, content={"detail": "Trip not found or access denied"})
 

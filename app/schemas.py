@@ -914,15 +914,22 @@ class PendingApplicationOut(BaseModel):
         form_attributes = True 
         
 # Input payload when confirming delivery
-class DeliveryConfirmationRequest(BaseModel):
+class DeliveryConfirmationResponse(BaseModel):
+    id: UUID
     trip_id: UUID
-    pin: str 
+    pin_entered: str
     signature_path: Optional[str] = None
     photo_path: Optional[str] = None
     wtn_code: Optional[str] = None
+    confirmed_at: datetime
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    
+    pdf_receipt_path: Optional[str] = None  # optional
+
+    class Config:
+        from_attributes = True
 # Output/response model when delivery is confirmed
 class DeliveryConfirmationResponse(BaseModel):
     id: UUID
