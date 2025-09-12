@@ -34,9 +34,7 @@ def create_admin_by_super_admin(
 
     # ✅ Find organization (by ID or name for flexibility)
     org = db.query(models.Organization).filter(
-        (models.Organization.id == data.organization_id) | 
-        (models.Organization.name == data.organization_id)
-    ).first()
+        (models.Organization.id == data.organization_id)).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found.")
 
