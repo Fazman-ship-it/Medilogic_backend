@@ -914,7 +914,7 @@ class PendingApplicationOut(BaseModel):
         form_attributes = True 
         
 # Input payload when confirming delivery
-class DeliveryConfirmationResponse(BaseModel):
+class DeliveryConfirmationResquest(BaseModel):
     id: UUID
     trip_id: UUID
     pin_entered: str
