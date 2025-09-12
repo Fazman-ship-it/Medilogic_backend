@@ -81,7 +81,6 @@ from app.schemas import DeliveryConfirmationResponse
 from app.dependencies import get_current_user
 from app.utilites.logging import log_activity
 from app.utilites.storage_utilites import handle_file_upload, generate_presigned_url_async, upload_file_to_s3_async
-from app.crud import create_delivery_confirmation
 import uuid
 import io
 
