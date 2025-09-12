@@ -17,9 +17,6 @@ from sqlalchemy import func
 
 router = APIRouter(prefix="/applications/international", tags=["International Applications"])
 
-UPLOAD_DIR = "static/applications"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 @router.post("/basic", response_model=schemas.IntlApplicationOut)
 def submit_basic_application(
     payload: schemas.IntlBasicCreate,
@@ -210,18 +207,27 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.config import settings
 import uuid
+from datetime import datetime, timedelta
+from uuid import UUID
+import os
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 from datetime import datetime
 import uuid
-from app.utilites.storage_utilites import upload_file_to_s3, generate_presigned_url
+import stripe
+from app.models import InternationalApplication, Payment, User
+from app.dependencies import get_db, get_current_user
+from app.config import settings
+
 
 @router.post("/me/pay-application-fee")
-def pay_application_fee(
+async def pay_application_fee(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    # 1. Find user’s application
-    app = db.query(models.InternationalApplication).filter(
-        models.InternationalApplication.user_id == current_user.id
+    # --- 1️⃣ Find user's application ---
+    app = db.query(InternationalApplication).filter(
+        InternationalApplication.user_id == current_user.id
     ).first()
 
     if not app:
@@ -230,15 +236,15 @@ def pay_application_fee(
     if app.has_paid_application_fee:
         return {"message": "Application fee already paid"}
 
-    # 2. Create a pending payment record in DB
-    payment = models.Payment(
+    # --- 2️⃣ Create pending payment record ---
+    payment = Payment(
         id=uuid.uuid4(),
         application_id=app.id,
-        medilogic_driver_id=None,  # not relevant for app fee
-        amount=200.00,  # 💡 define in settings (e.g. settings.APPLICATION_FEE_AMOUNT)
+        user_id=current_user.id,
+        amount=settings.APPLICATION_FEE_AMOUNT,  # 💡 from settings
         currency="GBP",
         provider="stripe",
-        status="pending",
+        status="pending",  # ✅ pending until confirmed by webhook
         created_at=datetime.utcnow(),
         is_verified=False,
         payment_type="application_fee"
@@ -247,131 +253,75 @@ def pay_application_fee(
     db.commit()
     db.refresh(payment)
 
-    # 3. Create Stripe Checkout Session
+    # --- 3️⃣ Create Stripe Checkout Session ---
     checkout = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
         customer_email=current_user.email,
         line_items=[{
-            "price": settings.STRIPE_APPLICATION_FEE_PRICE_ID,  
+            "price": settings.STRIPE_APPLICATION_FEE_PRICE_ID,
             "quantity": 1,
         }],
-        metadata={  # ✅ link Stripe session to DB payment
+        metadata={
             "payment_id": str(payment.id),
             "application_id": str(app.id),
             "user_id": str(current_user.id)
         },
-        success_url="https://your-frontend/success?session_id={CHECKOUT_SESSION_ID}",
-        cancel_url="https://your-frontend/cancel",
+        success_url=f"{settings.FRONTEND_SUCCESS_URL}?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{settings.FRONTEND_CANCEL_URL}",
     )
 
     return {"checkout_url": checkout.url}
 
-# ---------- GATED uploads (requires payment) ----------
-def _save_upload_s3(prefix: str, f: UploadFile) -> str:
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models import InternationalApplication, User
+from app.schemas import IntlApplicationOut
+from app.dependencies import require_application_fee_paid, get_current_user
+from app.utilites.storage_utilites import handle_file_upload
+import uuid
+
+# ----------------------- Generic Upload Endpoint -----------------------
+@router.post("/me/upload/{doc_type}", response_model=IntlApplicationOut)
+async def upload_document(
+    doc_type: str,
+    file: UploadFile = File(...),
+    app: InternationalApplication = Depends(require_application_fee_paid),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
-    Upload file to S3 and return the S3 key.
+    Generic endpoint to upload any document for an international application.
+    Allowed doc_type values: 'cv', 'passport', 'drivers_license', 'personal_statement', 'certificate'
     """
-    ext = os.path.splitext(f.filename)[1]
-    new_name = f"{prefix}_{uuid.uuid4().hex}{ext}"
-    key = f"intl_applications/{prefix}/{new_name}"
+    allowed_types = {
+        "cv": "cv",
+        "passport": "passport",
+        "drivers_license": "license",
+        "personal_statement": "personal_statement",
+        "certificate": "certificate",
+    }
 
-    file_bytes = f.file.read()
-    upload_file_to_s3(file_bytes, key, f.content_type)
-    return key
+    if doc_type not in allowed_types:
+        raise HTTPException(status_code=400, detail=f"Invalid document type '{doc_type}'")
 
+    field_name = doc_type  # field names in DB match keys except drivers_license mapping
+    prefix = allowed_types[doc_type]
+    action = f"upload_{doc_type}"
 
-def _generate_file_url(key: str, expires_in: int = 3600) -> str:
-    """
-    Generate presigned S3 URL for download.
-    """
-    return generate_presigned_url(key, expires_in)
+    # Handle upload, DB update, logging, and presigned URL
+    updated_app = await handle_file_upload(
+        app=app,
+        file=file,
+        prefix=prefix,
+        field_name=field_name,
+        db=db,
+        user_id=current_user.id,
+        action=action
+    )
 
-
-@router.post("/me/upload/cv", response_model=schemas.IntlApplicationOut)
-def upload_cv(
-    file: UploadFile = File(...),
-    app = Depends(require_application_fee_paid),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    app.cv_path = _save_upload_s3("cv", file)
-    db.commit()
-    db.refresh(app)
-    log_activity(db=db, user_id=current_user.id, action="upload_cv", details=f"Uploaded CV for application {app.id}")
-    
-    # Add presigned URL
-    app.cv_url = _generate_file_url(app.cv_path)
-    
-    return app
-
-
-@router.post("/me/upload/passport", response_model=schemas.IntlApplicationOut)
-def upload_passport(
-    file: UploadFile = File(...),
-    app = Depends(require_application_fee_paid),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    app.passport_path = _save_upload_s3("passport", file)
-    db.commit()
-    db.refresh(app)
-    log_activity(db=db, user_id=current_user.id, action="upload_passport", details=f"Uploaded passport for application {app.id}")
-    
-    app.passport_url = _generate_file_url(app.passport_path)
-    
-    return app
-
-
-@router.post("/me/upload/drivers-license", response_model=schemas.IntlApplicationOut)
-def upload_drivers_license(
-    file: UploadFile = File(...),
-    app = Depends(require_application_fee_paid),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    app.drivers_license_path = _save_upload_s3("license", file)
-    db.commit()
-    db.refresh(app)
-    log_activity(db=db, user_id=current_user.id, action="upload_drivers_license", details=f"Uploaded driver license for application {app.id}")
-    
-    app.drivers_license_url = _generate_file_url(app.drivers_license_path)
-    
-    return app
-
-
-@router.post("/me/upload/personal_statement", response_model=schemas.IntlApplicationOut)
-def upload_personal_statement_docs(
-    file: UploadFile = File(...),
-    app = Depends(require_application_fee_paid),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    app.personal_statement_path = _save_upload_s3("personal_statement", file)
-    db.commit()
-    db.refresh(app)
-    log_activity(db=db, user_id=current_user.id, action="upload_personal_statement_docs", details=f"Uploaded personal statement docs for application {app.id}")
-    
-    app.personal_statement_url = _generate_file_url(app.personal_statement_path)
-    
-    return app
-
-
-@router.post("/me/upload/certificate", response_model=schemas.IntlApplicationOut)
-def upload_certificate(
-    file: UploadFile = File(...),
-    app = Depends(require_application_fee_paid),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    app.certificate_path = _save_upload_s3("certificate", file)
-    db.commit()
-    db.refresh(app)
-    log_activity(db=db, user_id=current_user.id, action="upload_certificate", details=f"Uploaded certificate for application {app.id}")
-    
-    app.certificate_url = _generate_file_url(app.certificate_path)
-    
-    return app
+    return updated_app
 from fastapi import Query
 
 @router.get("/super", response_model=list[schemas.IntlApplicationOut])

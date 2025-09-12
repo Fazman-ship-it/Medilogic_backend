@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET : str
     STRIPE_APPLICATION_FEE_PRICE_ID : str  # one-time fee product in Stripe (£200)
     STRIPE_GREEN_PRICE_ID : str          # £7.99 monthly
-    STRIPE_BLUE_PRICE_ID : str           # £12.99 monthly
+    STRIPE_BLUE_PRICE_ID : str # £12.99 monthly
+    APPLICATION_FEE_AMOUNT: int  # in pounds, e.g., 200 for £200
+    FRONTEND_SUCCESS_URL : str
+    FRONTEND_CANCEL_URL : str
     
     # AWS S3
     AWS_ACCESS_KEY_ID: str
