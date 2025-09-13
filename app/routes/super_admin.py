@@ -128,6 +128,7 @@ def create_organization(
         invite_code=invite_code,
         ico_registered=org_data.ico_registered,
         data_retention_years=org_data.data_retention_years,
+        ico_registration_number=org_data.ico_registration_number,
         is_active=True
     )
     db.add(new_org)

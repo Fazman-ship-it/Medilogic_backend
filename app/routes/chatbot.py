@@ -205,7 +205,7 @@ def chatbot(
         pod = db.query(models.POD).filter_by(organization_id=current_user.organization_id).order_by(models.POD.created_at.desc()).first()
         if pod:
             log_activity(db, current_user.id, "chat_pod_lookup", details=f"Fetched latest POD {pod.id}", organization_id=current_user.organization_id)
-            return ChatResponse(reply=f"Latest POD at {pod.created_at}", data={"attachment_url": pod.attachment_url, "created_at": pod.created_at.isoformat()})
+            return ChatResponse(reply=f"Latest POD at {pod.created_at}", data={"files": pod.files, "created_at": pod.created_at.isoformat()})
         return ChatResponse(reply="No proof of delivery found for your organization.")
 
     # --- 6) Incidents (list/open/report) ---
