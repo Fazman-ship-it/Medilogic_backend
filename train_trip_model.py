@@ -1,86 +1,83 @@
 import pandas as pd
-import numpy as np
 import joblib
+import datetime
 import os
-from sklearn.linear_model import LinearRegression
-from sqlalchemy import create_engine, text
-from dotenv import load_dotenv
+from typing import Optional
+from app.models import Trip
+from app import models
+from sqlalchemy.orm import Session
+from app.utilites.logging import log_activity
 
-# 1. Load environment variables
-load_dotenv()
 
-# 2. Construct DATABASE_URL from parts
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
+def load_org_model(org_id: str):
+    """Load the ML model for a specific organization."""
+    model_path = f"trip_models/trip_duration_model_org_{org_id}.pkl"
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"⚠️ No trained model found for organization {org_id}. Please train first.")
+    return joblib.load(model_path)
 
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# 3. Connect to the database
-engine = create_engine(DATABASE_URL)
+def suggest_pickup_time_window(
+    delivery_type: str,
+    distance_km: float,
+    cost: Optional[float] = None,
+    user: Optional[models.User] = None,
+    db: Optional[Session] = None
+) -> dict:
+    """
+    Predicts optimal pickup time window based on delivery_type, distance, and cost.
+    Returns a recommended time range in UTC.
+    
+    ✅ Multi-tenant-aware (loads model per organization_id)
+    ✅ Optionally logs audit if user and db are provided
+    """
+    if not user or not user.organization_id:
+        raise ValueError("❌ User with valid organization_id is required to predict pickup time.")
 
-# Create output folder for models
-os.makedirs("trip_models", exist_ok=True)
+    # 🔹 Load the correct organization model
+    model = load_org_model(user.organization_id)
 
-# Get all organization IDs that have trips
-with engine.connect() as conn:
-    org_ids = conn.execute(text("SELECT DISTINCT organization_id FROM trips WHERE organization_id IS NOT NULL")).fetchall()
-    org_ids = [row[0] for row in org_ids]
+    now = datetime.datetime.utcnow()
 
-print(f"🏢 Found {len(org_ids)} organizations with trips.")
+    data = {
+        "distance_km": [distance_km],
+        "cost": [cost or 0],
+        "delivery_type": [delivery_type]
+    }
 
-# ✅ Train a separate model per organization
-for org_id in org_ids:
-    print(f"\n🔹 Training model for org: {org_id}")
+    df = pd.DataFrame(data)
+    df = pd.get_dummies(df)
 
-    # Load trips only for this organization
-    query = f"SELECT * FROM trips WHERE organization_id = '{org_id}'"
-    df = pd.read_sql(query, engine)
+    # Ensure all expected columns exist in the input
+    expected_features = model.feature_names_in_
+    for col in expected_features:
+        if col not in df.columns:
+            df[col] = 0  # Fill missing dummy columns with 0
+    df = df[expected_features]
 
-    print(f"📊 Loaded {len(df)} rows for org {org_id}")
+    predicted_minutes = model.predict(df)[0]
+    estimated_duration = datetime.timedelta(minutes=predicted_minutes)
 
-    # ✅ Ensure required columns exist
-    required = ['distance_km', 'cost', 'delivery_type']
-    if not all(col in df.columns for col in required):
-        print(f"⚠️ Skipping org {org_id} (missing required columns).")
-        continue
+    pickup_start = now + datetime.timedelta(minutes=10)
+    pickup_end = pickup_start + estimated_duration
 
-    # ✅ Handle missing values
-    df['distance_km'] = df['distance_km'].fillna(0)
-    df['cost'] = df['cost'].fillna(0)
-    df['delivery_type'] = df['delivery_type'].fillna("unknown")
+    result = {
+        "recommended_start_time": pickup_start.isoformat(),
+        "recommended_end_time": pickup_end.isoformat(),
+        "predicted_duration_minutes": round(predicted_minutes, 2)
+    }
 
-    # ✅ Simulate duration_minutes if not present
-    if 'duration_minutes' not in df.columns:
-        np.random.seed(42)
-        df['duration_minutes'] = (
-            df['distance_km'] * 1.5
-            + df['cost'] * 0.2
-            + np.random.normal(5, 5, len(df))
+    # ✅ Optional: log activity for traceability
+    if user and db:
+        log_activity(
+            db=db,
+            user_id=user.id,
+            action="ai_pickup_time_prediction",
+            details=(
+                f"Predicted pickup time window using AI. Delivery: {delivery_type}, "
+                f"Distance: {distance_km}km, Cost: £{cost or 0}, "
+                f"Start: {pickup_start.isoformat()}, End: {pickup_end.isoformat()}"
+            )
         )
 
-    # ✅ Encode delivery_type
-    df['delivery_type_encoded'] = df['delivery_type'].apply(
-        lambda x: 1 if isinstance(x, str) and 'waste' in x.lower() else 0
-    )
-
-    # Prepare features and target
-    X = df[['distance_km', 'cost', 'delivery_type_encoded']]
-    y = df['duration_minutes']
-
-    # ✅ Guard against empty dataset
-    if X.empty or y.empty:
-        print(f"⚠️ Skipping org {org_id} (no valid data).")
-        continue
-
-    # Train model
-    model = LinearRegression()
-    model.fit(X, y)
-
-    # Save model with org ID
-    model_path = f"trip_models/trip_duration_model_org_{org_id}.pkl"
-    joblib.dump(model, model_path)
-
-    print(f"✅ Model for org {org_id} saved at {model_path}")
+    return result
