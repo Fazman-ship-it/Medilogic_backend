@@ -244,7 +244,8 @@ def get_organization_details(
             "ico_registered": org.ico_registered,
             "data_retention_years": org.data_retention_years,
             "license_expiry": org.license_expiry,
-            "supported_waste_types": org.supported_waste_types
+            "supported_waste_types": org.supported_waste_types,
+            "ico_registration_number":org.ico_registration_number
         },
         "user_count": len(users),
         "trip_count": trip_count,
