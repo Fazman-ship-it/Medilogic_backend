@@ -1549,6 +1549,7 @@ class OrganizationProfileResponse(BaseModel):
     license_number: Optional[str] = None
     ico_registered: Optional[bool] = None
     data_retention_years: Optional[int] = None
+    ico_registration_number: Optional[str] = None
 
     # Only for admins
     invite_code: Optional[str] = None
