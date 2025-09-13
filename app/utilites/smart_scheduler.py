@@ -3,14 +3,21 @@
 import pandas as pd
 import joblib
 import datetime
+import os
 from typing import Optional
 from app.models import Trip
 from app import models
 from sqlalchemy.orm import Session
 from app.utilites.logging import log_activity
 
-# Load model once
-model = joblib.load("trip_duration_model.pkl")  # ✅ already trained and saved
+
+
+def load_org_model(org_id: str):
+    """Load the ML model for a specific organization."""
+    model_path = f"trip_models/trip_duration_model_org_{org_id}.pkl"
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"⚠️ No trained model found for organization {org_id}. Please train first.")
+    return joblib.load(model_path)
 
 def suggest_pickup_time_window(
     delivery_type: str,
@@ -23,9 +30,15 @@ def suggest_pickup_time_window(
     Predicts optimal pickup time window based on delivery_type, distance, and cost.
     Returns a recommended time range in UTC.
     
-    ✅ Multi-tenant-aware (user input optional)
+    ✅ Multi-tenant-aware (loads model per organization_id)
     ✅ Optionally logs audit if user and db are provided
     """
+    if not user or not user.organization_id:
+        raise ValueError("❌ User with valid organization_id is required to predict pickup time.")
+
+    # 🔹 Load the correct organization model
+    model = load_org_model(user.organization_id)
+
     now = datetime.datetime.utcnow()
 
     data = {
