@@ -47,7 +47,11 @@ def get_trip_analytics(
     if client_name:
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
     if delivery_type:
-        query = query.filter(models.Trip.delivery_type == delivery_type)
+        if delivery_type.lower() == "other":
+            # Filter trips explicitly marked as "other"
+            query = query.filter(models.Trip.delivery_type == "other")
+        else:
+            query = query.filter(models.Trip.delivery_type == delivery_type)
 
     trips = query.all()
     if not trips:
@@ -118,13 +122,23 @@ def get_trip_analytics(
     total_cost = sum([trip.cost or 0 for trip in trips])
     average_cost = total_cost / total_trips if total_trips else 0
 
-    delivery_types = [trip.delivery_type or "unknown" for trip in trips]
+    # ✅ Handle "other" with custom descriptions
+    delivery_types = []
+    for trip in trips:
+        if trip.delivery_type == "other" and trip.custom_delivery_description:
+            delivery_types.append(trip.custom_delivery_description)
+        else:
+            delivery_types.append(trip.delivery_type or "unknown")
+
     most_common_type = max(set(delivery_types), key=delivery_types.count) if delivery_types else "unknown"
 
     # Chart
     type_counts = {}
     for trip in trips:
-        dtype = trip.delivery_type or "unknown"
+        if trip.delivery_type == "other" and trip.custom_delivery_description:
+            dtype = trip.custom_delivery_description
+        else:
+            dtype = trip.delivery_type or "unknown"
         type_counts[dtype] = type_counts.get(dtype, 0) + 1
 
     fig = go.Figure([go.Bar(x=list(type_counts.keys()), y=list(type_counts.values()))])

@@ -100,7 +100,7 @@ class MedilogicDriverStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
-
+    
 class Trip(Base):
     __tablename__ = "trips"
 
@@ -637,8 +637,7 @@ class DeliveryConfirmation(Base):
     organization = relationship("Organization", back_populates="delivery")
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    pdf_receipt_path = Column(String, nullable=True)  # Path to generated PDF receipt
-    
+    pdf_receipt_path = Column(String, nullable=True)  # Path to generated PDF receipt 
 class Notification(Base):
     __tablename__ = "notifications"
 
