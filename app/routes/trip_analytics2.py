@@ -12,9 +12,6 @@ from app import models
 from app.database import get_db
 from app.dependencies import require_role
 from uuid import UUID 
-
-router = APIRouter(prefix="/trips", tags=["Trip Export"])
-
 from fastapi import APIRouter, Query, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Optional, Literal
@@ -26,7 +23,7 @@ import pandas as pd
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 from reportlab.lib import colors
-
+router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
 def export_to_csv(data: list) -> io.StringIO:
     buffer = io.StringIO()

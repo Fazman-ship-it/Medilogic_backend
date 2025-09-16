@@ -901,6 +901,7 @@ class PendingApplicationOut(BaseModel):
     id: UUID
     full_name: str
     email: EmailStr
+    password: str
     role: PendingRole
     message: Optional[str]= None
     organization_name: Optional[str]
