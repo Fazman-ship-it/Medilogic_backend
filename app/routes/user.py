@@ -65,7 +65,6 @@ def delete_own_account(
 
     db.commit()
 
-
 @router.put("/update")
 def update_my_account(
     updates: UserUpdate,
@@ -78,10 +77,15 @@ def update_my_account(
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already in use.")
 
+    # ✅ Update fields if provided
     if updates.name:
         current_user.name = updates.name
     if updates.email:
         current_user.email = updates.email
+    if updates.address:
+        current_user.address = updates.address
+    if updates.phone_number:
+        current_user.phone_number = updates.phone_number
 
     db.commit()
     db.refresh(current_user)
@@ -90,14 +94,20 @@ def update_my_account(
         db=db,
         user_id=current_user.id,
         action="update_account",
-        details=f"User updated their account. New name: {current_user.name}, New email: {current_user.email}"
+        details=(
+            f"User updated their account. "
+            f"Name: {current_user.name}, Email: {current_user.email}, "
+            f"Address: {current_user.address}, Phone: {current_user.phone_number}"
+        )
     )
 
     return {
         "message": "Account updated successfully.",
         "user": {
             "name": current_user.name,
-            "email": current_user.email
+            "email": current_user.email,
+            "address": current_user.address,
+            "phone_number": current_user.phone_number
         }
     }
     

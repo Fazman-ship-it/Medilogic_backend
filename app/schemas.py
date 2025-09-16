@@ -100,6 +100,12 @@ class UserOut(BaseModel):
     regulated_state:Optional[str]
     regulated_region:Optional[str]
     
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    address: Optional[str] = None
+    phone_number: Optional[str] = None    
+    
 class UserAdminOut(BaseModel):
     id: UUID
     name: str
@@ -107,6 +113,8 @@ class UserAdminOut(BaseModel):
     role: RoleEnum
     is_active: bool
     is_verified: bool
+    address: Optional[str] = None
+    phone_number: Optional[str] = None
     organization_id: UUID
     organization_name: Optional[str] = None
     created_at: datetime

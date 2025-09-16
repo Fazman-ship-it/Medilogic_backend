@@ -74,12 +74,12 @@ def get_driver_dashboard(
     upcoming_shifts = db.query(ShiftAssignment).filter(
         ShiftAssignment.driver_id == driver_id,
         ShiftAssignment.organization_id == current_user.organization_id,
-        ShiftAssignment.date >= now.date()
-    ).order_by(ShiftAssignment.date.asc()).all()
+        ShiftAssignment.shift_date >= now.date()
+    ).order_by(ShiftAssignment.shift_date.asc()).all()
 
     shifts_data = [
         {
-            "date": s.date,
+            "date": s.shift_date,
             "start_time": s.start_time,
             "end_time": s.end_time
         }

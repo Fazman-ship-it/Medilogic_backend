@@ -68,7 +68,8 @@ def create_admin_by_super_admin(
     log_activity(
         db=db,
         user_id=current_user.id,
-        action=f"Created admin '{data.email}' for organization {org.name}"
+        action="admin_created",
+        details=f"Created admin '{data.email}' for organization {org.name}"
     )
 
     # ✅ Send welcome email only to admins
