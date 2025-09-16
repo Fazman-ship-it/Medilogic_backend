@@ -141,3 +141,5 @@ wrapt==1.17.3
 yarl==1.20.1
 yfinance==0.2.62
 zope.interface==7.2
+defusedxml==0.7.1
+fpdf2==2.8.4
