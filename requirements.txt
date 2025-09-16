@@ -30,6 +30,7 @@ DateTime==5.5
 debugpy==1.8.14
 decorator==5.2.1
 dnspython==2.8.0
+ecdsa==0.19.1
 email-validator==2.3.0
 et_xmlfile==2.0.0
 executing==2.2.0
@@ -70,6 +71,7 @@ openpyxl==3.1.5
 packaging==24.2
 pandas==2.3.0
 parso==0.8.4
+passlib==1.7.4
 peewee==3.18.1
 pillow==11.2.1
 platformdirs==4.3.8
@@ -80,6 +82,7 @@ protobuf==6.31.1
 psutil==7.0.0
 pure_eval==0.2.3
 pyarrow==20.0.0
+pyasn1==0.6.1
 pycparser==2.22
 pydantic==2.11.9
 pydantic-settings==2.10.1
@@ -89,12 +92,14 @@ Pygments==2.19.1
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
+python-jose==3.5.0
 pytz==2025.2
 pyzmq==26.4.0
 referencing==0.36.2
 reportlab==4.4.3
 requests==2.32.4
 rpds-py==0.25.1
+rsa==4.9.1
 s3transfer==0.13.1
 scikit-learn==1.7.0
 scipy==1.15.3
