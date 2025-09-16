@@ -143,3 +143,4 @@ yfinance==0.2.62
 zope.interface==7.2
 defusedxml==0.7.1
 fpdf2==2.8.4
+broadcaster==0.3.1
