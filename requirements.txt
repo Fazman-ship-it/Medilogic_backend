@@ -13,10 +13,12 @@ anyio==4.10.0
 APScheduler==3.11.0
 asttokens==3.0.0
 attrs==25.3.0
+bcrypt==4.3.0
 beautifulsoup4==4.13.4
 blinker==1.9.0
 boto3==1.39.11
 botocore==1.39.11
+broadcaster==0.3.1
 cachetools==5.5.2
 certifi==2025.4.26
 cffi==1.17.1
@@ -30,6 +32,7 @@ cycler==0.12.1
 DateTime==5.5
 debugpy==1.8.14
 decorator==5.2.1
+defusedxml==0.7.1
 distro==1.9.0
 dnspython==2.8.0
 ecdsa==0.19.1
@@ -39,6 +42,7 @@ executing==2.2.0
 fastapi==0.116.1
 fastapi-mail==1.5.0
 fonttools==4.58.2
+fpdf2==2.8.4
 frozendict==2.4.6
 frozenlist==1.7.0
 geographiclib==2.1
@@ -96,6 +100,7 @@ pydantic-settings==2.10.1
 pydantic_core==2.33.2
 pydeck==0.9.1
 Pygments==2.19.1
+PyJWT==2.10.1
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
@@ -103,6 +108,7 @@ python-jose==3.5.0
 python-multipart==0.0.20
 pytz==2025.2
 pyzmq==26.4.0
+qrcode==8.2
 referencing==0.36.2
 reportlab==4.4.3
 requests==2.32.4
@@ -141,8 +147,3 @@ wrapt==1.17.3
 yarl==1.20.1
 yfinance==0.2.62
 zope.interface==7.2
-defusedxml==0.7.1
-fpdf2==2.8.4
-broadcaster==0.3.1
-PyJWT==2.10.1
-qrcode==8.2
