@@ -1371,7 +1371,6 @@ class RestoreUserResponse(BaseModel):
     email: EmailStr
     name: str
     role: str
-    organization_name:Optional[str]
     is_active: bool
     restored_at: datetime
     restored_by: UUID  # Who performed the restore
@@ -1384,7 +1383,6 @@ class DeletedUser(BaseModel):
     id: UUID
     name: str
     email: EmailStr
-    organization_name:Optional[str]
     role:str
     deleted_at: datetime
     deletion_reason: Optional[str] = None
