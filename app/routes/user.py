@@ -72,7 +72,7 @@ def delete_own_account(
             "name": current_user.name,
             "email": current_user.email,
             "role": current_user.role,
-            "organization": current_user.organization.name if current_user.organization else None,
+            "organization_name": current_user.organization.organization_name if current_user.organization else None,
             "deleted_at": current_user.deleted_at,
             "reason": current_user.deletion_reason
         }
@@ -168,7 +168,7 @@ def restore_user(
             "name": user_to_restore.name,
             "email": user_to_restore.email,
             "role": user_to_restore.role,
-            "organization": user_to_restore.organization.name if user_to_restore.organization else None,
+            "organization_name": user_to_restore.organization.organization_name if user_to_restore.organization else None,
             "restored_at": datetime.utcnow()
         }
     }
