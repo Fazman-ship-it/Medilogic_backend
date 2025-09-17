@@ -36,7 +36,7 @@ router = APIRouter(prefix="/users", tags=['users'])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-@router.delete("/users/me", status_code=204)
+@router.delete("/users/me", status_code=200)
 def delete_own_account(
     request: DeleteAccountRequest,
     db: Session = Depends(get_db),
@@ -64,6 +64,19 @@ def delete_own_account(
     )
 
     db.commit()
+    db.refresh(current_user)
+
+    return {
+        "message": "Account deleted successfully.",
+        "user": {
+            "name": current_user.name,
+            "email": current_user.email,
+            "role": current_user.role,
+            "organization": current_user.organization.name if current_user.organization else None,
+            "deleted_at": current_user.deleted_at,
+            "reason": current_user.deletion_reason
+        }
+    }
 
 @router.put("/update")
 def update_my_account(
@@ -139,6 +152,7 @@ def restore_user(
     user_to_restore.deletion_reason = None
 
     db.commit()
+    db.refresh(user_to_restore)
 
     # 📝 Log activity
     log_activity(
@@ -148,7 +162,16 @@ def restore_user(
         details=f"Restored user: {user_to_restore.email} (ID: {user_to_restore.id})"
     )
 
-    return {"message": f"User {user_to_restore.email} has been restored successfully."}
+    return {
+        "message": f"User {user_to_restore.email} has been restored successfully.",
+        "user": {
+            "name": user_to_restore.name,
+            "email": user_to_restore.email,
+            "role": user_to_restore.role,
+            "organization": user_to_restore.organization.name if user_to_restore.organization else None,
+            "restored_at": datetime.utcnow()
+        }
+    }
 
 @router.get("/users/deleted", response_model=list[DeletedUser])
 def get_deleted_users(
