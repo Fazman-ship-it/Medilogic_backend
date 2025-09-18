@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app import models, schemas, database
 from app.dependencies import require_role, get_current_user
-import uuid
 from app.utilites.logging import log_activity
 from app.models import User
 from app.database import get_db
+from uuid import UUID
 
 router = APIRouter(prefix="/admin", tags=["Admin - Users"])
 
@@ -51,7 +51,7 @@ def get_users_by_role(
 
 @router.patch("/users/{user_id}/activate")
 def activate_user(
-    user_id: uuid.UUID,
+    user_id: UUID,
     db: Session = Depends(get_db),
     current_user=Depends(require_role("admin")),
 ):
@@ -70,15 +70,15 @@ def activate_user(
         db=db,
         user_id=current_user.id,
         action="activate_user",
-        details=f"{current_user.role} activated user {user.full_name} (org={user.organization_id})"
+        details=f"{current_user.role} activated user {user.name} (org={user.organization_id})"
     )
 
-    return {"message": f"User {user.full_name} activated"}
+    return {"message": f"User {user.name} activated"}
 
 
 @router.patch("/users/{user_id}/deactivate")
 def deactivate_user(
-    user_id: uuid.UUID,
+    user_id: UUID,
     db: Session = Depends(get_db),
     current_user=Depends(require_role("admin")),
 ):
@@ -97,8 +97,8 @@ def deactivate_user(
         db=db,
         user_id=current_user.id,
         action="deactivate_user",
-        details=f"{current_user.role} deactivated user {user.full_name} (org={user.organization_id})"
+        details=f"{current_user.role} deactivated user {user.name} (org={user.organization_id})"
     )
 
-    return {"message": f"User {user.full_name} deactivated"}
+    return {"message": f"User {user.name} deactivated"}
 

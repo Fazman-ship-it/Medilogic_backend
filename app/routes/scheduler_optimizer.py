@@ -12,15 +12,28 @@ import pandas as pd
 from app.utilites.geolocation import haversine_distance
 import os
 from geopy.distance import geodesic
+import os
+import datetime
+import joblib
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app import models, schemas
+from app.dependencies import get_db, require_role
 
 router = APIRouter(
     prefix="/optimizer",
     tags=["AI Optimization"]
 )
 
-# ✅ Load the trained model once — safer path
-MODEL_PATH = os.path.join("models", "scheduler_optimizer_model.pkl")
-model = joblib.load(MODEL_PATH)
+MODELS_DIR = "models"
+os.makedirs(MODELS_DIR, exist_ok=True)
+
+MIN_TRAINING_SAMPLES = 20  # ✅ threshold before training AI model
+
+
+def get_model_path(org_id: str) -> str:
+    return os.path.join(MODELS_DIR, f"{org_id}_optimizer.pkl")
 
 
 @router.post("/optimize-scheduling", response_model=schemas.OptimizerResponse)
@@ -31,11 +44,15 @@ def optimize_trip_scheduling(
 ):
     """
     AI-powered driver recommendation and auto-trip creation.
+    Falls back to nearest-driver baseline if no trained model available.
     """
-    # ✅ Step 1: Fetch all eligible drivers with location
+    org_id = current_user.organization_id
+    model_path = get_model_path(str(org_id))
+
+    # ✅ Step 1: Fetch all eligible drivers
     drivers = db.query(models.User).filter(
         models.User.role == "driver",
-        models.User.organization_id == current_user.organization_id,
+        models.User.organization_id == org_id,
         models.User.latitude.isnot(None),
         models.User.longitude.isnot(None)
     ).all()
@@ -43,43 +60,57 @@ def optimize_trip_scheduling(
     if not drivers:
         raise HTTPException(status_code=404, detail="No available drivers with location data.")
 
+    # ✅ Step 2: Try loading org model
+    model = None
+    if os.path.exists(model_path):
+        try:
+            model = joblib.load(model_path)
+        except Exception:
+            model = None  # corrupted model file
+
     driver_predictions = []
 
-    for driver in drivers:
-        # ✅ Step 2: Compute distance to pickup location
-        driver_location = (driver.latitude, driver.longitude)
-        pickup_location = (data.pickup_lat, data.pickup_lon)
-        distance_km = geodesic(driver_location, pickup_location).km
+    if model:
+        # ✅ AI MODE: Use trained ML model
+        for driver in drivers:
+            distance_km = haversine_distance(driver.latitude, driver.longitude, data.pickup_lat, data.pickup_lon)
 
-        # ✅ Step 3: Create DataFrame for prediction
-        df = pd.DataFrame([{
-            "delivery_type": data.delivery_type,
-            "priority_score": data.priority_score,
-            "distance_to_pickup_km": distance_km,
-            "driver_rating": driver.rating or 4.0,  # Default if missing
-        }])
+            df = pd.DataFrame([{
+                "delivery_type": data.delivery_type,
+                "priority_score": data.priority_score,
+                "distance_to_pickup_km": distance_km,
+                "driver_rating": driver.rating or 4.0,
+            }])
 
-        df = pd.get_dummies(df)
+            df = pd.get_dummies(df)
 
-        # ✅ Ensure all expected columns exist
-        for col in model.feature_names_in_:
-            if col not in df.columns:
-                df[col] = 0
+            for col in model.feature_names_in_:
+                if col not in df.columns:
+                    df[col] = 0
 
-        df = df[model.feature_names_in_]
+            df = df[model.feature_names_in_]
 
-        predicted_score = model.predict(df)[0]
-        driver_predictions.append((driver, distance_km, predicted_score))
+            predicted_score = model.predict(df)[0]
+            driver_predictions.append((driver, distance_km, predicted_score))
 
-    # ✅ Step 4: Rank drivers by predicted score
-    driver_predictions.sort(key=lambda x: x[2], reverse=True)
+        driver_predictions.sort(key=lambda x: x[2], reverse=True)
+        prediction_method = "ml_model"
+
+    else:
+        # ✅ BASELINE MODE: Fallback to nearest driver
+        for driver in drivers:
+            distance_km = haversine_distance(driver.latitude, driver.longitude, data.pickup_lat, data.pickup_lon)
+            driver_predictions.append((driver, distance_km, -distance_km))  # smaller distance = better score
+
+        driver_predictions.sort(key=lambda x: x[1])  # sort by distance
+        prediction_method = "baseline"
 
     if not driver_predictions:
         raise HTTPException(status_code=500, detail="Unable to make a driver prediction.")
 
     best_driver, best_distance, best_score = driver_predictions[0]
 
-    # ✅ Step 5: Auto-create a trip
+    # ✅ Step 3: Auto-create a trip
     trip = models.Trip(
         client_id=data.client_id,
         driver_id=best_driver.id,
@@ -97,16 +128,16 @@ def optimize_trip_scheduling(
     db.commit()
     db.refresh(trip)
 
-    # ✅ Step 6: Log activity
+    # ✅ Step 4: Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
-        action="AI-Optimized Trip Assigned",
-        details=f"Driver {best_driver.name} (ID: {best_driver.id}) assigned via optimizer",
+        action="AI-Optimized Trip Assigned" if prediction_method == "ml_model" else "Baseline Trip Assigned",
+        details=f"Driver {best_driver.name} assigned using {prediction_method}.",
         trip_id=trip.id
     )
 
-    # ✅ Step 7: Return full response
+    # ✅ Step 5: Return response
     return schemas.OptimizerResponse(
         trip_id=trip.id,
         assigned_driver_id=best_driver.id,
@@ -121,5 +152,6 @@ def optimize_trip_scheduling(
                 predicted_score=round(score, 2)
             )
             for d, dist, score in driver_predictions[:3]
-        ]
-    ) 
+        ],
+        prediction_method=prediction_method
+    )

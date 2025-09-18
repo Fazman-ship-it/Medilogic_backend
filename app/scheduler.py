@@ -26,7 +26,7 @@ from app.utilites.subscribe_email import send_subscription_email  # utility to s
 from app.models import Medilogic_Driver
 import random
 from app.utilites.daily_notify import send_daily_notification_to_all
-
+from app.utilites.optimizer_model import train_org_model
 # === JOB 1: Delete Unverified Accounts ===
 def delete_unverified_accounts():
     db: Session = SessionLocal()
@@ -226,6 +226,23 @@ def pick_and_send_daily_notification():
 
     finally:
         db.close()
+# === JOB 5: Retrain Optimizer Models per Organization ===
+def retrain_all_org_models():
+    db: Session = SessionLocal()
+    try:
+        orgs = db.query(models.Organization).all()
+        for org in orgs:
+            model = train_org_model(db, str(org.id))
+            if model:
+                print(f"[Scheduler] ✅ Retrained optimizer model for org {org.organization_name} ({org.id})")
+            else:
+                print(f"[Scheduler] ⚠️ Skipped org {org.organization_name} ({org.id}) - insufficient data")
+    except Exception as e:
+        print(f"[Scheduler] ❌ Error retraining models: {e}")
+    finally:
+        db.close()
+
+
 
 # === Initialize Scheduler ===
 scheduler = BackgroundScheduler(timezone=timezone("Europe/London"))
@@ -334,7 +351,13 @@ scheduler.add_job(
     minute=0,
     id="daily_pick_notification"
 )
-    
+
+scheduler.add_job(
+    retrain_all_org_models,
+    trigger=IntervalTrigger(days=1),  # once daily, adjust as needed
+    id="daily_optimizer_retrain",
+    replace_existing=True,
+)
 
 # === Start Scheduler ===
 def start_scheduler():

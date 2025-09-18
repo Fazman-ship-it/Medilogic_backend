@@ -307,6 +307,7 @@ class OptimizerResponse(BaseModel):
     scheduled_time: datetime
     predicted_score: float
     top_3_recommendations: List[DriverRecommendation]
+    prediction_method: str
 
     class Config:
         from_attributes = True
