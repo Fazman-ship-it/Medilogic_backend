@@ -194,16 +194,21 @@ def export_logs_pdf(
     headers = ["Timestamp", "User", "User ID", "Action", "Details", "IP", "Org ID", "Log ID"]
     col_widths = [25, 25, 30, 20, 50, 20, 25, 25]
 
+    pdf.set_fill_color(50, 50, 50)  # dark gray
+    pdf.set_text_color(255, 255, 255)  # white text
     for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 8, header, border=1, align="C")
+        pdf.cell(col_widths[i], 8, header, border=1, align="C", fill=True)
     pdf.ln()
 
-    # ✅ Table rows
+    # ✅ Reset text color for rows
+    pdf.set_text_color(0, 0, 0)
+
+    # ✅ Table rows with wrapping + zebra striping
     pdf.set_font("Arial", "", 7)
-    for log, name in logs:
+    for idx, (log, full_name) in enumerate(logs):
         row = [
             log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else "",
-            name or "",
+            full_name or "",
             str(log.user_id) if log.user_id else "",
             log.action or "",
             log.details or "",
@@ -211,12 +216,26 @@ def export_logs_pdf(
             str(log.organization_id) if log.organization_id else "",
             str(log.id),
         ]
+
+        # ✅ Zebra striping (light gray on even rows)
+        if idx % 2 == 0:
+            pdf.set_fill_color(240, 240, 240)
+            fill = True
+        else:
+            fill = False
+
+        # Track Y/X before writing
+        y_before = pdf.get_y()
+        x_before = pdf.get_x()
+
         for i, value in enumerate(row):
-            if i == 4:  # Wrap details column
-                pdf.multi_cell(col_widths[i], 8, value, border=1)
-                pdf.ln()
+            if i == 4:  # ✅ Wrap Details column
+                pdf.multi_cell(col_widths[i], 8, value, border=1, fill=fill)
+                pdf.set_xy(x_before + col_widths[i], y_before)
             else:
-                pdf.cell(col_widths[i], 8, value, border=1)
+                pdf.cell(col_widths[i], 8, value, border=1, fill=fill)
+            x_before = pdf.get_x()
+
         pdf.ln()
 
     # ✅ Footer
@@ -225,11 +244,14 @@ def export_logs_pdf(
     pdf.cell(0, 10, f"Page {pdf.page_no()}", align="C")
 
     response = Response(
-        content=pdf.output(dest="S").encode("latin-1"),
+        content=pdf.output(dest="S"),
         media_type="application/pdf"
     )
-    response.headers["Content-Disposition"] =(f"attachment; filename=activity_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf")
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename=activity_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
+    )
     return response
+
 
 from typing import Optional, Dict
 from uuid import UUID
