@@ -1604,3 +1604,23 @@ class ChatResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        
+from typing import Dict, Optional
+from pydantic import BaseModel
+
+# ✅ Summary section for analytics
+class ActivityLogSummary(BaseModel):
+    total_logs: int
+    failed_logins: int
+    most_active_user: Optional[str] = None
+    most_common_action: Optional[str] = None
+
+# ✅ Full analytics response
+class ActivityLogAnalytics(BaseModel):
+    summary: ActivityLogSummary
+    actions_count: Dict[str, int]
+    activity_by_role: Dict[str, int]
+    activity_over_time: Dict[str, int]
+    
+    class Config:
+        from_attributes = True        
