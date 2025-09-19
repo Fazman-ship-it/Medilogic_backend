@@ -147,31 +147,40 @@ class Token(BaseModel):
     expires_in: int
 
 # --------------------------
-# Trip Analytics Schemas
-# --------------------------
+from typing import Optional, Dict, List, Union
+from pydantic import BaseModel
+from uuid import UUID
+from datetime import date
+
+# --- Filters applied ---
 class TripAnalyticsFilters(BaseModel):
-    start_date: Optional[datetime]
-    end_date: Optional[datetime]
+    start_date: Optional[date]
+    end_date: Optional[date]
     status: Optional[str]
     driver_id: Optional[UUID]
     client_name: Optional[str]
     delivery_type: Optional[str]
 
-class TripAnalyticsData(BaseModel):
+# --- Analytics summary ---
+class TripAnalyticsSummary(BaseModel):
     total_trips: int
     total_distance_km: float
     total_cost: float
     average_cost: float
-    most_common_delivery_type: Optional[str]
+    most_common_delivery_type: str
+    trips_per_delivery_type: Dict[str, int]  # for frontend charts
 
-class TripAIPrediction(BaseModel):
-    predicted_trips_next_day: int
-    insight: str
+# --- AI prediction info ---
+class TripAnalyticsAI(BaseModel):
+    predicted_durations_minutes: List[float]
+    average_predicted_duration: float
 
+# --- Full analytics response ---
 class TripAnalyticsResponse(BaseModel):
     filters_applied: TripAnalyticsFilters
-    analytics: TripAnalyticsData
-    ai_prediction: TripAIPrediction
+    analytics: TripAnalyticsSummary
+    ai_prediction: TripAnalyticsAI
+    ai_insight: str
 
 # --------------------------
 # Proof of Delivery (POD)

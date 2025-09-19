@@ -5,17 +5,17 @@ from typing import Optional
 import pandas as pd
 import joblib
 import os
-import plotly.graph_objs as go
-import plotly.io as pio
 from app import models
 from app.database import get_db
 from app.dependencies import require_role
 from uuid import UUID
 from sklearn.linear_model import LinearRegression
 import numpy as np
+from app.schemas import TripAnalyticsResponse
+
 router = APIRouter(prefix="", tags=["Trip Analytics"])
 
-@router.get("/trips/analytics")
+@router.get("/trips/analytics",response_model=TripAnalyticsResponse)
 def get_trip_analytics(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -48,7 +48,6 @@ def get_trip_analytics(
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
     if delivery_type:
         if delivery_type.lower() == "other":
-            # Filter trips explicitly marked as "other"
             query = query.filter(models.Trip.delivery_type == "other")
         else:
             query = query.filter(models.Trip.delivery_type == delivery_type)
@@ -61,18 +60,16 @@ def get_trip_analytics(
     org_id = str(current_user.organization_id)
     model_path = f"trip_models/trip_duration_model_org_{org_id}.pkl"
 
-    # ✅ Try loading model, otherwise train it automatically
+    # Load or auto-train model
     try:
         model = joblib.load(model_path)
     except Exception:
-        # --- Auto-train fallback ---
         df = pd.DataFrame([{
-            "distance_km": trip.distance_km if trip.distance_km is not None else 0,
-            "cost": trip.cost if trip.cost is not None else 0,
-            "delivery_type": trip.delivery_type if trip.delivery_type else "unknown"
+            "distance_km": trip.distance_km or 0,
+            "cost": trip.cost or 0,
+            "delivery_type": trip.delivery_type or "unknown"
         } for trip in trips])
 
-        # Simulate duration_minutes if missing
         np.random.seed(42)
         df["duration_minutes"] = (
             df["distance_km"] * 1.5
@@ -80,7 +77,6 @@ def get_trip_analytics(
             + np.random.normal(5, 5, len(df))
         )
 
-        # Encode delivery type
         df["delivery_type_encoded"] = df["delivery_type"].apply(
             lambda x: 1 if isinstance(x, str) and "waste" in x.lower() else 0
         )
@@ -94,19 +90,17 @@ def get_trip_analytics(
         model = LinearRegression()
         model.fit(X, y)
 
-        # Save model
         os.makedirs("trip_models", exist_ok=True)
         joblib.dump(model, model_path)
         print(f"⚡ Auto-trained model for org {org_id} and saved to {model_path}")
 
-    # ✅ Prepare trip data for prediction
+    # Prepare trip data for prediction
     data = pd.DataFrame([{
-        "distance_km": trip.distance_km if trip.distance_km is not None else 0,
-        "cost": trip.cost if trip.cost is not None else 0,
+        "distance_km": trip.distance_km or 0,
+        "cost": trip.cost or 0,
         "delivery_type_encoded": 1 if trip.delivery_type and "waste" in trip.delivery_type.lower() else 0
     } for trip in trips])
 
-    # Ensure alignment with model features
     model_features = model.feature_names_in_
     for feature in model_features:
         if feature not in data.columns:
@@ -122,7 +116,7 @@ def get_trip_analytics(
     total_cost = sum([trip.cost or 0 for trip in trips])
     average_cost = total_cost / total_trips if total_trips else 0
 
-    # ✅ Handle "other" with custom descriptions
+    # Handle delivery types
     delivery_types = []
     for trip in trips:
         if trip.delivery_type == "other" and trip.custom_delivery_description:
@@ -132,7 +126,7 @@ def get_trip_analytics(
 
     most_common_type = max(set(delivery_types), key=delivery_types.count) if delivery_types else "unknown"
 
-    # Chart
+    # Count trips per delivery type (for frontend charting)
     type_counts = {}
     for trip in trips:
         if trip.delivery_type == "other" and trip.custom_delivery_description:
@@ -140,10 +134,6 @@ def get_trip_analytics(
         else:
             dtype = trip.delivery_type or "unknown"
         type_counts[dtype] = type_counts.get(dtype, 0) + 1
-
-    fig = go.Figure([go.Bar(x=list(type_counts.keys()), y=list(type_counts.values()))])
-    fig.update_layout(title="Trips by Delivery Type", xaxis_title="Type", yaxis_title="Count")
-    chart_html = pio.to_html(fig, full_html=False)
 
     # AI insight
     if total_trips > 30:
@@ -153,6 +143,7 @@ def get_trip_analytics(
     else:
         ai_insight = "Low trip volume – check for potential disruptions."
 
+    # ✅ Return JSON-only data (no charts)
     return {
         "filters_applied": {
             "start_date": start_date,
@@ -168,11 +159,11 @@ def get_trip_analytics(
             "total_cost": round(total_cost, 2),
             "average_cost": round(average_cost, 2),
             "most_common_delivery_type": most_common_type,
+            "trips_per_delivery_type": type_counts,  # Frontend can use this to build chart
         },
         "ai_prediction": {
             "predicted_durations_minutes": [round(d, 2) for d in predicted_durations],
             "average_predicted_duration": round(float(sum(predicted_durations) / total_trips), 2)
         },
-        "ai_insight": ai_insight,
-        "chart": chart_html
+        "ai_insight": ai_insight
     }
