@@ -133,7 +133,6 @@ def export_logs_csv(
     response.headers["Content-Disposition"] = f"attachment; filename=activity_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
     return response
 
-
 # ✅ Consistent PDF Export
 @router.get("/export/pdf", summary="Export activity logs as PDF")
 def export_logs_pdf(
@@ -189,10 +188,10 @@ def export_logs_pdf(
     pdf.cell(0, 8, f"Failed Logins: {failed}", ln=True)
     pdf.ln(3)
 
-    # ✅ Table headers (aligned with CSV)
+    # ✅ Table headers
     pdf.set_font("Arial", "B", 8)
-    headers = ["Timestamp", "User", "User ID", "Action", "Details", "IP", "Org ID", "Log ID"]
-    col_widths = [25, 25, 30, 20, 50, 20, 25, 25]
+    headers = ["Timestamp", "User", "User ID", "Action", "Details (Short)", "IP", "Org ID", "Log ID"]
+    col_widths = [25, 25, 30, 20, 40, 20, 25, 25]
 
     pdf.set_fill_color(50, 50, 50)  # dark gray
     pdf.set_text_color(255, 255, 255)  # white text
@@ -203,40 +202,45 @@ def export_logs_pdf(
     # ✅ Reset text color for rows
     pdf.set_text_color(0, 0, 0)
 
-    # ✅ Table rows with wrapping + zebra striping
+    # ✅ Table rows (truncate details)
     pdf.set_font("Arial", "", 7)
+    full_details_map = {}  # store full details for appendix
+
     for idx, (log, full_name) in enumerate(logs):
+        short_details = (log.details[:40] + "…") if log.details and len(log.details) > 40 else (log.details or "")
+        full_details_map[str(log.id)] = log.details or ""
+
         row = [
             log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else "",
             full_name or "",
             str(log.user_id) if log.user_id else "",
             log.action or "",
-            log.details or "",
+            short_details,
             log.ip_address or "",
             str(log.organization_id) if log.organization_id else "",
             str(log.id),
         ]
 
-        # ✅ Zebra striping (light gray on even rows)
+        # ✅ Zebra striping
         if idx % 2 == 0:
             pdf.set_fill_color(240, 240, 240)
             fill = True
         else:
             fill = False
 
-        # Track Y/X before writing
-        y_before = pdf.get_y()
-        x_before = pdf.get_x()
-
         for i, value in enumerate(row):
-            if i == 4:  # ✅ Wrap Details column
-                pdf.multi_cell(col_widths[i], 8, value, border=1, fill=fill)
-                pdf.set_xy(x_before + col_widths[i], y_before)
-            else:
-                pdf.cell(col_widths[i], 8, value, border=1, fill=fill)
-            x_before = pdf.get_x()
-
+            pdf.cell(col_widths[i], 8, value, border=1, fill=fill)
         pdf.ln()
+
+    # ✅ Appendix for full details
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(0, 10, "Full Details Appendix", ln=True)
+
+    pdf.set_font("Arial", "", 9)
+    for log_id, details in full_details_map.items():
+        pdf.multi_cell(0, 6, f"Log {log_id}: {details}")
+        pdf.ln(1)
 
     # ✅ Footer
     pdf.set_y(-15)
