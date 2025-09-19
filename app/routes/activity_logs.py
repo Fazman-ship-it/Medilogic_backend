@@ -225,7 +225,7 @@ def export_logs_pdf(
     pdf.cell(0, 10, f"Page {pdf.page_no()}", align="C")
 
     response = Response(
-        content=pdf.output(dest="S").encode("latin-1"),
+        content=pdf.output(dest="S").decode("latin-1"),
         media_type="application/pdf"
     )
     response.headers["Content-Disposition"] = f"attachment; filename=activity_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
