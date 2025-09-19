@@ -128,12 +128,12 @@ def export_logs_csv(
             str(log.organization_id) if log.organization_id else "",
             str(log.id),
         ])
-
+        
     response = Response(content=output.getvalue(), media_type="text/csv")
     response.headers["Content-Disposition"] = f"attachment; filename=activity_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
-    return response
+    return response 
 
-# ✅ Consistent PDF Export
+# ✅ Clean & Readable PDF Export
 @router.get("/export/pdf", summary="Export activity logs as PDF")
 def export_logs_pdf(
     db: Session = Depends(get_db),
@@ -190,11 +190,11 @@ def export_logs_pdf(
 
     # ✅ Table headers
     pdf.set_font("Arial", "B", 8)
-    headers = ["Timestamp", "User", "User ID", "Action", "Details (Short)", "IP", "Org ID", "Log ID"]
-    col_widths = [25, 25, 30, 20, 40, 20, 25, 25]
+    headers = ["Timestamp", "User", "User ID", "Action", "Details", "IP", "Org ID", "Log ID"]
+    col_widths = [25, 25, 25, 20, 55, 20, 20, 20]  # adjusted widths
 
     pdf.set_fill_color(50, 50, 50)  # dark gray
-    pdf.set_text_color(255, 255, 255)  # white text
+    pdf.set_text_color(255, 255, 255)  # white
     for i, header in enumerate(headers):
         pdf.cell(col_widths[i], 8, header, border=1, align="C", fill=True)
     pdf.ln()
@@ -202,45 +202,60 @@ def export_logs_pdf(
     # ✅ Reset text color for rows
     pdf.set_text_color(0, 0, 0)
 
-    # ✅ Table rows (truncate details)
+    # ✅ Table rows with truncation + zebra striping
     pdf.set_font("Arial", "", 7)
-    full_details_map = {}  # store full details for appendix
-
     for idx, (log, full_name) in enumerate(logs):
-        short_details = (log.details[:40] + "…") if log.details and len(log.details) > 40 else (log.details or "")
-        full_details_map[str(log.id)] = log.details or ""
+        # ✅ Clean truncation rules
+        details = (log.details or "")
+        if len(details) > 60:
+            details = details[:60] + "..."
+
+        ip = (log.ip_address or "")
+        if len(ip) > 15:  # shorten long IPs
+            ip = ip[:15] + "..."
+
+        user_id_str = str(log.user_id) if log.user_id else ""
+        if len(user_id_str) > 8:  # shorten UUID
+            user_id_str = user_id_str[:8] + "..."
+
+        org_id_str = str(log.organization_id) if log.organization_id else ""
+        if len(org_id_str) > 8:
+            org_id_str = org_id_str[:8] + "..."
+
+        log_id_str = str(log.id)
+        if len(log_id_str) > 8:
+            log_id_str = log_id_str[:8] + "..."
 
         row = [
             log.timestamp.strftime("%Y-%m-%d %H:%M") if log.timestamp else "",
             full_name or "",
-            str(log.user_id) if log.user_id else "",
+            user_id_str,
             log.action or "",
-            short_details,
-            log.ip_address or "",
-            str(log.organization_id) if log.organization_id else "",
-            str(log.id),
+            details,
+            ip,
+            org_id_str,
+            log_id_str,
         ]
 
-        # ✅ Zebra striping
+        # ✅ Zebra striping (light gray)
         if idx % 2 == 0:
-            pdf.set_fill_color(240, 240, 240)
+            pdf.set_fill_color(245, 245, 245)
             fill = True
         else:
             fill = False
 
+        y_before = pdf.get_y()
+        x_before = pdf.get_x()
+
         for i, value in enumerate(row):
-            pdf.cell(col_widths[i], 8, value, border=1, fill=fill)
+            if i == 4:  # wrap details
+                pdf.multi_cell(col_widths[i], 8, value, border=1, fill=fill)
+                pdf.set_xy(x_before + col_widths[i], y_before)
+            else:
+                pdf.cell(col_widths[i], 8, value, border=1, fill=fill)
+            x_before = pdf.get_x()
+
         pdf.ln()
-
-    # ✅ Appendix for full details
-    pdf.add_page()
-    pdf.set_font("Arial", "B", 12)
-    pdf.cell(0, 10, "Full Details Appendix", ln=True)
-
-    pdf.set_font("Arial", "", 9)
-    for log_id, details in full_details_map.items():
-        pdf.multi_cell(0, 6, f"Log {log_id}: {details}")
-        pdf.ln(1)
 
     # ✅ Footer
     pdf.set_y(-15)
@@ -255,6 +270,7 @@ def export_logs_pdf(
         f"attachment; filename=activity_logs_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
     )
     return response
+
 
 
 from typing import Optional, Dict
