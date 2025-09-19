@@ -244,7 +244,7 @@ def export_logs_pdf(
     pdf.cell(0, 10, f"Page {pdf.page_no()}", align="C")
 
     response = Response(
-        content=pdf.output(dest="S"),
+        content=bytes(pdf.output(dest="S")),
         media_type="application/pdf"
     )
     response.headers["Content-Disposition"] = (
