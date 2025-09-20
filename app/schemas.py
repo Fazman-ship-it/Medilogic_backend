@@ -172,9 +172,9 @@ class TripAnalyticsSummary(BaseModel):
 
 # --- AI prediction info ---
 class TripAnalyticsAI(BaseModel):
-    predicted_durations_minutes: List[float]
     average_predicted_duration: float
-
+    min_predicted_duration: float
+    max_predicted_duration: float   
 # --- Full analytics response ---
 class TripAnalyticsResponse(BaseModel):
     filters_applied: TripAnalyticsFilters

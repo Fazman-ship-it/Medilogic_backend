@@ -15,7 +15,7 @@ from app.schemas import TripAnalyticsResponse
 
 router = APIRouter(prefix="", tags=["Trip Analytics"])
 
-@router.get("/trips/analytics",response_model=TripAnalyticsResponse)
+@router.get("/trips/analytics", response_model=TripAnalyticsResponse)
 def get_trip_analytics(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -30,13 +30,15 @@ def get_trip_analytics(
     query = query.filter(models.Trip.organization_id == current_user.organization_id)  # ✅ Multi-tenant
 
     # Apply filters
+    parsed_start_date = None
+    parsed_end_date = None
     try:
         if start_date:
-            start_date = datetime.strptime(start_date, "%Y-%m-%d")
-            query = query.filter(models.Trip.scheduled_time >= start_date)
+            parsed_start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            query = query.filter(models.Trip.scheduled_time >= parsed_start_date)
         if end_date:
-            end_date = datetime.strptime(end_date, "%Y-%m-%d")
-            query = query.filter(models.Trip.scheduled_time <= end_date)
+            parsed_end_date = datetime.strptime(end_date, "%Y-%m-%d")
+            query = query.filter(models.Trip.scheduled_time <= parsed_end_date)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
 
@@ -108,7 +110,7 @@ def get_trip_analytics(
     data = data[model_features]
 
     # Predictions
-    predicted_durations = model.predict(data)
+    predicted_durations = model.predict(data) if not data.empty else []
 
     # Aggregates
     total_trips = len(trips)
@@ -146,10 +148,10 @@ def get_trip_analytics(
     # ✅ Return JSON-only data (no charts)
     return {
         "filters_applied": {
-            "start_date": start_date,
-            "end_date": end_date,
+            "start_date": parsed_start_date.isoformat() if parsed_start_date else None,
+            "end_date": parsed_end_date.isoformat() if parsed_end_date else None,
             "status": status,
-            "driver_id": driver_id,
+            "driver_id": str(driver_id) if driver_id else None,
             "client_name": client_name,
             "delivery_type": delivery_type,
         },
@@ -159,11 +161,12 @@ def get_trip_analytics(
             "total_cost": round(total_cost, 2),
             "average_cost": round(average_cost, 2),
             "most_common_delivery_type": most_common_type,
-            "trips_per_delivery_type": type_counts,  # Frontend can use this to build chart
+            "trips_per_delivery_type": type_counts,
         },
         "ai_prediction": {
-            "predicted_durations_minutes": [round(d, 2) for d in predicted_durations],
-            "average_predicted_duration": round(float(sum(predicted_durations) / total_trips), 2)
+            "average_predicted_duration": round(float(sum(predicted_durations) / len(predicted_durations)), 2) if len(predicted_durations) else 0,
+            "min_predicted_duration": round(float(min(predicted_durations)), 2) if len(predicted_durations) else 0,
+            "max_predicted_duration": round(float(max(predicted_durations)), 2) if len(predicted_durations) else 0,
         },
         "ai_insight": ai_insight
     }
