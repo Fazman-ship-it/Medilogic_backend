@@ -27,7 +27,10 @@ def get_trip_analytics(
     current_user: models.User = Depends(require_role("admin"))
 ):
     query = db.query(models.Trip)
-    query = query.filter(models.Trip.organization_id == current_user.organization_id)  # ✅ Multi-tenant
+    query = query.filter(
+        models.Trip.organization_id == current_user.organization_id,
+        models.Trip.is_deleted == False  # ✅ exclude soft-deleted trips
+)
 
     # Apply filters safely
     try:

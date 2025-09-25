@@ -15,9 +15,10 @@ from app.database import get_db
 from app import models
 from typing import Optional, List
 from app.dependencies import require_role
-from app.schemas import TripUpdate, TripPatch, TripResponse, TripAnalyticsResponse,TripCreate
+from app.schemas import TripUpdate, TripPatch, TripResponse, TripAnalyticsResponse,TripCreate, TripStatus
 from app.utilites.logging import log_activity
 from uuid import UUID
+from app.models import TripStatus
 # app/routes/trip.py
 router = APIRouter()
 
@@ -44,8 +45,12 @@ def create_trip(
     if not trip_data.get("driver_id"):
         trip_data["driver_id"] = None
 
-    # 🔹 Optional fields: ensure defaults if missing
-    trip_data.setdefault("status", "pending")
+    # Ensure status is valid; default to pending
+    status_value = trip_data.get("status", TripStatus.pending.value)
+    if status_value not in [s.value for s in TripStatus]:
+        raise HTTPException(status_code=400, detail="Invalid trip status")
+    trip_data["status"] = status_value
+
     trip_data.setdefault("compliance_flag", False)
     trip_data.setdefault("priority", "normal")
     trip_data.setdefault("recurrence_rule", "none")
@@ -67,7 +72,7 @@ def create_trip(
 
     return db_trip
 
-@router.get("/trips/",response_model=schemas.PaginatedTripsResponse,summary="List all trips with advanced filtering, sorting, and pagination")
+@router.get("/trips/", response_model=schemas.PaginatedTripsResponse, summary="List all trips with advanced filtering, sorting, and pagination")
 def get_trips(
     status: Optional[str] = Query(None, description="Filter by trip status"),
     priority: Optional[str] = Query(None, description="Filter by priority level (e.g. 'normal', 'urgent', 'stat')"),
@@ -87,13 +92,17 @@ def get_trips(
     current_user: models.User = Depends(require_role("admin"))
 ):
     query = db.query(models.Trip).filter(
-    models.Trip.organization_id == current_user.organization_id,
-    models.Trip.is_deleted == False  # ✅ exclude deleted trips
-)
+        models.Trip.organization_id == current_user.organization_id,
+        models.Trip.is_deleted == False  # ✅ exclude deleted trips
+    )
 
     # 🔎 Apply filters
     if status:
-        query = query.filter(models.Trip.status.ilike(f"%{status}%"))
+        # ✅ Validate status using enum
+        if status not in [s.value for s in TripStatus]:
+            raise HTTPException(status_code=400, detail="Invalid trip status")
+        query = query.filter(models.Trip.status == status)
+
     if client_name:
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
     if driver_name:
@@ -178,6 +187,11 @@ def update_trip(
 
     update_data = updated_trip.model_dump()
 
+    # ✅ Validate status if provided
+    if "status" in update_data and update_data["status"] is not None:
+        if update_data["status"] not in [s.value for s in TripStatus]:
+            raise HTTPException(status_code=400, detail="Invalid trip status")
+
     # ✅ Validate driver_id if it's in the update payload
     if "driver_id" in update_data:
         driver_id = update_data["driver_id"]
@@ -230,6 +244,7 @@ def delete_trip(
 
     return {"message": f"Trip with ID {trip_id} has been deleted successfully"}
 
+
 @router.patch("/trips/{trip_id}", response_model=schemas.TripResponse)
 def partial_update_trip(
     trip_id: UUID,
@@ -246,7 +261,14 @@ def partial_update_trip(
     if not trip:
         raise HTTPException(status_code=404, detail=f"Trip with ID {trip_id} not found")
 
-    for key, value in trip_data.dict(exclude_unset=True).items():
+    patch_data = trip_data.dict(exclude_unset=True)
+
+    # ✅ Validate status if provided
+    if "status" in patch_data and patch_data["status"] is not None:
+        if patch_data["status"] not in [s.value for s in TripStatus]:
+            raise HTTPException(status_code=400, detail="Invalid trip status")
+
+    for key, value in patch_data.items():
         setattr(trip, key, value)
 
     db.commit()

@@ -17,6 +17,8 @@ import enum
 from enum import Enum
 from app.models import BadgeType, SubscriptionStatus, SubscriptionPlan, MedilogicDriverStatus
 from pydantic import model_validator
+from app.models import TripStatus
+
 # --------------------------
 
 
@@ -33,7 +35,7 @@ class TripBase(BaseModel):
     pickup_location: Optional[str] = None
     dropoff_location: Optional[str] = None
     distance_km: Optional[float] = None
-    status: Optional[str] = None
+    status: TripStatus = TripStatus.pending
     vehicle_type: Optional[str] = None
     location_zone: Optional[str] = None
     shift_window: Optional[str] = None

@@ -100,7 +100,14 @@ class MedilogicDriverStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
-    
+
+
+class TripStatus(str, enum.Enum):
+    pending = "pending"
+    in_progress = "in_progress"
+    completed = "completed"
+    cancelled = "cancelled"    
+
     
 class Trip(Base):
     __tablename__ = "trips"
@@ -114,7 +121,7 @@ class Trip(Base):
     pickup_location = Column(String)
     dropoff_location = Column(String)
     distance_km = Column(Float, nullable=True)
-    status = Column(String)
+    status = Column(String, default="pending")
     created_at = Column(DateTime, default=datetime.utcnow)
     location_zone = Column(String, nullable=True)
     vehicle_type = Column(String, nullable=True)
