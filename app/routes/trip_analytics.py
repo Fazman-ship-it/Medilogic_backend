@@ -29,7 +29,7 @@ def get_trip_analytics(
     query = db.query(models.Trip)
     query = query.filter(models.Trip.organization_id == current_user.organization_id)  # ✅ Multi-tenant
 
-    # Apply filters
+    # Apply filters safely
     try:
         if start_date:
             start_date = datetime.strptime(start_date, "%Y-%m-%d")
@@ -47,10 +47,7 @@ def get_trip_analytics(
     if client_name:
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
     if delivery_type:
-        if delivery_type.lower() == "other":
-            query = query.filter(models.Trip.delivery_type == "other")
-        else:
-            query = query.filter(models.Trip.delivery_type == delivery_type)
+        query = query.filter(models.Trip.delivery_type == delivery_type)
 
     trips = query.all()
 
@@ -100,11 +97,24 @@ def get_trip_analytics(
         y = df["duration_minutes"]
 
         if X.empty or y.empty:
-            raise HTTPException(status_code=500, detail="Not enough data to train a model for this organization.")
+            # ✅ Instead of 500, return no-data gracefully
+            return {
+                "message": "Not enough data to train a model for this organization.",
+                "filters_applied": {
+                    "start_date": start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else start_date,
+                    "end_date": end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else end_date,
+                    "status": status,
+                    "driver_id": str(driver_id) if driver_id else None,
+                    "client_name": client_name,
+                    "delivery_type": delivery_type,
+                },
+                "analytics": {},
+                "ai_prediction": {},
+                "ai_insight": "No data available for selected filters."
+            }
 
         model = LinearRegression()
         model.fit(X, y)
-
         os.makedirs("trip_models", exist_ok=True)
         joblib.dump(model, model_path)
         print(f"⚡ Auto-trained model for org {org_id} and saved to {model_path}")
