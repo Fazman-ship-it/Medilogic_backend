@@ -3,61 +3,66 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Optional, Literal
+from uuid import UUID
 import csv
 import io
 import pandas as pd
 from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
 from app import models
 from app.database import get_db
 from app.dependencies import require_role
-from uuid import UUID 
-from fastapi import APIRouter, Query, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from typing import Optional, Literal
-from uuid import UUID
-from datetime import datetime
-import io
-import csv
-import pandas as pd
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-from reportlab.lib import colors
+
 router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
+# --- CSV Export ---
 def export_to_csv(data: list) -> io.StringIO:
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=data[0].keys())
+    fieldnames = [
+        "ID", "Driver ID", "Delivery Type", "Scheduled Time",
+        "Cost (£)", "Client Name", "Pickup Location", "Dropoff Location",
+        "Distance (km)", "Status", "Created At"
+    ]
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
     writer.writeheader()
-    writer.writerows(data)
+    for row in data:
+        writer.writerow(row)
     buffer.seek(0)
     return buffer
 
-def export_to_excel(data: list) -> io.BytesIO:
-    df = pd.DataFrame(data)
-    buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Trips")
-    buffer.seek(0)
-    return buffer
-
+# --- PDF Export ---
 def export_to_pdf(data: list) -> io.BytesIO:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     elements = []
+    styles = getSampleStyleSheet()
 
-    # Build table
-    table_data = [list(data[0].keys())]  # headers
-    for row in data:
-        table_data.append(list(row.values()))
+    # Title & timestamp
+    title = Paragraph("Trip Export Report", styles["Title"])
+    timestamp = Paragraph(f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", styles["Normal"])
+    elements.extend([title, timestamp, Spacer(1, 12)])
 
+    # Build table data
+    headers = list(data[0].keys())
+    table_data = [headers]
+    for i, row in enumerate(data):
+        row_values = list(row.values())
+        table_data.append(row_values)
+
+    # Create table
     table = Table(table_data, repeatRows=1)
     table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f2f2f2")),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.black),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#003366")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,0), (-1,0), 'CENTER'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('ALIGN', (4,1), (4,-1), 'RIGHT'),   # Cost column
+        ('ALIGN', (8,1), (8,-1), 'RIGHT'),   # Distance column
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.lightgrey])
     ]))
 
     elements.append(table)
@@ -67,7 +72,7 @@ def export_to_pdf(data: list) -> io.BytesIO:
 
 @router.get("/export")
 def export_trips(
-    format: Literal["csv", "excel", "pdf"] = Query(..., description="Export format: csv, excel, pdf"),
+    format: Literal["csv", "pdf"] = Query(..., description="Export format: csv or pdf"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     client_name: Optional[str] = Query(None),
@@ -79,19 +84,18 @@ def export_trips(
     # --- Build Query ---
     query = db.query(models.Trip).filter(models.Trip.organization_id == current_user.organization_id)
 
-    # Date filter
-    for date_str, field in [(start_date, "gte"), (end_date, "lte")]:
-        if date_str:
-            try:
-                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-                if field == "gte":
-                    query = query.filter(models.Trip.scheduled_time >= date_obj)
-                else:
-                    query = query.filter(models.Trip.scheduled_time <= date_obj)
-            except ValueError:
-                raise HTTPException(status_code=400, detail=f"Invalid date format: {date_str}. Use YYYY-MM-DD.")
+    if start_date:
+        try:
+            query = query.filter(models.Trip.scheduled_time >= datetime.strptime(start_date, "%Y-%m-%d"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid start_date format. Use YYYY-MM-DD.")
 
-    # Other filters
+    if end_date:
+        try:
+            query = query.filter(models.Trip.scheduled_time <= datetime.strptime(end_date, "%Y-%m-%d"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid end_date format. Use YYYY-MM-DD.")
+
     if client_name:
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
     if delivery_type:
@@ -108,31 +112,24 @@ def export_trips(
         "ID": str(trip.id),
         "Driver ID": str(trip.driver_id),
         "Delivery Type": trip.delivery_type,
-        "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M:%S"),
-        "Cost": trip.cost,
+        "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M"),
+        "Cost (£)": f"{trip.cost:.2f}" if trip.cost is not None else "0.00",
         "Client Name": trip.client_name,
         "Pickup Location": trip.pickup_location,
         "Dropoff Location": trip.dropoff_location,
-        "Distance (km)": trip.distance_km,
+        "Distance (km)": f"{trip.distance_km:.1f}" if trip.distance_km is not None else "0.0",
         "Status": trip.status,
-        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M:%S")
+        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M")
     } for trip in trips]
 
     # --- Export ---
     if format == "csv":
         buffer = export_to_csv(data)
-        return StreamingResponse(buffer, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=trips.csv"})
+        return StreamingResponse(buffer, media_type="text/csv",
+                                 headers={"Content-Disposition": "attachment; filename=trips.csv"})
     
-    if format == "excel":
-        buffer = export_to_excel(data)
-        return StreamingResponse(
-            buffer,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=trips.xlsx"}
-        )
-
     if format == "pdf":
         buffer = export_to_pdf(data)
-        return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=trips.pdf"})
-
-    raise HTTPException(status_code=400, detail="Invalid export format")
+        return StreamingResponse(buffer, media_type="application/pdf",
+                                 headers={"Content-Disposition": "attachment; filename=trips.pdf"})
+    
