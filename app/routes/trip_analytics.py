@@ -68,7 +68,7 @@ def get_trip_analytics(
                 "total_distance_km": 0.0,
                 "total_cost": 0.0,
                 "average_cost": 0.0,
-                "most_common_delivery_type": None,
+                "most_common_delivery_type": "unknown",
                 "trips_per_delivery_type": {}
             },
             "ai_prediction": {
@@ -123,7 +123,7 @@ def get_trip_analytics(
                     "total_distance_km": 0.0,
                     "total_cost": 0.0,
                     "average_cost": 0.0,
-                    "most_common_delivery_type": None,
+                    "most_common_delivery_type": "unknown",
                     "trips_per_delivery_type": {}
                 },
                 "ai_prediction": {
