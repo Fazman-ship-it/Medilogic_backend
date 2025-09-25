@@ -15,7 +15,7 @@ from app.schemas import TripAnalyticsResponse
 
 router = APIRouter(prefix="", tags=["Trip Analytics"])
 
-@router.get("/trips/analytics",response_model=TripAnalyticsResponse)
+@router.get("/trips/analytics", response_model=TripAnalyticsResponse)
 def get_trip_analytics(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
@@ -53,8 +53,23 @@ def get_trip_analytics(
             query = query.filter(models.Trip.delivery_type == delivery_type)
 
     trips = query.all()
+
+    # ✅ Return gracefully if no trips match filters
     if not trips:
-        return {"message": "No trips found for given filters."}
+        return {
+            "message": "No trips found for given filters.",
+            "filters_applied": {
+                "start_date": start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else start_date,
+                "end_date": end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else end_date,
+                "status": status,
+                "driver_id": str(driver_id) if driver_id else None,
+                "client_name": client_name,
+                "delivery_type": delivery_type,
+            },
+            "analytics": {},
+            "ai_prediction": {},
+            "ai_insight": "No data available for selected filters."
+        }
 
     # ✅ Org-specific model path
     org_id = str(current_user.organization_id)
@@ -116,14 +131,17 @@ def get_trip_analytics(
     total_cost = sum([trip.cost or 0 for trip in trips])
     average_cost = total_cost / total_trips if total_trips else 0
 
-    # Handle delivery types
+    # Handle delivery types safely
     delivery_types = []
     for trip in trips:
         if trip.delivery_type == "other" and trip.custom_delivery_description:
             delivery_types.append(trip.custom_delivery_description)
         else:
             delivery_types.append(trip.delivery_type or "unknown")
-            most_common_type = max(set(delivery_types), key=delivery_types.count) if delivery_types else "unknown"
+
+    most_common_type = (
+        max(set(delivery_types), key=delivery_types.count) if delivery_types else "unknown"
+    )
 
     # Count trips per delivery type (for frontend charting)
     type_counts = {}
@@ -142,13 +160,13 @@ def get_trip_analytics(
     else:
         ai_insight = "Low trip volume – check for potential disruptions."
 
-    # ✅ Return JSON-only data (no charts)
+    # ✅ Return JSON-only data
     return {
         "filters_applied": {
-            "start_date": start_date,
-            "end_date": end_date,
+            "start_date": start_date.strftime("%Y-%m-%d") if isinstance(start_date, datetime) else start_date,
+            "end_date": end_date.strftime("%Y-%m-%d") if isinstance(end_date, datetime) else end_date,
             "status": status,
-            "driver_id": driver_id,
+            "driver_id": str(driver_id) if driver_id else None,
             "client_name": client_name,
             "delivery_type": delivery_type,
         },
@@ -158,7 +176,7 @@ def get_trip_analytics(
             "total_cost": round(total_cost, 2),
             "average_cost": round(average_cost, 2),
             "most_common_delivery_type": most_common_type,
-            "trips_per_delivery_type": type_counts,  # Frontend can use this to build chart
+            "trips_per_delivery_type": type_counts,
         },
         "ai_prediction": {
             "predicted_durations_minutes": [round(d, 2) for d in predicted_durations],
