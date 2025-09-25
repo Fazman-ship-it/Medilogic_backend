@@ -35,34 +35,42 @@ def export_to_csv(data: list) -> io.StringIO:
 # --- PDF Export ---
 def export_to_pdf(data: list) -> io.BytesIO:
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=20, leftMargin=20, topMargin=40, bottomMargin=20)
     elements = []
     styles = getSampleStyleSheet()
 
     # Title & timestamp
     title = Paragraph("Trip Export Report", styles["Title"])
-    timestamp = Paragraph(f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", styles["Normal"])
-    elements.extend([title, timestamp, Spacer(1, 12)])
+    timestamp = Paragraph(
+        f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", 
+        styles["Normal"]
+    )
+    elements.extend([title, timestamp, Spacer(1, 20)])
 
-    # Build table data
+    # Build table data (headers + rows)
     headers = list(data[0].keys())
     table_data = [headers]
-    for i, row in enumerate(data):
-        row_values = list(row.values())
-        table_data.append(row_values)
+    for row in data:
+        table_data.append(list(row.values()))
 
-    # Create table
-    table = Table(table_data, repeatRows=1)
+    # Create styled table
+    table = Table(table_data, repeatRows=1, hAlign="LEFT")
     table.setStyle(TableStyle([
+        # Header row
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#003366")),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 10),
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
+
+        # Body rows
+        ('FONTSIZE', (0,1), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.lightgrey]),
+
+        # Numeric alignments
         ('ALIGN', (4,1), (4,-1), 'RIGHT'),   # Cost column
         ('ALIGN', (8,1), (8,-1), 'RIGHT'),   # Distance column
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.lightgrey])
     ]))
 
     elements.append(table)
