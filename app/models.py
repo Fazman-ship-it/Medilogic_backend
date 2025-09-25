@@ -101,6 +101,7 @@ class MedilogicDriverStatus(str, enum.Enum):
     approved = "approved"
     rejected = "rejected"
     
+    
 class Trip(Base):
     __tablename__ = "trips"
 
