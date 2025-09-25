@@ -63,8 +63,18 @@ def get_trip_analytics(
                 "client_name": client_name,
                 "delivery_type": delivery_type,
             },
-            "analytics": {},
-            "ai_prediction": {},
+            "analytics": {
+                "total_trips": 0,
+                "total_distance_km": 0.0,
+                "total_cost": 0.0,
+                "average_cost": 0.0,
+                "most_common_delivery_type": None,
+                "trips_per_delivery_type": {}
+            },
+            "ai_prediction": {
+                "predicted_durations_minutes": [],
+                "average_predicted_duration": 0.0
+            },
             "ai_insight": "No data available for selected filters."
         }
 
@@ -97,7 +107,7 @@ def get_trip_analytics(
         y = df["duration_minutes"]
 
         if X.empty or y.empty:
-            # ✅ Instead of 500, return no-data gracefully
+            # ✅ Instead of 500, return no-data gracefully with defaults
             return {
                 "message": "Not enough data to train a model for this organization.",
                 "filters_applied": {
@@ -108,8 +118,18 @@ def get_trip_analytics(
                     "client_name": client_name,
                     "delivery_type": delivery_type,
                 },
-                "analytics": {},
-                "ai_prediction": {},
+                "analytics": {
+                    "total_trips": 0,
+                    "total_distance_km": 0.0,
+                    "total_cost": 0.0,
+                    "average_cost": 0.0,
+                    "most_common_delivery_type": None,
+                    "trips_per_delivery_type": {}
+                },
+                "ai_prediction": {
+                    "predicted_durations_minutes": [],
+                    "average_predicted_duration": 0.0
+                },
                 "ai_insight": "No data available for selected filters."
             }
 
