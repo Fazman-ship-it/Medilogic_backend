@@ -1,19 +1,15 @@
 # app/utils/email_utils.py
-
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
 import re
+from mailjet_rest import Client
 from dotenv import load_dotenv
 
 load_dotenv()
 
-EMAIL_HOST = os.getenv("EMAIL_HOST")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT"))  # should be 465 for SSL
-EMAIL_USERNAME = os.getenv("EMAIL_USERNAME")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-EMAIL_FROM = os.getenv("EMAIL_FROM")
+MAILJET_API_KEY = os.getenv("MAILJET_API_KEY")
+MAILJET_SECRET_KEY = os.getenv("MAILJET_SECRET_KEY")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "medilogicnotify@gmail.com")
+EMAIL_FROM_NAME = "Medilogic"
 
 # ✅ Simple regex for email validation
 EMAIL_REGEX = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
@@ -24,18 +20,31 @@ def send_email(to_email: str, subject: str, body: str):
         print(f"❌ Invalid or empty recipient email provided: '{to_email}'")
         return  # stop execution, don’t try to send
 
-    msg = MIMEMultipart()
-    msg["From"] = EMAIL_FROM
-    msg["To"] = to_email
-    msg["Subject"] = subject
-
-    msg.attach(MIMEText(body, "html"))
-
     try:
-        # ✅ Use SMTP_SSL instead of SMTP + starttls
-        with smtplib.SMTP_SSL(EMAIL_HOST, EMAIL_PORT) as server:
-            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
-            server.sendmail(EMAIL_FROM, to_email, msg.as_string())
+        mailjet = Client(auth=(MAILJET_API_KEY, MAILJET_SECRET_KEY), version='v3.1')
+        data = {
+            'Messages': [
+                {
+                    "From": {
+                        "Email": EMAIL_FROM,
+                        "Name": EMAIL_FROM_NAME
+                    },
+                    "To": [
+                        {
+                            "Email": to_email,
+                            "Name": "User"
+                        }
+                    ],
+                    "Subject": subject,
+                    "TextPart": body,
+                    "HTMLPart": f"<p>{body}</p>"
+                }
+            ]
+        }
+        result = mailjet.send.create(data=data)
+        if 200 <= result.status_code < 300:
             print(f"📧 Email sent to {to_email}")
+        else:
+            print(f"❌ Failed to send email to {to_email}: {result.json()}")
     except Exception as e:
         print(f"❌ Failed to send email to {to_email}: {e}")

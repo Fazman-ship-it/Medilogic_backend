@@ -14,11 +14,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_MINUTES: int
     REFRESH_SECRET_KEY: str
 
-    # Email settings
-    EMAIL_HOST: str
-    EMAIL_PORT: int
-    EMAIL_USERNAME: str
-    EMAIL_PASSWORD: str
+    # Mailjet API keys
+    MAILJET_API_KEY=str
+    MAILJET_SECRET_KEY=str
     EMAIL_FROM: str
 
     DELIVERY_CONFIRM_SECRET: str
