@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     REFRESH_SECRET_KEY: str
 
     # Mailjet API keys
-    MAILJET_API_KEY=str
-    MAILJET_SECRET_KEY=str
+    MAILJET_API_KEY:str
+    MAILJET_SECRET_KEY:str
     EMAIL_FROM: str
 
     DELIVERY_CONFIRM_SECRET: str
