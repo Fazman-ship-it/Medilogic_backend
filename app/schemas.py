@@ -1607,8 +1607,6 @@ class ChatResponse(BaseModel):
     class Config:
         from_attributes = True
         
-from typing import Dict, Optional
-from pydantic import BaseModel
 
 # ✅ Summary section for analytics
 class ActivityLogSummary(BaseModel):
@@ -1625,4 +1623,19 @@ class ActivityLogAnalytics(BaseModel):
     activity_over_time: Dict[str, int]
     
     class Config:
-        from_attributes = True        
+        from_attributes = True
+        
+from pydantic import BaseModel
+from typing import Dict, List
+
+class TopDriverChart(BaseModel):
+    driver_id: str
+    trip_count: int
+
+class AdminChartsResponse(BaseModel):
+    delivery_type: Dict[str, int]     # {"waste": 12, "supplies": 7}
+    monthly_trips: Dict[str, int]     # {"2025-01": 5, "2025-02": 8}
+    top_drivers: List[TopDriverChart] # [{"driver_id": "123", "trip_count": 10}, ...]
+    
+    class Config:
+        from_attributes = True

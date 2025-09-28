@@ -24,6 +24,7 @@ from app import schemas
 from app.models import ShiftAssignment,User
 from datetime import date
 from uuid import UUID
+from app.schemas import AdminChartsResponse
 
 router = APIRouter(
     prefix="/admin-dashboard",
@@ -164,7 +165,7 @@ def export_csv(
         "Content-Disposition": "attachment; filename=trips_report.csv"
     })
 
-@router.get("/charts")
+@router.get("/charts", response_model=schemas.AdminChartsResponse)
 def get_admin_dashboard_charts(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
@@ -183,14 +184,11 @@ def get_admin_dashboard_charts(
     trips = query.all()
 
     # ============================
-    # 📊 1. Trips per waste type
+    # 📊 1. Trips per delivery type
     # ============================
     delivery_counts = {}
     for trip in trips:
         delivery_counts[trip.delivery_type] = delivery_counts.get(trip.delivery_type, 0) + 1
-
-    fig1 = go.Figure(data=[go.Pie(labels=list(delivery_counts.keys()), values=list(delivery_counts.values()))])
-    fig1.update_layout(title="Trips by Delivery Type")
 
     # ============================
     # 📊 2. Monthly Trip Count
@@ -202,8 +200,6 @@ def get_admin_dashboard_charts(
             monthly_counts[month_str] = monthly_counts.get(month_str, 0) + 1
 
     sorted_months = sorted(monthly_counts.keys())
-    fig2 = go.Figure(data=[go.Bar(x=sorted_months, y=[monthly_counts[m] for m in sorted_months])])
-    fig2.update_layout(title="Monthly Trip Volume", xaxis_title="Month", yaxis_title="Trips")
 
     # ============================
     # 📊 3. Top 5 Drivers by Trips
@@ -214,19 +210,17 @@ def get_admin_dashboard_charts(
         driver_counts[driver_id] = driver_counts.get(driver_id, 0) + 1
 
     sorted_drivers = sorted(driver_counts.items(), key=lambda x: x[1], reverse=True)[:5]
-    driver_ids = [str(d[0]) for d in sorted_drivers]
-    trip_counts = [d[1] for d in sorted_drivers]
-
-    fig3 = go.Figure(data=[go.Bar(x=driver_ids, y=trip_counts)])
-    fig3.update_layout(title="Top 5 Drivers by Trips", xaxis_title="Driver ID", yaxis_title="Trips")
 
     # ============================
-    # 📦 Return HTML components
+    # 📦 Return structured data (not charts)
     # ============================
     return {
-        "delivery_type_chart": fig1.to_json(),
-        "monthly_trips_chart": fig2.to_json(),
-        "top_drivers_chart": fig3.to_json()
+        "delivery_type": delivery_counts,  # {"medical_waste": 12, "supplies": 7, ...}
+        "monthly_trips": {m: monthly_counts[m] for m in sorted_months},  # {"2025-01": 5, "2025-02": 8, ...}
+        "top_drivers": [
+            {"driver_id": str(driver_id), "trip_count": count}
+            for driver_id, count in sorted_drivers
+        ]
     }
 
 import io
