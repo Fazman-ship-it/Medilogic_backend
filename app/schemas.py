@@ -1384,8 +1384,8 @@ class RestoreUserResponse(BaseModel):
     name: str
     role: str
     is_active: bool
-    restored_at: datetime
-    restored_by: UUID  # Who performed the restore
+    restored_at:Optional[datetime] = None
+    restored_by:Optional[UUID] = None  # Who performed the restore
     
     class config:
         from_attributes = True
@@ -1396,7 +1396,7 @@ class DeletedUser(BaseModel):
     name: str
     email: EmailStr
     role:str
-    deleted_at: datetime
+    deleted_at: Optional[datetime] = None
     deletion_reason: Optional[str] = None
 
     class config:

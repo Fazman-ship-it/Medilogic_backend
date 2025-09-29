@@ -398,7 +398,7 @@ def get_shift_assignments(
         driver = db.query(models.User).get(a.driver_id)
         results.append({
             "shift_id": a.id,
-            "date": a.date,
+            "date": a.shift_date,
             "start_time": a.start_time,
             "end_time": a.end_time,
             "driver_id": a.driver_id,
