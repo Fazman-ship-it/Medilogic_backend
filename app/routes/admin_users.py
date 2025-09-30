@@ -27,7 +27,8 @@ def get_users_by_role(
 
     # ✅ Base query - only users within the same organization
     query = db.query(models.User).filter(
-        models.User.organization_id == current_user.organization_id
+        models.User.organization_id == current_user.organization_id,
+        models.User.deleted_at.is_(None)
     )
 
     # ✅ Filter by role (client or driver) if provided

@@ -118,16 +118,16 @@ def export_trips(
     # --- Prepare Data ---
     data = [{
         "ID": str(trip.id),
-        "Driver ID": str(trip.driver_id),
-        "Delivery Type": trip.delivery_type,
-        "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M"),
-        "Cost (£)": f"{trip.cost:.2f}" if trip.cost is not None else "0.00",
-        "Client Name": trip.client_name,
-        "Pickup Location": trip.pickup_location,
-        "Dropoff Location": trip.dropoff_location,
-        "Distance (km)": f"{trip.distance_km:.1f}" if trip.distance_km is not None else "0.0",
-        "Status": trip.status,
-        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M")
+        "Driver ID": str(trip.driver_id) if trip.driver_id else "",
+        "Delivery Type": trip.delivery_type or "",
+        "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M") if trip.scheduled_time else "",
+        "Cost (£)": f"{trip.cost:.2f}" if trip.cost is not None else "",
+        "Client Name": trip.client_name or "", 
+        "Pickup Location": trip.pickup_location or "",
+        "Dropoff Location": trip.dropoff_location or "",
+        "Distance (km)": f"{trip.distance_km:.1f}" if trip.distance_km is not None else "",
+        "Status": trip.status or "",
+        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M") if trip.created_at else "",
     } for trip in trips]
 
     # --- Export ---
