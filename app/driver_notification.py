@@ -6,7 +6,7 @@ from app.models import Trip, User
 from app.database import SessionLocal
 from zoneinfo import ZoneInfo
 from uuid import UUID
-from app.scheduler import scheduler  # Assuming you have a scheduler setup
+from app import scheduler  # Assuming you have a scheduler setup
 
 db = SessionLocal()
 
