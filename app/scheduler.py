@@ -273,21 +273,21 @@ scheduler.add_job(
     id="clone_recurring_trips"
 )
 
-# 4. Notify drivers daily at 6 AM
+# 4
+# Notify drivers every 15 minutes (so you don’t miss short trips)
 scheduler.add_job(
     notify_upcoming_trips,
     trigger="cron",
-    hour=6,
-    minute=0,
+    minute="*/15",   # every 15 minutes
     id="notify_drivers"
 )
 
-# 5. Notify clients daily at 6 AM
+# 5. Send client notifications every 15 minutes
+# Run client notifications every 15 minutes
 scheduler.add_job(
     send_client_notifications,
     trigger="cron",
-    hour=6,
-    minute=0,
+    minute="*/15",
     id="notify_clients"
 )
 
