@@ -8,7 +8,7 @@ from starlette.websockets import WebSocketState
 from broadcaster import Broadcast
 from typing import Dict, List
 from uuid import UUID
-
+from app.utilites.time_utilities import now_utc
 router = APIRouter()
 broadcast = Broadcast("memory://")
 
@@ -70,7 +70,7 @@ async def websocket_location(
                     organization_id=current_user.organization_id,
                     latitude=latitude,
                     longitude=longitude,
-                    timestamp=datetime.utcnow()
+                    timestamp=now_utc()
                 )
                 db.add(location_log)
                 db.commit()

@@ -11,6 +11,7 @@ from app.utilites.email_utilites import send_email
 import secrets
 from datetime import datetime, timedelta
 from app.config import settings
+from app.utilites.time_utilities import now_utc
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 from fastapi import Request  # ✅ required to capture IP/User-Agent
@@ -36,7 +37,7 @@ def public_signup(
     # ✅ Create secure hash and verification token
     hashed_pw = get_password_hash(data.password)
     verification_token = secrets.token_urlsafe(32)
-    token_expiry = datetime.utcnow() + timedelta(hours=1)
+    token_expiry = now_utc() + timedelta(hours=1)
 
     # ✅ Create new user (initially not verified)
     new_user = models.User(
@@ -98,7 +99,7 @@ def public_signup(
     }
     
 from fastapi import Request  # ✅ To capture IP and User-Agent
-
+from app.utilites.time_utilities import now_utc
 @router.get("/verify-email")
 def verify_email(
     token: str,
@@ -107,7 +108,7 @@ def verify_email(
 ):
     user = db.query(models.User).filter(models.User.email_verification_token == token).first()
 
-    if not user or user.token_expires_at < datetime.utcnow():
+    if not user or user.token_expires_at < now_utc():
         raise HTTPException(status_code=400, detail="Invalid or expired verification token.")
 
     # ✅ Mark as verified
@@ -129,7 +130,7 @@ def verify_email(
     return {"message": "✅ Email verified successfully. You can now log in."}
 
 from fastapi import Request  # ✅ Needed to capture client info
-
+from app.utilites.time_utilities import now_utc
 @router.post("/resend-verification-email")
 def resend_verification_email(
     request: Request,  # ✅ Inject request to capture IP & headers
@@ -146,7 +147,7 @@ def resend_verification_email(
 
     # ✅ Generate new token
     new_token = secrets.token_urlsafe(32)
-    token_expiry = datetime.utcnow() + timedelta(hours=1)
+    token_expiry = now_utc() + timedelta(hours=1)
 
     user.email_verification_token = new_token
     user.token_expires_at = token_expiry

@@ -19,8 +19,9 @@ from sqlalchemy.dialects.postgresql import ENUM
 from enum import Enum as PyEnum
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
-Base = declarative_base()
+from app.utilites.time_utilities import now_utc
 
+Base = declarative_base()
 class UserRole(str, enum.Enum):
     super_admin = "super_admin"
     admin = "admin"
@@ -115,14 +116,14 @@ class Trip(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     driver_name = Column(String, nullable=True)
     delivery_type = Column(SqlEnum(DeliveryType), nullable=False)
-    scheduled_time = Column(DateTime)
+    scheduled_time = Column(DateTime(timezone=True), nullable=False)
     cost = Column(Float)
     client_name = Column(String)
     pickup_location = Column(String)
     dropoff_location = Column(String)
     distance_km = Column(Float, nullable=True)
     status = Column(String, default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     location_zone = Column(String, nullable=True)
     vehicle_type = Column(String, nullable=True)
     shift_window = Column(String, nullable=True)
@@ -162,8 +163,8 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="user")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    Updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+    updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=True)
     organization_name = Column(String, nullable=True)  # Optional field for organization name
@@ -179,22 +180,22 @@ class User(Base):
     longitude = Column(Float, nullable=True)
     rating = Column(Float, nullable=True)
     password_reset_token = Column(String, nullable=True)
-    reset_token_expiry = Column(DateTime, nullable= True)
+    reset_token_expiry = Column(DateTime(timezone=True), nullable=True)  # ✅ UTC
     is_verified =   Column(Boolean, default=False)
     email_verification_token = Column(String, nullable=True)
-    token_expires_at = Column(DateTime, nullable=True)
+    token_expires_at = Column(DateTime(timezone=True), nullable=True)  # ✅ UTC
     support_tickets = relationship("SupportTicket", back_populates="user", cascade="all, delete-orphan")
     regulated_country = Column(String, nullable=True)  # Optional field for regulated country
     regulated_state = Column(String, nullable=True)  # Optional field for regulated state
     regulated_region = Column(String, nullable=True)  # Optional field for regulated region
     two_fa_code = Column(String, nullable=True)  # Optional field for 2FA code
-    two_fa_expiry = Column(DateTime, nullable=True)  # Optional field
+    two_fa_expiry = Column(DateTime(timezone=True), nullable=True)  # ✅ UTC
     availabilities = relationship("DriverAvailability", back_populates="driver", cascade="all, delete")
     shifts = relationship("ShiftAssignment", back_populates="driver")
     custody_events= relationship("ChainOfCustody",back_populates="driver", cascade="all,delete")
     session_id = Column(String, nullable=True)  # Optional field for session management
-    session_expires_at = Column(DateTime, nullable=True)  # Optional field for session expiry
-    last_location_update = Column(DateTime, nullable=True)
+    session_expires_at = Column(DateTime(timezone=True), nullable=True)  # ✅ UTC
+    last_location_update = Column(DateTime(timezone=True), nullable=True)  # ✅ UTC
     location_history = relationship("DriverLocationHistory", back_populates="driver",cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="user")
     testimonials = relationship("Testimonial", back_populates="user", cascade="all, delete-orphan")
@@ -208,7 +209,7 @@ class User(Base):
     regulated_goods_types = Column(ARRAY(String), default=[])   # e.g., ["surgical", "pharma products"]
     regulated_logistics_scope = Column(ARRAY(String), default=[])
     international_applications = relationship("InternationalApplication", back_populates="user")
-    deleted_at = Column(DateTime, nullable=True)
+    deleted_at = Column(DateTime(timezone=True), nullable=True) 
     deletion_reason = Column(Text, nullable=True)
     medilogic_driver = relationship("Medilogic_Driver", back_populates="user", uselist=False)
     
@@ -218,14 +219,14 @@ class POD(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"), nullable=False)
     signature = Column(Text, nullable=True)# Optional e-signature or driver note.,
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), default=now_utc)
     notes = Column(Text, nullable=True)  # Optional notes from the driver or client
     delivered_to = Column(String, nullable=True)  # Name of the person who received the package
     trip = relationship("Trip", back_populates="pod")
     driver = relationship("User", back_populates="pods")
     organization_id = Column(UUID(as_uuid=True),ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="pods") 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     files = relationship("PODFile", back_populates="pod", cascade="all, delete-orphan")       
 
 class Organization(Base):
@@ -255,7 +256,7 @@ class Organization(Base):
     incidents = relationship("Incident", back_populates="organization")
     compliance_status = relationship("ComplianceStatus", uselist=False, back_populates="organization")
     data_retention_years = Column(Integer, default=3)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     ico_registered = Column(Boolean, default=False)
     availabilities = relationship("DriverAvailability", back_populates="organization", cascade="all, delete")
     shift_assignments = relationship("ShiftAssignment", back_populates="organization")
@@ -311,8 +312,8 @@ class Invoice(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     amount = Column(Float, nullable=False)
     status = Column(SqlEnum(InvoiceStatus, name="invoice_status_enum"), default=InvoiceStatus.unpaid)
-    generated_at = Column(DateTime, default=datetime.utcnow)
-    due_date = Column(DateTime, nullable=True)
+    generated_at = Column(DateTime(timezone=True), server_default=func.now())
+    due_date = Column(DateTime(timezone=True), nullable=True)
     reference_code = Column(String, unique=True, index=True)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date,nullable=False)
@@ -360,8 +361,8 @@ class SupportTicket(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     subject = Column(String, nullable=False)
     status = Column(Enum(TicketStatus), default=TicketStatus.open)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+    updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
     user = relationship("User", back_populates="support_tickets")
     replies = relationship("SupportReply", back_populates="ticket", cascade="all, delete-orphan")
     messages = relationship("SupportMessage", back_populates="ticket", cascade="all, delete-orphan")
@@ -376,7 +377,7 @@ class SupportReply(Base):
     ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"))
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     ticket = relationship("SupportTicket", back_populates="replies")
     admin = relationship("User")
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
@@ -390,7 +391,7 @@ class SupportMessage(Base):
     ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"))
     sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     ticket = relationship("SupportTicket", back_populates="messages")
     sender = relationship("User")
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
@@ -403,7 +404,7 @@ class Enquiry(Base):
     name = Column(String, nullable=False)
     email = Column(String, nullable=False)
     message = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
@@ -421,7 +422,7 @@ class Incident(Base):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     status = Column(String, default="pending")  # pending, resolved, escalated
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     organization = relationship("Organization", back_populates="incidents")
     submitted_by = relationship("User")
     incident_type = Column(String, nullable=False)  # e.g., "accident", "theft", "compliance_issue"
@@ -461,8 +462,8 @@ class ComplianceStatus(Base):
     # Audit trail
     audit_status = Column(Enum(AuditStatusEnum), default=AuditStatusEnum.pending, nullable=False)
     audit_remarks = Column(Text, nullable=True)
-    last_audit_date = Column(DateTime, nullable=True)
-    next_audit_due_date = Column(DateTime, nullable=True)
+    last_audit_date = Column(DateTime(timezone=True), nullable=True)
+    next_audit_due_date = Column(DateTime(timezone=True), nullable=True)
     last_updated_by_user_id = Column(UUID(as_uuid=True), nullable=True)
     # Risk flags and controls
     is_flagged_noncompliant = Column(Boolean, default=False)
@@ -470,8 +471,8 @@ class ComplianceStatus(Base):
     auto_alert_enabled = Column(Boolean, default=True)
     flags_needs_review = Column(Boolean, default=False)
     is_visible_to_regulator = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+    updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
     organization = relationship("Organization", back_populates="compliance_status")
 
 
@@ -509,7 +510,7 @@ class ShiftRequest(Base):
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     shift_id = Column(UUID(as_uuid=True), ForeignKey("shifts.id"), nullable=False)
     status = Column(String, default="pending")  # Options: pending, approved, rejected
-    requested_at = Column(DateTime, default=datetime.utcnow)
+    requested_at = Column(DateTime(timezone=True), default=now_utc)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     driver = relationship("User")
     shift = relationship("Shift", back_populates="shift_requests")
@@ -521,8 +522,8 @@ class Shift(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     title = Column(String, nullable=False)
     date = Column(Date, nullable=False)
-    start_time = Column(Time, nullable=False)
-    end_time = Column(Time, nullable=False)
+    start_at = Column(DateTime(timezone=True), nullable=False)
+    end_at = Column(DateTime(timezone=True), nullable=False)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
 
     # Relationships
@@ -537,14 +538,14 @@ class ChainOfCustody(Base):
     trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"), nullable=False)
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # who logged it
     event_type = Column(SqlEnum(CustodyEventType, name="custodyeventtype"), nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), default=now_utc)
     location = Column(String, nullable=True)  # optional GPS or address
     notes = Column(Text, nullable=True)
     attachment_url = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     signed_by = Column(String, nullable=True)
     signature_image_url = Column(String, nullable=True)
-    signature_timestamp = Column(DateTime, nullable=True)
+    signature_timestamp = Column(DateTime(timezone=True), default=now_utc, nullable=True)
     witness_name = Column(String, nullable=True)
     trip = relationship("Trip", back_populates="custody_events")
     driver = relationship("User", back_populates="custody_events")
@@ -559,7 +560,7 @@ class DriverLocationHistory(Base):
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime(timezone=True), default=now_utc)
     driver = relationship("User", back_populates="location_history")
     trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"))  # Optional link to a trip
     trip = relationship("Trip", back_populates="location_history")
@@ -573,7 +574,7 @@ class Document(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     filename = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
-    upload_time = Column(DateTime, default=datetime.utcnow)
+    upload_time =Column(DateTime(timezone=True), default=now_utc)
     doc_type = Column(String, nullable=True)  # e.g., "license", "permit"
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     user = relationship("User", back_populates="documents")
@@ -596,7 +597,7 @@ class Testimonial(Base):
     name = Column(String(100), nullable=False)
     content = Column(Text, nullable=False)
     is_approved = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     user = relationship("User", back_populates="testimonials", lazy="joined")
     
 
@@ -626,7 +627,7 @@ class PendingApplication(Base):
     data_retention_years = Column(Integer, nullable=True)
     
     status = Column(String, default="pending")  # pending, approved, rejected
-    submitted_at = Column(DateTime, default=datetime.utcnow)
+    submitted_at = Column(DateTime(timezone=True), default=now_utc)
 
 class DeliveryConfirmation(Base):
     __tablename__ = "delivery_confirmations"
@@ -637,7 +638,7 @@ class DeliveryConfirmation(Base):
     signature_image_path = Column(String, nullable=True)
     photo_path = Column(String, nullable=True)
     wtn_code = Column(String, nullable=True)
-    confirmed_at = Column(DateTime, default=datetime.utcnow)
+    confirmed_at = Column(DateTime(timezone=True), default=now_utc)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
@@ -655,7 +656,7 @@ class Notification(Base):
     message = Column(Text, nullable=False)
     type = Column(String(50), default="general")
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     user = relationship("User", back_populates="notifications")
     
 
@@ -744,16 +745,16 @@ class InternationalApplication(Base):
     drivers_license_path = Column(String, nullable=True)
     personal_statement_path = Column(String, nullable=True)
     certificate_path = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+    updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
    #relationship
     user = relationship("User", back_populates="international_applications")
     organization = relationship("Organization", back_populates="applications")
     views = relationship("ApplicationView", back_populates="application", cascade="all, delete-orphan")
     badge_type = Column(SqlEnum(BadgeType, name="badgetype"),default=BadgeType.none,nullable=False)
     subscription_status = Column(SqlEnum(SubscriptionStatus, name="subscriptionstatus"),default=SubscriptionStatus.expired,nullable=False)
-    subscription_start_date = Column(DateTime, nullable=True)
-    subscription_end_date = Column(DateTime, nullable=True)
+    subscription_start_date = Column(DateTime(timezone=True), nullable=True)
+    subscription_end_date = Column(DateTime(timezone=True), nullable=True)
     stripe_customer_id = Column(String, nullable=True)
     stripe_subscription_id = Column(String, nullable=True)
     stripe_price_id = Column(String, nullable=True)
@@ -771,7 +772,7 @@ class Payment(Base):
     provider = Column(String, nullable=True)     # e.g. "stripe", "paystack"
     reference = Column(String, nullable=True)    # provider reference / txn id
     status = Column(String, default="succeeded") # keep simple for now
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     is_verified = Column(Boolean, default=False) # confired via provider webhook
     medilogic_driver = relationship("Medilogic_Driver", back_populates="payments")
     application = relationship("InternationalApplication", back_populates="payments", foreign_keys=[application_id])
@@ -784,7 +785,7 @@ class ApplicationView(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     application_id = Column(UUID(as_uuid=True), ForeignKey("international_applications.id"), nullable=False)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
-    viewed_at = Column(DateTime, default=datetime.utcnow)
+    viewed_at = Column(DateTime(timezone=True), default=now_utc)
     #Releationship
     application = relationship("InternationalApplication", back_populates="views")
     organization = relationship("Organization", back_populates="views") 
@@ -815,8 +816,8 @@ class Medilogic_Driver(Base):
     subscription_status = Column(SqlEnum(SubscriptionStatus, name="subscriptionstatus"), default=SubscriptionStatus.none, nullable=False)
     subscription_plan = Column(SqlEnum(SubscriptionPlan, name="subscriptionplan"), default=SubscriptionPlan.free, nullable=False)
     badge_type = Column(SqlEnum(BadgeType, name="badgetype"),default=BadgeType.none,nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+    updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
     user = relationship("User", back_populates="medilogic_driver")
@@ -825,8 +826,8 @@ class Medilogic_Driver(Base):
     is_verified = Column(Boolean, default=False)
     documents = relationship("Document", back_populates="medilogic_driver", cascade="all, delete-orphan")
     views = relationship("DriverView", back_populates="medilogic_driver", cascade="all, delete-orphan")
-    subscription_start = Column(DateTime, nullable=True)
-    subscription_end = Column(DateTime, nullable=True)
+    subscription_start = Column(DateTime(timezone=True), nullable=True)
+    subscription_end = Column(DateTime(timezone=True), nullable=True)
     payments = relationship("Payment", back_populates="medilogic_driver", cascade="all, delete-orphan")
     #Document paths
     drivers_license = Column(String, nullable=True)
@@ -853,7 +854,7 @@ class DriverView(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     medilogic_driver_id = Column(UUID(as_uuid=True), ForeignKey("medilogic_drivers.id", ondelete="CASCADE"))
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"))
-    viewed_at = Column(DateTime, default=datetime.utcnow)
+    viewed_at = Column(DateTime(timezone=True), default=now_utc)
     medilogic_driver = relationship("Medilogic_Driver", back_populates="views")
     organization = relationship("Organization", back_populates="driver_views")
     
@@ -865,7 +866,7 @@ class DailyNotification(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     subject = Column(String, nullable=False)
     body = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
     is_ai_generated = Column(Boolean, default=False)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="daily_notifications")

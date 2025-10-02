@@ -8,6 +8,8 @@ import stripe
 import os
 from app.utilites.subscribe_email import send_subscription_email
 from app.schemas import BadgeType
+from app.utilites.time_utilities import now_utc
+from datetime import datetime, timedelta, timezone
 router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -97,7 +99,7 @@ import stripe
 from app.config import settings
 from app import models, database
 from datetime import datetime
-
+from app.utilites.time_utilities import now_utc
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 WEBHOOK_SECRET = settings.STRIPE_WEBHOOK_SECRET
@@ -133,7 +135,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(database.get_db
                 payment.is_verified = True
                 payment.amount = data.get("amount_total", 0) / 100.0
                 payment.currency = data.get("currency", "gbp")
-                payment.paid_at = datetime.utcnow()
+                payment.paid_at = now_utc()
 
                 application.has_paid_application_fee = True
                 application.application_fee_payment_id = payment.id  # ✅ Link to application
@@ -152,8 +154,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(database.get_db
         if application:
             application.stripe_subscription_id = subscription_id
             application.subscription_status = models.SubscriptionStatus(status)  # ✅ Enum mapping
-            application.subscription_start_date = datetime.utcfromtimestamp(data["start_date"])
-            application.subscription_end_date = datetime.utcfromtimestamp(data["current_period_end"])
+            application.subscription_start_date = datetime.fromtimestamp(data["start_date"],tz=timezone.utc)
+            application.subscription_end_date = datetime.fromtimestamp(data["current_period_end"],tz=timezone.utc)
             application.badge_type = (
                 models.BadgeType.green if price_id == settings.STRIPE_GREEN_PRICE_ID
                 else models.BadgeType.blue
@@ -172,7 +174,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(database.get_db
         ).first()
         if application:
             application.subscription_status = models.SubscriptionStatus(status)  # ✅ Enum mapping
-            application.subscription_end_date = datetime.utcfromtimestamp(data["current_period_end"])
+            application.subscription_end_date = datetime.fromtimestamp(data["current_period_end"], tz=timezone.utc)
             application.badge_type = (
                 models.BadgeType.green if price_id == settings.STRIPE_GREEN_PRICE_ID
                 else models.BadgeType.blue
@@ -188,7 +190,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(database.get_db
         ).first()
         if application:
             application.subscription_status = models.SubscriptionStatus.cancelled
-            application.subscription_end_date = datetime.utcnow()
+            application.subscription_end_date = now_utc()
             application.badge_type = models.BadgeType.none
             db.commit()
 

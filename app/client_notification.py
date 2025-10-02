@@ -3,12 +3,12 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import Trip, User
 from app.utilites.email_utilites import send_email  # Adjust path if different
+from app.utilites.time_utilities import to_utc, to_local, now_utc
 
-# ✅ Client notifications for upcoming trips
 def send_client_notifications():
     db: Session = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = now_utc()  # ✅ use UTC-aware now
 
         # 1️⃣ Get all trips that are upcoming or just started
         trips = db.query(Trip).filter(
@@ -27,6 +27,8 @@ def send_client_notifications():
 
             subject = None
             body = None
+
+            local_scheduled_time = to_local(trip.scheduled_time)  # 🔹 convert to local for emails
 
             # 2️⃣ Instant trip → send immediately and again 10 mins later
             if time_to_trip <= 0:
@@ -68,7 +70,7 @@ def send_client_notifications():
 
                 Pickup Location: {trip.pickup_location}
                 Dropoff Location: {trip.dropoff_location}
-                Scheduled Time: {trip.scheduled_time.strftime('%Y-%m-%d %H:%M')} (UK time)
+                Scheduled Time: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} (UK time)
 
                 Thank you for using MediLogic.
                 """
@@ -82,7 +84,7 @@ def send_client_notifications():
 
                 Pickup Location: {trip.pickup_location}
                 Dropoff Location: {trip.dropoff_location}
-                Scheduled Time: {trip.scheduled_time.strftime('%Y-%m-%d %H:%M')} (UK time)
+                Scheduled Time: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} (UK time)
 
                 Please be ready.
 

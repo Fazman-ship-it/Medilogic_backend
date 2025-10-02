@@ -218,7 +218,7 @@ import stripe
 from app.models import InternationalApplication, Payment, User
 from app.dependencies import get_db, get_current_user
 from app.config import settings
-
+from app.utilites.time_utilities import now_utc
 
 @router.post("/me/pay-application-fee")
 async def pay_application_fee(
@@ -245,7 +245,7 @@ async def pay_application_fee(
         currency="GBP",
         provider="stripe",
         status="pending",  # ✅ pending until confirmed by webhook
-        created_at=datetime.utcnow(),
+        created_at=now_utc(),
         is_verified=False,
         payment_type="application_fee"
     )
@@ -487,7 +487,7 @@ def finance_dashboard(
     # 4. Monthly revenue trend (last 6 months)
     last_6_months = []
     for i in range(6):
-        month_start = (datetime.utcnow().replace(day=1) - timedelta(days=30*i)).replace(day=1)
+        month_start = (now_utc().replace(day=1) - timedelta(days=30*i)).replace(day=1)
         month_end = (month_start + timedelta(days=32)).replace(day=1)  # next month 1st day
 
         month_revenue = db.query(func.sum(Payment.amount)).filter(

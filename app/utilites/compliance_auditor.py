@@ -2,13 +2,13 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from app.models import ComplianceStatus, AuditStatusEnum
 from app.notifications import send_compliance_alert  # This triggers both email + app notifications
-
+from app.utilites.time_utilities import now_utc
 def run_compliance_audit_check(db: Session):
     """
     Runs compliance audit across all organizations.
     Flags overdue audits and sends alerts if auto_alert_enabled.
     """
-    now = datetime.utcnow()
+    now = now_utc()
 
     # Get all compliance statuses where audit is overdue and alert is enabled
     overdue_statuses = db.query(ComplianceStatus).filter(

@@ -20,7 +20,7 @@ from app.config import settings
 import secrets
 from fastapi import Request  # ✅ Add this import at the top
 from uuid import uuid4  # ✅ Import uuid4 for generating session IDs
-
+from app.utilites.time_utilities import now_utc
 # Set up FastAPI router
 router = APIRouter()
 
@@ -50,11 +50,11 @@ def login_step_1(
 
     # 🔐 Generate 4-digit code and expiry
     code = str(secrets.randbelow(10000)).zfill(4)
-    expiry = datetime.utcnow() + timedelta(minutes=10)
+    expiry = now_utc() + timedelta(minutes=10)
 
     # 🆕 Generate session_id and expiry
     session_id = str(uuid4())
-    session_expires_at = datetime.utcnow() + timedelta(minutes=10)
+    session_expires_at = now_utc() + timedelta(minutes=10)
 
     # 🔐 Store in user object
     user.two_fa_code = code
@@ -101,6 +101,7 @@ from fastapi import Request  # ✅ Make sure this is imported
 from uuid import uuid4
 from datetime import timedelta
 from app import models
+from app.utilites.time_utilities import now_utc
 
 @router.post("/login-step-2")
 def login_step_2(
@@ -116,7 +117,7 @@ def login_step_2(
     if user.two_fa_code != data.code:
         raise HTTPException(status_code=400, detail="Incorrect code")
 
-    if user.two_fa_expiry < datetime.utcnow():
+    if user.two_fa_expiry < now_utc():
         raise HTTPException(status_code=400, detail="Code has expired")
 
     # ✅ Clear 2FA fields
@@ -125,7 +126,7 @@ def login_step_2(
 
     # ✅ Generate session_id and session_expires_at
     session_id = str(uuid4())
-    session_expires_at = datetime.utcnow() + timedelta(hours=1)  # 1 hour expiry
+    session_expires_at = now_utc() + timedelta(hours=1)  # 1 hour expiry
 
     user.session_id = session_id
     user.session_expires_at = session_expires_at
@@ -207,8 +208,9 @@ def refresh_token(refresh_token: str = Body(...), db: Session = Depends(get_db))
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Refresh token expired")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")    
-
+        raise HTTPException(status_code=401, detail="Invalid token")
+        
+from app.utilites.time_utilities import now_utc
 from app.utilites.email_utilites import send_email  # 🔄 Import this
 from fastapi import Request  # ✅ import if not already
 @router.post("/request-password-reset")
@@ -222,7 +224,7 @@ def request_password_reset(
         raise HTTPException(status_code=404, detail="User with that email does not exist.")
 
     token = secrets.token_urlsafe(32)
-    expiry = datetime.utcnow() + timedelta(hours=1)
+    expiry = now_utc() + timedelta(hours=1)
 
     user.password_reset_token = token
     user.reset_token_expiry = expiry
@@ -262,7 +264,7 @@ def request_password_reset(
 def reset_password(data: schemas.PasswordResetSubmit, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.password_reset_token == data.token).first()
 
-    if not user or user.reset_token_expiry < datetime.utcnow():
+    if not user or user.reset_token_expiry < now_utc():
         raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
 
     # Hash the new password

@@ -8,6 +8,7 @@ import secrets
 import string # ✅ You imported User
 from uuid import UUID
 from datetime import datetime
+from app.utilites.time_utilities import now_utc
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def serialize_for_jwt(data: dict):
@@ -42,7 +43,7 @@ from datetime import datetime, timedelta
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = serialize_for_jwt(data).copy()  # ✅ safe copy
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = now_utc() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
@@ -50,7 +51,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 def create_refresh_token(data: dict, expires_delta: timedelta | None = None):
     to_encode = serialize_for_jwt(data).copy()  # ✅ safe copy
-    expire = datetime.utcnow() + (expires_delta or timedelta(days=7))
+    expire = now_utc() + (expires_delta or timedelta(days=7))
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.REFRESH_SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt

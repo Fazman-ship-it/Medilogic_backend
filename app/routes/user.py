@@ -31,7 +31,7 @@ from app.models import User, ActivityLog
 from app.dependencies import get_db, get_current_user
 from app.schemas import UserUpdate, DeleteAccountRequest
 from app.utilites.logging import log_activity
-
+from app.utilites.time_utilities import now_utc
 router = APIRouter(prefix="/users", tags=['users'])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -52,7 +52,7 @@ def delete_own_account(
 
     # 📝 Mark account as deleted instead of removing it
     current_user.is_active = False
-    current_user.deleted_at = datetime.utcnow()
+    current_user.deleted_at = now_utc()
     current_user.deletion_reason = request.reason
 
     # 📝 Log activity (multi-tenant safe)
@@ -167,7 +167,7 @@ def restore_user(
             "name": user_to_restore.name,
             "email": user_to_restore.email,
             "role": user_to_restore.role,
-            "restored_at": datetime.utcnow()
+            "restored_at": now_utc()
         }
     }
 

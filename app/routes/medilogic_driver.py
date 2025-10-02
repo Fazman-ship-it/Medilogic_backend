@@ -13,7 +13,7 @@ from app.utilites.logging import log_activity
 from app.dependencies import require_role
 from sqlalchemy import case
 import os
-
+from app.utilites.time_utilities import now_utc
 
 # Create router for driver endpoints
 router = APIRouter(prefix="/Medilogic_drivers", tags=[" Medilogic_Drivers"])
@@ -222,6 +222,7 @@ def get_driver(
 
     return driver
 
+from app.utilites.time_utilities import now_utc
 from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -341,7 +342,7 @@ async def update_profile_and_subscribe(
             reference=subscription.id,
             status="pending",
             payment_type="subscription",
-            created_at=datetime.utcnow()
+            created_at=now_utc()
         )
         db.add(payment)
 
@@ -374,7 +375,7 @@ async def update_profile_and_subscribe(
                 medilogic_driver_id=driver.id,
                 filename=file.filename,
                 file_path=key,  # S3 key
-                upload_time=datetime.utcnow(),
+                upload_time=now_utc(),
                 doc_type=file.content_type
             )
             db.add(doc)
@@ -471,7 +472,7 @@ from app.dependencies import require_role
 from app import models, schemas
 import stripe
 import os
-
+from app.utilites.time_utilities import now_utc
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 @router.put("/driver/subscription", response_model=schemas.MedilogicDriverOut)
@@ -535,7 +536,7 @@ def change_subscription(
     # Update driver plan and badge/features
     driver.subscription_plan = new_plan
     driver.subscription_status = schemas.SubscriptionStatus.active
-    driver.subscription_start = datetime.utcnow()
+    driver.subscription_start = now_utc()
     driver.subscription_end = None  # Stripe handles recurring
     if new_plan == schemas.SubscriptionPlan.green:
         driver.badge_type = schemas.BadgeType.green
@@ -590,7 +591,7 @@ def cancel_subscription(
         driver.can_upload_docs = False
         driver.can_view_analytics = False
         driver.can_see_org_names = False
-        driver.subscription_end = datetime.utcnow()
+        driver.subscription_end = now_utc()
         driver.stripe_subscription_id = None  # remove reference to Stripe subscription
 
     db.commit()

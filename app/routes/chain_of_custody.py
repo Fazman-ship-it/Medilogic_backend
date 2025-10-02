@@ -20,7 +20,7 @@ from reportlab.lib import colors
 import plotly.graph_objs as go
 from uuid import UUID
 import uuid
-
+from app.utilites.time_utilities import now_utc
 router = APIRouter(prefix="/custody", tags=["Chain of Custody"])
 
 # routes/chain_of_custody.py
@@ -91,7 +91,7 @@ async def log_custody_event(
             location=event.location,
             notes=event.notes,
             attachment_url=s3_key,  # store S3 key only
-            timestamp=datetime.utcnow(),
+            timestamp=now_utc(),
             organization_id=current_user.organization_id,
         )
         db.add(custody_log)

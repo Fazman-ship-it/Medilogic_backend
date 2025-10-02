@@ -268,6 +268,7 @@ async def activate_document(
         "is_active": document.is_active,
         "file_url": file_url
     }
+from app.utilites.time_utilities import now_utc    
 from datetime import datetime, timedelta
 from app.schemas import DriverDocumentExpiryResponse
 @router.get("/drivers/{driver_id}/documents/expiry-status", response_model=DriverDocumentExpiryResponse)
@@ -301,7 +302,7 @@ async def check_document_expiry(
         Document.expiry_date.isnot(None)
     ).all()
 
-    now = datetime.utcnow()
+    now = now_utc()
     warning_period = timedelta(days=30)
     results = []
 

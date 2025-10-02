@@ -19,6 +19,7 @@ from app.schemas import TripUpdate, TripPatch, TripResponse, TripAnalyticsRespon
 from app.utilites.logging import log_activity
 from uuid import UUID
 from app.models import TripStatus
+from app.utilites.time_utilities import to_utc, to_local, now_utc, now_local
 # app/routes/trip.py
 router = APIRouter()
 
@@ -45,6 +46,10 @@ def create_trip(
     if not trip_data.get("driver_id"):
         trip_data["driver_id"] = None
 
+    # 🔹 Convert schedule_time to UTC before saving
+    if "scheduled_time" in trip_data:
+        trip_data["scheduled_time"] = to_utc(trip_data["scheduled_time"])
+
     # Ensure status is valid; default to pending
     status_value = trip_data.get("status", TripStatus.pending.value)
     if status_value not in [s.value for s in TripStatus]:
@@ -70,9 +75,16 @@ def create_trip(
         details=f"Admin {current_user.name} created trip ID {db_trip.id}"
     )
 
+    # 🔹 Optional: convert schedule_time back to local before returning
+    db_trip.scheduled_time = to_local(db_trip.scheduled_time)
+
     return db_trip
 
-@router.get("/trips/", response_model=schemas.PaginatedTripsResponse, summary="List all trips with advanced filtering, sorting, and pagination")
+@router.get(
+    "/trips/",
+    response_model=schemas.PaginatedTripsResponse,
+    summary="List all trips with advanced filtering, sorting, and pagination"
+)
 def get_trips(
     status: Optional[str] = Query(None, description="Filter by trip status"),
     priority: Optional[str] = Query(None, description="Filter by priority level (e.g. 'normal', 'urgent', 'stat')"),
@@ -98,7 +110,6 @@ def get_trips(
 
     # 🔎 Apply filters
     if status:
-        # ✅ Validate status using enum
         if status not in [s.value for s in TripStatus]:
             raise HTTPException(status_code=400, detail="Invalid trip status")
         query = query.filter(models.Trip.status == status)
@@ -110,8 +121,10 @@ def get_trips(
     if delivery_type:
         query = query.filter(models.Trip.delivery_type.ilike(f"%{delivery_type}%"))
     if from_date:
+        from_date = to_utc(from_date)  # 🔹 convert to UTC before filtering
         query = query.filter(models.Trip.scheduled_time >= from_date)
     if to_date:
+        to_date = to_utc(to_date)      # 🔹 convert to UTC before filtering
         query = query.filter(models.Trip.scheduled_time <= to_date)
     if cost_min is not None:
         query = query.filter(models.Trip.cost >= cost_min)
@@ -131,7 +144,7 @@ def get_trips(
             (models.Trip.priority.ilike(search_term))
         )
 
-    # 🔎 Count before pagination (for frontend pagination controls)
+    # 🔎 Count before pagination
     total_count = query.count()
 
     # 🔎 Sorting
@@ -142,6 +155,9 @@ def get_trips(
 
     # 🔎 Apply pagination
     trips = query.offset(skip).limit(limit).all()
+    # 🔹 Convert scheduled_time of each trip to local before returning
+    for trip in trips:
+        trip.scheduled_time = to_local(trip.scheduled_time)
 
     return {
         "total": total_count,
@@ -169,6 +185,7 @@ def get_trip(
     return trip   
 
 
+
 @router.put("/trips/{trip_id}", response_model=schemas.TripResponse)
 def update_trip(
     trip_id: UUID,
@@ -187,6 +204,10 @@ def update_trip(
 
     update_data = updated_trip.model_dump()
 
+    # 🔹 Convert schedule_time to UTC if it's being updated
+    if "scheduled_time" in update_data and update_data["scheduled_time"] is not None:
+        update_data["scheduled_time"] = to_utc(update_data["scheduled_time"])
+
     # ✅ Validate status if provided
     if "status" in update_data and update_data["status"] is not None:
         if update_data["status"] not in [s.value for s in TripStatus]:
@@ -199,7 +220,7 @@ def update_trip(
             driver = db.query(models.User).filter(
                 models.User.id == driver_id,
                 models.User.role == "driver",
-                models.User.organization_id == current_user.organization_id  # ✅ ensure driver is from same org
+                models.User.organization_id == current_user.organization_id
             ).first()
             if not driver:
                 raise HTTPException(status_code=400, detail=f"Driver with ID {driver_id} not found or not a valid driver")
@@ -210,6 +231,10 @@ def update_trip(
 
     db.commit()
     db.refresh(trip)
+
+    # 🔹 Convert schedule_time back to local before returning
+    trip.scheduled_time = to_local(trip.scheduled_time)
+
     return trip
 
 
@@ -245,6 +270,7 @@ def delete_trip(
     return {"message": f"Trip with ID {trip_id} has been deleted successfully"}
 
 
+
 @router.patch("/trips/{trip_id}", response_model=schemas.TripResponse)
 def partial_update_trip(
     trip_id: UUID,
@@ -263,14 +289,23 @@ def partial_update_trip(
 
     patch_data = trip_data.dict(exclude_unset=True)
 
+    # 🔹 Convert schedule_time to UTC if included
+    if "scheduled_time" in patch_data and patch_data["scheduled_time"] is not None:
+        patch_data["scheduled_time"] = to_utc(patch_data["scheduled_time"])
+
     # ✅ Validate status if provided
     if "status" in patch_data and patch_data["status"] is not None:
         if patch_data["status"] not in [s.value for s in TripStatus]:
             raise HTTPException(status_code=400, detail="Invalid trip status")
 
+    # Apply patch
     for key, value in patch_data.items():
         setattr(trip, key, value)
 
     db.commit()
     db.refresh(trip)
+
+    # 🔹 Convert schedule_time back to local before returning
+    trip.scheduled_time = to_local(trip.scheduled_time)
+
     return trip

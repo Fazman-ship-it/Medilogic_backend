@@ -15,6 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from io import BytesIO
+from app.utilites.time_utilities import now_utc
 
 router = APIRouter(prefix="/compliance-analytics", tags=["Compliance Analytics"])
 
@@ -93,7 +94,7 @@ def get_compliance_analytics(
         alert_message = None
         if not is_compliant:
             alert_message = "Organization is non-compliant"
-        elif record.next_audit_due_date and record.next_audit_due_date < datetime.utcnow().date():
+        elif record.next_audit_due_date and record.next_audit_due_date < now_utc().date():
             alert_message = "Audit overdue"
 
         org_user = db.query(User).filter(User.organization_id == record.organization_id).first()

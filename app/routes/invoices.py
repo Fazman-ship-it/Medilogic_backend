@@ -14,7 +14,8 @@ from io import BytesIO
 from typing import List,Optional,Literal
 from app.dependencies import require_role
 from uuid import UUID
-
+from app.utilites.time_utilities import now_utc
+from datetime import timezone, datetime
 router = APIRouter(
     prefix="/invoices",
     tags=["Invoices"]
@@ -70,7 +71,7 @@ def generate_invoice(
         due_date=invoice_data.due_date,
         reference_code=invoice_data.reference_code or generated_ref,
         status="unpaid",
-        generated_at=datetime.utcnow()
+        generated_at=datetime.now(timezone.utc)
     )
 
     try:

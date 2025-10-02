@@ -4,6 +4,7 @@ import jwt
 from datetime import datetime, timedelta
 from uuid import UUID
 from typing import Optional
+from app.utilites.time_utilities import now_utc
 
 from fastapi import HTTPException, status
 from app.config import settings  # your secret key here
@@ -13,7 +14,7 @@ ALGORITHM = "HS256"
 QR_TOKEN_EXPIRE_MINUTES = 10
 
 def generate_qr_token(trip_id: UUID, organization_id: UUID) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=QR_TOKEN_EXPIRE_MINUTES)
+    expire = now_utc() + timedelta(minutes=QR_TOKEN_EXPIRE_MINUTES)
     to_encode = {
         "trip_id": str(trip_id),
         "organization_id": str(organization_id),

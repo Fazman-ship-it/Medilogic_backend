@@ -27,11 +27,12 @@ from app.models import Medilogic_Driver
 import random
 from app.utilites.daily_notify import send_daily_notification_to_all
 from app.utilites.optimizer_model import train_org_model
+from app.utilites.time_utilities import now_utc
 # === JOB 1: Delete Unverified Accounts ===
 def delete_unverified_accounts():
     db: Session = SessionLocal()
     try:
-        threshold_time = datetime.utcnow() - timedelta(hours=24)
+        threshold_time = now_utc() - timedelta(hours=24)
         unverified_users = db.query(models.User).filter(
             models.User.is_verified == False,
             models.User.email_verification_token.isnot(None),
@@ -59,7 +60,7 @@ def delete_unverified_accounts():
 def clone_recurring_trips():
     db: Session = SessionLocal()
     try:
-        now = datetime.utcnow()
+        now = now_utc()
         recurring_trips = db.query(Trip).filter(Trip.recurrence_rule != RecurrenceRule.none).all()
 
         for trip in recurring_trips:
@@ -89,7 +90,7 @@ def clone_recurring_trips():
                     dropoff_location=trip.dropoff_location,
                     distance_km=trip.distance_km,
                     status="scheduled",
-                    created_at=datetime.utcnow(),
+                    created_at=now_utc(),
                     recurrence_rule=trip.recurrence_rule
                 )
                 db.add(new_trip)
@@ -103,7 +104,7 @@ def clone_recurring_trips():
 def update_overdue_invoices():
     db: Session = SessionLocal()
     try:
-        today = datetime.utcnow().date()
+        today = now_utc().date()
         overdue_invoices = db.query(models.Invoice).filter(
             models.Invoice.status == "unpaid",
             models.Invoice.due_date < today
@@ -125,7 +126,7 @@ def update_overdue_invoices():
 def cleanup_old_location_logs():
     db = SessionLocal()
     try:
-        cutoff = datetime.utcnow() - timedelta(days=30)
+        cutoff = now_utc() - timedelta(days=30)
         db.query(DriverLocationHistory).filter(
             DriverLocationHistory.timestamp < cutoff
         ).delete()
@@ -135,7 +136,7 @@ def cleanup_old_location_logs():
         
 # Define the retrain job
 def scheduled_retrain_job():
-    print(f"🔁 Retraining check at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🔁 Retraining check at {now_utc().strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         retrain_location_model()
     except Exception as e:

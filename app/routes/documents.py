@@ -20,6 +20,7 @@ from app.schemas import DocumentOut, DocumentDownloadOut, DocumentDeleteOut
 from typing import Optional
 from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async, delete_file_from_s3
 from app.utilites.logging import log_activity
+from app.utilites.time_utilities import now_utc
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".docx"}
@@ -59,7 +60,7 @@ async def upload_document(
             filename=file.filename,
             file_path=s3_key,
             mime_type=file.content_type,
-            upload_time=datetime.utcnow()
+            upload_time=now_utc()
         )
         db.add(doc)
         db.commit()

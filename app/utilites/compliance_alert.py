@@ -2,10 +2,10 @@
 from datetime import datetime, timedelta
 from typing import List
 from app.models import ComplianceStatus  # adjust as needed
-
+from app.utilites.time_utilities import now_utc
 def generate_compliance_alerts(compliance: ComplianceStatus) -> List[str]:
     alerts = []
-    today = datetime.utcnow()
+    today = now_utc()
 
     if not compliance.gdpr_policy_uploaded:
         alerts.append("GDPR policy not uploaded")

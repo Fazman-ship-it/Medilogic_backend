@@ -9,7 +9,7 @@ from app.models import Trip
 from app import models
 from sqlalchemy.orm import Session
 from app.utilites.logging import log_activity
-
+from app.utilites.time_utilities import now_utc
 
 
 def load_org_model(org_id: str):
@@ -39,7 +39,7 @@ def suggest_pickup_time_window(
     # 🔹 Load the correct organization model
     model = load_org_model(user.organization_id)
 
-    now = datetime.datetime.utcnow()
+    now = now_utc()
 
     data = {
         "distance_km": [distance_km],

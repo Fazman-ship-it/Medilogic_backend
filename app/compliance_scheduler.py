@@ -6,7 +6,7 @@ from sqlalchemy import text
 from app.database import SessionLocal
 from app.models import Organization, ComplianceStatus
 from app.utilites.email_utilites import send_email  # Adjust path if needed
-
+from app.utilites.time_utilities import now_utc
 
 def generate_compliance_csv(orgs):
     """
@@ -104,7 +104,7 @@ def send_weekly_compliance_reports():
                 body = (
                     f"Dear Regulator,\n\n"
                     f"Please find attached the weekly compliance report for your jurisdiction.\n\n"
-                    f"Generated on {datetime.utcnow().strftime('%Y-%m-%d')}.\n\n"
+                    f"Generated on {now_utc().strftime('%Y-%m-%d')}.\n\n"
                     f"Regards,\nMedilogic Compliance Engine"
                 )
 
