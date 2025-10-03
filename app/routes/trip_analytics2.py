@@ -18,6 +18,7 @@ from app.utilites.time_utilities import now_utc
 
 router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
+# --- CSV Export ---
 def export_to_csv(data: list, filters: dict = None) -> io.StringIO:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -34,7 +35,7 @@ def export_to_csv(data: list, filters: dict = None) -> io.StringIO:
 
     # --- Table Section ---
     fieldnames = [
-        "ID", "Driver ID", "Delivery Type", "Scheduled Time",
+        "ID", "Driver ID", "Driver Name", "Delivery Type", "Scheduled Time",
         "Cost (£)", "Client Name", "Pickup Location", "Dropoff Location",
         "Distance (km)", "Status", "Notes", "Created At"
     ]
@@ -45,6 +46,7 @@ def export_to_csv(data: list, filters: dict = None) -> io.StringIO:
 
     buffer.seek(0)
     return buffer
+
 
 # --- PDF Export ---
 def export_to_pdf(data: list) -> io.BytesIO:
@@ -84,7 +86,6 @@ def export_to_pdf(data: list) -> io.BytesIO:
     table = Table(table_data, repeatRows=1, hAlign="LEFT")
 
     # ✅ Auto-fit columns by setting colWidths
-    # - distribute width across page
     col_count = len(headers)
     table._argW = [doc.width / col_count] * col_count
 
@@ -110,7 +111,7 @@ def export_to_pdf(data: list) -> io.BytesIO:
     buffer.seek(0)
     return buffer
 
-
+# --- Export Endpoint ---
 @router.get("/export")
 def export_trips(
     format: Literal["csv", "pdf"] = Query(..., description="Export format: csv or pdf"),
@@ -123,7 +124,11 @@ def export_trips(
     current_user: models.User = Depends(require_role("admin"))
 ):
     # --- Build Query ---
-    query = db.query(models.Trip).filter(models.Trip.organization_id == current_user.organization_id)
+    query = (
+        db.query(models.Trip, models.User.name.label("driver_name"))
+        .outerjoin(models.User, models.Trip.driver_id == models.User.id)
+        .filter(models.Trip.organization_id == current_user.organization_id)
+    )
 
     if start_date:
         try:
@@ -144,17 +149,18 @@ def export_trips(
     if driver_id:
         query = query.filter(models.Trip.driver_id == driver_id)
 
-    trips = query.all()
-    if not trips:
+    results = query.all()
+    if not results:
         raise HTTPException(status_code=404, detail="No trips found")
 
     # --- Prepare Data ---
     data = [{
         "ID": str(trip.id),
         "Driver ID": str(trip.driver_id) if trip.driver_id else "",
+        "Driver Name": driver_name or "",
         "Delivery Type": (
-            trip.delivery_type if trip.delivery_type != "custom" 
-            else trip.custom_delivery_description or "Custom"
+            trip.delivery_type if trip.delivery_type != "other" 
+            else trip.custom_delivery_description or "other"
         ),
         "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M") if trip.scheduled_time else "",
         "Cost (£)": f"{trip.cost:.2f}" if trip.cost is not None else "",
@@ -165,15 +171,26 @@ def export_trips(
         "Status": trip.status or "",
         "Notes": trip.notes or "",
         "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M") if trip.created_at else "",
-    } for trip in trips]
+    } for trip, driver_name in results]
+
+    # --- Dynamic filename ---
+    timestamp = now_utc().strftime("%Y%m%d_%H%M%S")
+    org_name = current_user.organization.name.replace(" ", "_").lower() if current_user.organization else "org"
+    filename = f"{org_name}_trips_export_{timestamp}.{format}"
 
     # --- Export ---
     if format == "csv":
         buffer = export_to_csv(data)
-        return StreamingResponse(buffer, media_type="text/csv",
-                                 headers={"Content-Disposition": "attachment; filename=trips.csv"})
+        return StreamingResponse(
+            buffer, 
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
     
     if format == "pdf":
         buffer = export_to_pdf(data)
-        return StreamingResponse(buffer, media_type="application/pdf",
-                                 headers={"Content-Disposition": "attachment; filename=trips.pdf"})
+        return StreamingResponse(
+            buffer, 
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
