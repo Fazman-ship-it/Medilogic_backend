@@ -3,7 +3,20 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import Trip, User
 from app.utilites.email_utilites import send_email  # Adjust path if different
-from app.utilites.time_utilities import to_utc, to_local, now_utc
+from app.utilites.time_utilities import  to_local, now_utc
+
+from datetime import timedelta
+from app.models import Trip, User
+from app.database import SessionLocal
+from app.utilites.email_utilites import send_email
+from app.utilites.time_utilities import to_local, now_utc
+from sqlalchemy.orm import Session
+
+# ✅ Utility: Resolve delivery type (standard vs custom)
+def get_delivery_label(trip: Trip) -> str:
+    if trip.delivery_type == "other" and trip.custom_delivery_description:
+        return trip.custom_delivery_description
+    return trip.delivery_type or "Unknown"
 
 def send_client_notifications():
     db: Session = SessionLocal()
@@ -40,7 +53,7 @@ def send_client_notifications():
 
                 Pickup Location: {trip.pickup_location}
                 Dropoff Location: {trip.dropoff_location}
-                Delivery Type: {trip.delivery_type}
+                Delivery Type: {get_delivery_label(trip)}
                 Priority Level: {trip.priority.value if trip.priority else 'Normal'}
 
                 Thank you for using MediLogic.
@@ -54,7 +67,7 @@ def send_client_notifications():
 
                 Pickup Location: {trip.pickup_location}
                 Dropoff Location: {trip.dropoff_location}
-                Delivery Type: {trip.delivery_type}
+                Delivery Type: {get_delivery_label(trip)}
                 Priority Level: {trip.priority.value if trip.priority else 'Normal'}
 
                 Best regards,
@@ -70,6 +83,7 @@ def send_client_notifications():
 
                 Pickup Location: {trip.pickup_location}
                 Dropoff Location: {trip.dropoff_location}
+                Delivery Type: {get_delivery_label(trip)}
                 Scheduled Time: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} (UK time)
 
                 Thank you for using MediLogic.
@@ -84,6 +98,7 @@ def send_client_notifications():
 
                 Pickup Location: {trip.pickup_location}
                 Dropoff Location: {trip.dropoff_location}
+                Delivery Type: {get_delivery_label(trip)}
                 Scheduled Time: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} (UK time)
 
                 Please be ready.

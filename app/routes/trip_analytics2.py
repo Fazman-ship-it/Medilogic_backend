@@ -14,35 +14,56 @@ from reportlab.lib.styles import getSampleStyleSheet
 from app import models
 from app.database import get_db
 from app.dependencies import require_role
+from app.utilites.time_utilities import now_utc
 
 router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
-# --- CSV Export ---
-def export_to_csv(data: list) -> io.StringIO:
+def export_to_csv(data: list, filters: dict = None) -> io.StringIO:
     buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    # --- Metadata Section ---
+    writer.writerow(["Trip Export Report"])
+    writer.writerow([f"Generated on: {now_utc().strftime('%Y-%m-%d %H:%M:%S UTC')}"])
+
+    if filters:
+        for key, value in filters.items():
+            if value:
+                writer.writerow([f"{key.replace('_', ' ').title()}: {value}"])
+    writer.writerow([])  # Blank line before table
+
+    # --- Table Section ---
     fieldnames = [
         "ID", "Driver ID", "Delivery Type", "Scheduled Time",
         "Cost (£)", "Client Name", "Pickup Location", "Dropoff Location",
-        "Distance (km)", "Status", "Created At"
+        "Distance (km)", "Status", "Notes", "Created At"
     ]
-    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
-    writer.writeheader()
+    writer.writerow(fieldnames)
+
     for row in data:
-        writer.writerow(row)
+        writer.writerow([row[field] for field in fieldnames])
+
     buffer.seek(0)
     return buffer
 
 # --- PDF Export ---
 def export_to_pdf(data: list) -> io.BytesIO:
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=20, leftMargin=20, topMargin=40, bottomMargin=20)
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=letter, 
+        rightMargin=20, 
+        leftMargin=20, 
+        topMargin=40, 
+        bottomMargin=20
+    )
     elements = []
     styles = getSampleStyleSheet()
 
     # Title & timestamp
     title = Paragraph("Trip Export Report", styles["Title"])
     timestamp = Paragraph(
-        f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", 
+        f"Generated on: {now_utc().strftime('%Y-%m-%d %H:%M:%S UTC')}", 
         styles["Normal"]
     )
     elements.extend([title, timestamp, Spacer(1, 20)])
@@ -50,11 +71,23 @@ def export_to_pdf(data: list) -> io.BytesIO:
     # Build table data (headers + rows)
     headers = list(data[0].keys())
     table_data = [headers]
+
     for row in data:
-        table_data.append(list(row.values()))
+        # ✅ Convert each value to Paragraph (so it wraps instead of cutting)
+        wrapped_row = [
+            Paragraph(str(value), styles["Normal"]) if value else Paragraph("", styles["Normal"]) 
+            for value in row.values()
+        ]
+        table_data.append(wrapped_row)
 
     # Create styled table
     table = Table(table_data, repeatRows=1, hAlign="LEFT")
+
+    # ✅ Auto-fit columns by setting colWidths
+    # - distribute width across page
+    col_count = len(headers)
+    table._argW = [doc.width / col_count] * col_count
+
     table.setStyle(TableStyle([
         # Header row
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#003366")),
@@ -64,19 +97,19 @@ def export_to_pdf(data: list) -> io.BytesIO:
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
 
         # Body rows
-        ('FONTSIZE', (0,1), (-1,-1), 9),
+        ('FONTSIZE', (0,1), (-1,-1), 8),
         ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.lightgrey]),
 
-        # Numeric alignments
-        ('ALIGN', (4,1), (4,-1), 'RIGHT'),   # Cost column
-        ('ALIGN', (8,1), (8,-1), 'RIGHT'),   # Distance column
+        # Wrap text alignment
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
     ]))
 
     elements.append(table)
     doc.build(elements)
     buffer.seek(0)
     return buffer
+
 
 @router.get("/export")
 def export_trips(
@@ -119,7 +152,10 @@ def export_trips(
     data = [{
         "ID": str(trip.id),
         "Driver ID": str(trip.driver_id) if trip.driver_id else "",
-        "Delivery Type": trip.delivery_type or "",
+        "Delivery Type": (
+            trip.delivery_type if trip.delivery_type != "custom" 
+            else trip.custom_delivery_description or "Custom"
+        ),
         "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M") if trip.scheduled_time else "",
         "Cost (£)": f"{trip.cost:.2f}" if trip.cost is not None else "",
         "Client Name": trip.client_name or "", 
@@ -127,6 +163,7 @@ def export_trips(
         "Dropoff Location": trip.dropoff_location or "",
         "Distance (km)": f"{trip.distance_km:.1f}" if trip.distance_km is not None else "",
         "Status": trip.status or "",
+        "Notes": trip.notes or "",
         "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M") if trip.created_at else "",
     } for trip in trips]
 
@@ -140,4 +177,3 @@ def export_trips(
         buffer = export_to_pdf(data)
         return StreamingResponse(buffer, media_type="application/pdf",
                                  headers={"Content-Disposition": "attachment; filename=trips.pdf"})
-    

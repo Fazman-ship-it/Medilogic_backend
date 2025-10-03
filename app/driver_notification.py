@@ -8,7 +8,22 @@ from zoneinfo import ZoneInfo
 from uuid import UUID
 from app import scheduler  # Assuming you have a scheduler setup
 from app.utilites.time_utilities import to_utc, to_local, now_utc
+from datetime import datetime, timedelta
+from app.utilites.email_utilites import send_email  # Adjust if your path differs
+from app.models import Trip, User
+from app.database import SessionLocal
+from zoneinfo import ZoneInfo
+from uuid import UUID
+from app import scheduler  # Assuming you have a scheduler setup
+from app.utilites.time_utilities import to_utc, to_local, now_utc
+
 db = SessionLocal()
+
+# ✅ Utility: Resolve delivery type (standard vs custom)
+def get_delivery_label(trip: Trip) -> str:
+    if trip.delivery_type == "other" and trip.custom_delivery_description:
+        return trip.custom_delivery_description
+    return trip.delivery_type or "Unknown"
 
 # ✅ Instant trip assignment
 def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
@@ -26,7 +41,7 @@ def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
 
     A new trip has been assigned to you.
 
-    🚛 Delivery Type: {trip.delivery_type}
+    🚛 Delivery Type: {get_delivery_label(trip)}
     📍 Pickup: {trip.pickup_location}
     🎯 Dropoff: {trip.dropoff_location}
     🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
@@ -44,7 +59,7 @@ def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
             lambda: send_email(
                 to_email=driver.email,
                 subject="⚡ Reminder: Trip just started",
-                body=f"Hello {driver.name},\n\nThis is a follow-up reminder that your trip scheduled for {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} has already started. Stay prepared!\n\n- Medilogic Team"
+                body=f"Hello {driver.name},\n\nThis is a follow-up reminder that your trip scheduled for {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} has already started.\n\nStay prepared!\n\n- Medilogic Team"
             ),
             trigger="date",
             run_date=now_utc() + timedelta(minutes=10),
@@ -78,7 +93,7 @@ def notify_upcoming_trips():
 
             Reminder: You have a trip starting in 1 hour.
 
-            🚛 Delivery Type: {trip.delivery_type}
+            🚛 Delivery Type: {get_delivery_label(trip)}
             📍 Pickup: {trip.pickup_location}
             🎯 Dropoff: {trip.dropoff_location}
             🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
@@ -104,8 +119,7 @@ def notify_upcoming_trips():
             Hello {driver.name},
 
             Reminder: You have a trip starting in 15 minutes.
-
-            🚛 Delivery Type: {trip.delivery_type}
+            🚛 Delivery Type: {get_delivery_label(trip)}
             📍 Pickup: {trip.pickup_location}
             🎯 Dropoff: {trip.dropoff_location}
             🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
