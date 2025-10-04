@@ -15,6 +15,11 @@ from app import models
 from app.database import get_db
 from app.dependencies import require_role
 from app.utilites.time_utilities import now_utc
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.units import inch
 
 router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
