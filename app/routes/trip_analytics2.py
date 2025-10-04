@@ -43,27 +43,37 @@ def export_to_csv(data: list, filters: dict = None, org_name: str = "") -> io.By
 
     # --- Table Section ---
     fieldnames = [
-        "ID", "Driver ID", "Driver Name", "Delivery Type", "Scheduled Time",
-        "Cost", "Client Name", "Pickup Location", "Dropoff Location",
-        "Distance (km)", "Status", "Notes", "Created At"
+        "Created At",
+        "Scheduled Time",
+        "ID",
+        "Driver ID",
+        "Driver Name",
+        "Delivery Type",
+        "Client Name",
+        "Pickup Location",
+        "Dropoff Location",
+        "Distance (km)",
+        "Cost (£)",
+        "Status",
+        "Notes",
     ]
     writer.writerow(fieldnames)
 
     for row in data:
         writer.writerow([
+            row.get("Created At", ""),
+            row.get("Scheduled Time", ""),
             row.get("ID", ""),
             row.get("Driver ID", ""),
             row.get("Driver Name", ""),
             row.get("Delivery Type", ""),
-            row.get("Scheduled Time", ""),
-            str(row.get("Cost (£)", "")).replace("£", ""),  # numeric only
             row.get("Client Name", ""),
             row.get("Pickup Location", ""),
             row.get("Dropoff Location", ""),
             row.get("Distance (km)", ""),
+            row.get("Cost (£)", "").replace("£", ""),  # numeric only
             row.get("Status", ""),
             row.get("Notes", ""),
-            row.get("Created At", ""),
         ])
 
     text_stream.flush()
@@ -76,8 +86,8 @@ def export_to_csv(data: list, filters: dict = None, org_name: str = "") -> io.By
 def export_to_pdf(data: list, filters: dict = None, org_name: str = "") -> io.BytesIO:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
+        buffer, 
+        pagesize=letter, 
         rightMargin=40,
         leftMargin=40,
         topMargin=60,
@@ -87,7 +97,7 @@ def export_to_pdf(data: list, filters: dict = None, org_name: str = "") -> io.By
     elements = []
     styles = getSampleStyleSheet()
 
-    # --- Custom Professional Styles ---
+    # --- Add professional paragraph styles ---
     styles.add(ParagraphStyle(name="Header", fontSize=16, leading=20, alignment=1, textColor=colors.HexColor("#003366")))
     styles.add(ParagraphStyle(name="Subtle", fontSize=10, leading=14, textColor=colors.grey))
     styles.add(ParagraphStyle(name="TableText", fontSize=9, leading=12))
@@ -95,11 +105,14 @@ def export_to_pdf(data: list, filters: dict = None, org_name: str = "") -> io.By
     # --- Title & timestamp ---
     title_text = f"{org_name} - Trip Export Report" if org_name else "Trip Export Report"
     title = Paragraph(title_text, styles["Header"])
-    timestamp = Paragraph(f"Generated on: {now_utc().strftime('%Y-%m-%d %H:%M:%S UTC')}", styles["Subtle"])
+    timestamp = Paragraph(
+        f"Generated on: {now_utc().strftime('%Y-%m-%d %H:%M:%S UTC')}",
+        styles["Subtle"]
+    )
 
     elements.extend([title, timestamp, Spacer(1, 12)])
 
-    # --- Filters Summary ---
+    # --- Add filters summary if present ---
     if filters:
         filter_header = Paragraph("<b>Applied Filters:</b>", styles["Normal"])
         elements.append(filter_header)
@@ -108,21 +121,34 @@ def export_to_pdf(data: list, filters: dict = None, org_name: str = "") -> io.By
                 elements.append(Paragraph(f"{key.replace('_', ' ').title()}: {value}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
-    # --- Handle Empty Data ---
+    # --- Handle empty data gracefully ---
     if not data:
         elements.append(Paragraph("No records found for the selected filters.", styles["Normal"]))
         doc.build(elements)
         buffer.seek(0)
         return buffer
 
-    # --- Table Data ---
-    headers = list(data[0].keys())
+    # --- Table headers based on consistent order ---
+    headers = [
+        "Created At",
+        "Scheduled Time",
+        "ID",
+        "Driver ID",
+        "Driver Name",
+        "Delivery Type",
+        "Client Name",
+        "Pickup Location",
+        "Dropoff Location",
+        "Distance (km)",
+        "Cost (£)",
+        "Status",
+        "Notes",
+    ]
     table_data = [headers]
 
     for row in data:
         wrapped_row = [
-            Paragraph(str(value), styles["TableText"]) if value else Paragraph("", styles["TableText"])
-            for value in row.values()
+            Paragraph(str(row.get(h, "")), styles["TableText"]) for h in headers
         ]
         table_data.append(wrapped_row)
 
@@ -130,7 +156,7 @@ def export_to_pdf(data: list, filters: dict = None, org_name: str = "") -> io.By
     col_count = len(headers)
     table._argW = [doc.width / col_count] * col_count
 
-    # --- Professional Styling ---
+    # --- Professional table styling ---
     table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#003366")),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -148,7 +174,7 @@ def export_to_pdf(data: list, filters: dict = None, org_name: str = "") -> io.By
 
     elements.append(table)
 
-    # --- Footer ---
+    # --- Footer (simple and elegant) ---
     def footer(canvas, doc):
         canvas.saveState()
         footer_text = f"© {now_utc().year} {org_name or 'Medilogic'} | Generated by Medilogic Platform"
@@ -170,7 +196,7 @@ def export_trips(
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     client_name: Optional[str] = Query(None),
     delivery_type: Optional[str] = Query(None),
-    driver_id: Optional[str] = Query(None),
+    driver_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))
 ):
@@ -205,8 +231,11 @@ def export_trips(
         "ID": str(trip.id),
         "Driver ID": str(trip.driver_id) if trip.driver_id else "",
         "Driver Name": driver_name or "",
-        "Delivery Type": trip.delivery_type or "",
-        "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M:%S UTC") if trip.scheduled_time else "",
+        "Delivery Type": (
+            trip.delivery_type if trip.delivery_type != "other"
+            else trip.custom_delivery_description or "Other"
+        ),
+        "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M") if trip.scheduled_time else "",
         "Cost (£)": f"{trip.cost:.2f}" if trip.cost is not None else "",
         "Client Name": trip.client_name or "",
         "Pickup Location": trip.pickup_location or "",
@@ -214,9 +243,28 @@ def export_trips(
         "Distance (km)": f"{trip.distance_km:.1f}" if trip.distance_km is not None else "",
         "Status": trip.status or "",
         "Notes": trip.notes or "",
-        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if trip.created_at else "",
+        "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M") if trip.created_at else "",
     } for trip, driver_name in results]
 
+    # --- Ensure clean ISO UTC datetime formatting & sorting ---
+    for row in data:
+        for field in ["Created At", "Scheduled Time"]:
+            if row.get(field):
+                try:
+                    dt = datetime.strptime(row[field], "%Y-%m-%d %H:%M")
+                    row[field] = dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+                except Exception:
+                    pass
+
+    data.sort(
+        key=lambda x: (
+            datetime.strptime(x["Created At"], "%Y-%m-%d %H:%M:%S UTC") if x.get("Created At") else datetime.min,
+            datetime.strptime(x["Scheduled Time"], "%Y-%m-%d %H:%M:%S UTC") if x.get("Scheduled Time") else datetime.min,
+        ),
+        reverse=True
+    )
+
+    # --- Filters summary ---
     filters = {
         "Start Date": start_date,
         "End Date": end_date,
@@ -229,12 +277,13 @@ def export_trips(
     timestamp = now_utc().strftime("%Y%m%d_%H%M%S")
     filename = f"{org_name.replace(' ', '_').lower()}_trip_export_{timestamp}.{format}"
 
+    # --- Export with dynamic name and org info ---
     if format == "csv":
         buffer = export_to_csv(data, filters, org_name)
         return StreamingResponse(
             buffer,
             media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'}
         )
 
     if format == "pdf":
@@ -242,6 +291,5 @@ def export_trips(
         return StreamingResponse(
             buffer,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+            headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'}
         )
-
