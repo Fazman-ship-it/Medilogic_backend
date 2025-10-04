@@ -62,6 +62,7 @@ def export_to_csv(data: list, filters: dict = None, org_name: str = "") -> io.By
         ])
 
     text_stream.flush()
+    text_stream.detach()
     buffer.seek(0)
     return buffer
 
