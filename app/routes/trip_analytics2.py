@@ -18,98 +18,144 @@ from app.utilites.time_utilities import now_utc
 
 router = APIRouter(prefix="/trips", tags=["Trip Export"])
 
-# --- CSV Export ---
-def export_to_csv(data: list, filters: dict = None) -> io.StringIO:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
+# --- CSV Export (Professional SaaS Version) ---
+def export_to_csv(data: list, filters: dict = None, org_name: str = "") -> io.BytesIO:
+    buffer = io.BytesIO()
+    text_stream = io.TextIOWrapper(buffer, encoding="utf-8-sig", newline="")
+    writer = csv.writer(text_stream)
 
     # --- Metadata Section ---
-    writer.writerow(["Trip Export Report"])
-    writer.writerow([f"Generated on: {now_utc().strftime('%Y-%m-%d %H:%M:%S UTC')}"])
+    title = f"{org_name} - Trip Export Report" if org_name else "Trip Export Report"
+    writer.writerow([f"# {title}"])
+    writer.writerow([f"# Generated on: {now_utc().strftime('%Y-%m-%d %H:%M:%S UTC')}"])
 
     if filters:
         for key, value in filters.items():
             if value:
-                writer.writerow([f"{key.replace('_', ' ').title()}: {value}"])
+                writer.writerow([f"# {key.replace('_', ' ').title()}: {value}"])
+
     writer.writerow([])  # Blank line before table
 
     # --- Table Section ---
     fieldnames = [
         "ID", "Driver ID", "Driver Name", "Delivery Type", "Scheduled Time",
-        "Cost (£)", "Client Name", "Pickup Location", "Dropoff Location",
+        "Cost", "Client Name", "Pickup Location", "Dropoff Location",
         "Distance (km)", "Status", "Notes", "Created At"
     ]
     writer.writerow(fieldnames)
 
     for row in data:
-        writer.writerow([row[field] for field in fieldnames])
+        writer.writerow([
+            row.get("ID", ""),
+            row.get("Driver ID", ""),
+            row.get("Driver Name", ""),
+            row.get("Delivery Type", ""),
+            row.get("Scheduled Time", ""),
+            row.get("Cost (£)", "").replace("£", ""),  # numeric only
+            row.get("Client Name", ""),
+            row.get("Pickup Location", ""),
+            row.get("Dropoff Location", ""),
+            row.get("Distance (km)", ""),
+            row.get("Status", ""),
+            row.get("Notes", ""),
+            row.get("Created At", ""),
+        ])
 
+    text_stream.flush()
     buffer.seek(0)
     return buffer
 
-
-# --- PDF Export ---
-def export_to_pdf(data: list) -> io.BytesIO:
+def export_to_pdf(data: list, filters: dict = None, org_name: str = "") -> io.BytesIO:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, 
         pagesize=letter, 
-        rightMargin=20, 
-        leftMargin=20, 
-        topMargin=40, 
-        bottomMargin=20
+        rightMargin=40,   # slightly wider margins for balance
+        leftMargin=40, 
+        topMargin=60, 
+        bottomMargin=40
     )
+
     elements = []
     styles = getSampleStyleSheet()
 
-    # Title & timestamp
-    title = Paragraph("Trip Export Report", styles["Title"])
+    # --- Add professional paragraph styles ---
+    styles.add(ParagraphStyle(name="Header", fontSize=16, leading=20, alignment=1, textColor=colors.HexColor("#003366")))
+    styles.add(ParagraphStyle(name="Subtle", fontSize=10, leading=14, textColor=colors.grey))
+    styles.add(ParagraphStyle(name="TableText", fontSize=9, leading=12))
+    
+    # --- Title & timestamp ---
+    title_text = f"{org_name} - Trip Export Report" if org_name else "Trip Export Report"
+    title = Paragraph(title_text, styles["Header"])
     timestamp = Paragraph(
         f"Generated on: {now_utc().strftime('%Y-%m-%d %H:%M:%S UTC')}", 
-        styles["Normal"]
+        styles["Subtle"]
     )
-    elements.extend([title, timestamp, Spacer(1, 20)])
 
-    # Build table data (headers + rows)
+    elements.extend([title, timestamp, Spacer(1, 12)])
+
+    # --- Add filters summary if present ---
+    if filters:
+        filter_header = Paragraph("<b>Applied Filters:</b>", styles["Normal"])
+        elements.append(filter_header)
+        for key, value in filters.items():
+            if value:
+                elements.append(Paragraph(f"{key.replace('_', ' ').title()}: {value}", styles["Normal"]))
+        elements.append(Spacer(1, 12))
+
+    # --- Handle empty data gracefully ---
+    if not data:
+        elements.append(Paragraph("No records found for the selected filters.", styles["Normal"]))
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+
+    # --- Build table data ---
     headers = list(data[0].keys())
     table_data = [headers]
 
     for row in data:
-        # ✅ Convert each value to Paragraph (so it wraps instead of cutting)
         wrapped_row = [
-            Paragraph(str(value), styles["Normal"]) if value else Paragraph("", styles["Normal"]) 
+            Paragraph(str(value), styles["TableText"]) if value else Paragraph("", styles["TableText"]) 
             for value in row.values()
         ]
         table_data.append(wrapped_row)
 
-    # Create styled table
     table = Table(table_data, repeatRows=1, hAlign="LEFT")
-
-    # ✅ Auto-fit columns by setting colWidths
     col_count = len(headers)
     table._argW = [doc.width / col_count] * col_count
 
+    # --- Professional table styling ---
     table.setStyle(TableStyle([
-        # Header row
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#003366")),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 10),
         ('ALIGN', (0,0), (-1,0), 'CENTER'),
-
-        # Body rows
-        ('FONTSIZE', (0,1), (-1,-1), 8),
-        ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
+        ('FONTSIZE', (0,0), (-1,0), 11),
+        ('BOTTOMPADDING', (0,0), (-1,0), 8),
+        ('TOPPADDING', (0,0), (-1,0), 8),
+        ('GRID', (0,0), (-1,-1), 0.3, colors.HexColor("#CCCCCC")),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.lightgrey]),
-
-        # Wrap text alignment
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 4),
+        ('RIGHTPADDING', (0,0), (-1,-1), 4),
     ]))
 
     elements.append(table)
-    doc.build(elements)
+
+    # --- Footer (simple and elegant) ---
+    def footer(canvas, doc):
+        canvas.saveState()
+        footer_text = f"© {now_utc().year} {org_name or 'Medilogic'} | Generated by Medilogic Platform"
+        canvas.setFont('Helvetica', 8)
+        canvas.setFillColor(colors.grey)
+        canvas.drawCentredString(letter[0]/2, 0.5 * inch, footer_text)
+        canvas.restoreState()
+
+    doc.build(elements, onFirstPage=footer, onLaterPages=footer)
     buffer.seek(0)
     return buffer
+
 
 # --- Export Endpoint ---
 @router.get("/export")
@@ -123,7 +169,6 @@ def export_trips(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))
 ):
-    # --- Build Query ---
     query = (
         db.query(models.Trip, models.User.name.label("driver_name"))
         .outerjoin(models.User, models.Trip.driver_id == models.User.id)
@@ -134,14 +179,12 @@ def export_trips(
         try:
             query = query.filter(models.Trip.scheduled_time >= datetime.strptime(start_date, "%Y-%m-%d"))
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid start_date format. Use YYYY-MM-DD.")
-
+            raise HTTPException(status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD.")
     if end_date:
         try:
             query = query.filter(models.Trip.scheduled_time <= datetime.strptime(end_date, "%Y-%m-%d"))
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid end_date format. Use YYYY-MM-DD.")
-
+            raise HTTPException(status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD.")
     if client_name:
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
     if delivery_type:
@@ -153,14 +196,13 @@ def export_trips(
     if not results:
         raise HTTPException(status_code=404, detail="No trips found")
 
-    # --- Prepare Data ---
     data = [{
         "ID": str(trip.id),
         "Driver ID": str(trip.driver_id) if trip.driver_id else "",
         "Driver Name": driver_name or "",
         "Delivery Type": (
             trip.delivery_type if trip.delivery_type != "other" 
-            else trip.custom_delivery_description or "other"
+            else trip.custom_delivery_description or "Other"
         ),
         "Scheduled Time": trip.scheduled_time.strftime("%Y-%m-%d %H:%M") if trip.scheduled_time else "",
         "Cost (£)": f"{trip.cost:.2f}" if trip.cost is not None else "",
@@ -173,24 +215,33 @@ def export_trips(
         "Created At": trip.created_at.strftime("%Y-%m-%d %H:%M") if trip.created_at else "",
     } for trip, driver_name in results]
 
-    # --- Dynamic filename ---
-    timestamp = now_utc().strftime("%Y%m%d_%H%M%S")
-    org_name = current_user.organization.name.replace(" ", "_").lower() if current_user.organization else "org"
-    filename = f"{org_name}_trips_export_{timestamp}.{format}"
+    # --- Filters summary (for metadata) ---
+    filters = {
+        "Start Date": start_date,
+        "End Date": end_date,
+        "Client Name": client_name,
+        "Delivery Type": delivery_type,
+        "Driver ID": driver_id,
+    }
 
-    # --- Export ---
+    org_name = current_user.organization.name if current_user.organization else "Organization"
+    timestamp = now_utc().strftime("%Y%m%d_%H%M%S")
+    filename = f"{org_name.replace(' ', '_').lower()}_trip_export_{timestamp}.{format}"
+
+    # --- Export with dynamic name and org info ---
     if format == "csv":
-        buffer = export_to_csv(data)
+        buffer = export_to_csv(data, filters, org_name)
         return StreamingResponse(
-            buffer, 
+            buffer,
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
-    
+
     if format == "pdf":
-        buffer = export_to_pdf(data)
+        buffer = export_to_pdf(data, filters, org_name)
         return StreamingResponse(
-            buffer, 
+            buffer,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
+
