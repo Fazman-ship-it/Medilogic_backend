@@ -98,14 +98,20 @@ def get_trips(
     search: Optional[str] = Query(None, description="Generic search across client name, driver name, delivery type, status, and priority"),
     skip: int = Query(0, ge=0, description="Number of records to skip for pagination"),
     limit: int = Query(10, ge=1, le=100, description="Number of records to return for pagination"),
-    sort_by: Optional[str] = Query("scheduled_time", description="Sort by field name (e.g. 'scheduled_time', 'cost')"),
+    sort_by: Optional[str] = Query("created_at", description="Sort by field name (e.g. 'created_at', 'scheduled_time', 'cost')"),
     sort_order: Optional[str] = Query("desc", description="Sort order: 'asc' or 'desc'"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))
 ):
+    """
+    Retrieve trips with advanced filtering, pagination, and sorting.
+    Default sorting: newest trips first (created_at DESC).
+    """
+
+    # ✅ Base query - scoped by organization and active trips only
     query = db.query(models.Trip).filter(
         models.Trip.organization_id == current_user.organization_id,
-        models.Trip.is_deleted == False  # ✅ exclude deleted trips
+        models.Trip.is_deleted == False
     )
 
     # 🔎 Apply filters
@@ -114,26 +120,33 @@ def get_trips(
             raise HTTPException(status_code=400, detail="Invalid trip status")
         query = query.filter(models.Trip.status == status)
 
-    if client_name:
-        query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
-    if driver_name:
-        query = query.filter(models.Trip.driver_name.ilike(f"%{driver_name}%"))
-    if delivery_type:
-        query = query.filter(models.Trip.delivery_type.ilike(f"%{delivery_type}%"))
-    if from_date:
-        from_date = to_utc(from_date)  # 🔹 convert to UTC before filtering
-        query = query.filter(models.Trip.scheduled_time >= from_date)
-    if to_date:
-        to_date = to_utc(to_date)      # 🔹 convert to UTC before filtering
-        query = query.filter(models.Trip.scheduled_time <= to_date)
-    if cost_min is not None:
-        query = query.filter(models.Trip.cost >= cost_min)
-    if cost_max is not None:
-        query = query.filter(models.Trip.cost <= cost_max)
     if priority:
         query = query.filter(models.Trip.priority.ilike(f"%{priority}%"))
 
-    # 🔎 Generic search across multiple fields
+    if client_name:
+        query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
+
+    if driver_name:
+        query = query.filter(models.Trip.driver_name.ilike(f"%{driver_name}%"))
+
+    if delivery_type:
+        query = query.filter(models.Trip.delivery_type.ilike(f"%{delivery_type}%"))
+
+    if from_date:
+        from_date = to_utc(from_date)
+        query = query.filter(models.Trip.scheduled_time >= from_date)
+
+    if to_date:
+        to_date = to_utc(to_date)
+        query = query.filter(models.Trip.scheduled_time <= to_date)
+
+    if cost_min is not None:
+        query = query.filter(models.Trip.cost >= cost_min)
+
+    if cost_max is not None:
+        query = query.filter(models.Trip.cost <= cost_max)
+
+    # 🔍 Generic search
     if search:
         search_term = f"%{search}%"
         query = query.filter(
@@ -144,20 +157,34 @@ def get_trips(
             (models.Trip.priority.ilike(search_term))
         )
 
-    # 🔎 Count before pagination
+    # 🔢 Count before pagination
     total_count = query.count()
 
-    # 🔎 Sorting
-    sort_column = getattr(models.Trip, sort_by, models.Trip.scheduled_time)
-    if sort_order.lower() == "desc":
-        sort_column = sort_column.desc()
-    query = query.order_by(sort_column)
+    # ⚙️ Sorting logic (default = newest first by created_at)
+    valid_sort_fields = {
+        "created_at": models.Trip.created_at,
+        "scheduled_time": models.Trip.scheduled_time,
+        "cost": models.Trip.cost,
+        "distance_km": models.Trip.distance_km,
+        "client_name": models.Trip.client_name,
+        "driver_name": models.Trip.driver_name,
+    }
 
-    # 🔎 Apply pagination
+    sort_column = valid_sort_fields.get(sort_by, models.Trip.created_at)
+    if sort_order.lower() == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
+
+    # ⏳ Apply pagination
     trips = query.offset(skip).limit(limit).all()
-    # 🔹 Convert scheduled_time of each trip to local before returning
+
+    # 🌍 Convert scheduled_time to local before returning
     for trip in trips:
-        trip.scheduled_time = to_local(trip.scheduled_time)
+        if trip.scheduled_time:
+            trip.scheduled_time = to_local(trip.scheduled_time)
+        if trip.created_at:
+            trip.created_at = to_local(trip.created_at)
 
     return {
         "total": total_count,
@@ -165,7 +192,6 @@ def get_trips(
         "limit": limit,
         "items": trips
     }
-
 
 @router.get("/trips/{trip_id}", response_model=schemas.TripResponse)
 def get_trip(
