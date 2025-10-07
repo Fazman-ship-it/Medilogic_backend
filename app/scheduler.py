@@ -275,12 +275,12 @@ scheduler.add_job(
 )
 
 # 4
-# Notify drivers every 15 minutes (so you don’t miss short trips)
 scheduler.add_job(
     notify_upcoming_trips,
-    trigger="cron",
-    minute="*/15",   # every 15 minutes
-    id="notify_drivers"
+    "interval",
+    minutes=5,
+    id="trip_reminder_checker",
+    replace_existing=True
 )
 
 # 5. Send client notifications every 15 minutes
