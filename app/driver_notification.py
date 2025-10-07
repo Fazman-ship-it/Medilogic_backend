@@ -35,6 +35,11 @@ def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
 
     local_scheduled_time = to_local(trip.scheduled_time)
 
+    # ✉️ Optional admin notes section
+    notes_section = ""
+    if getattr(trip, "notes", None):
+        notes_section = f"\n📝 **Admin Notes:** {trip.notes}\n"
+
     subject = "🛻 New Trip Assigned"
     body = f"""
     Hello {driver.name},
@@ -45,7 +50,7 @@ def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
     📍 Pickup: {trip.pickup_location}
     🎯 Dropoff: {trip.dropoff_location}
     🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
-    🏷️ Priority: {trip.priority}
+    🏷️ Priority: {trip.priority}{notes_section}
 
     Please check your dashboard for details.
 
@@ -53,13 +58,25 @@ def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
     """
     send_email(to_email=driver.email, subject=subject, body=body)
 
-    # ✅ Extra: If trip is "instant" (now or past time), send another in 10 min
+    # ✅ Extra: If trip is "instant" (now or within 5 min), send a follow-up reminder in 10 min
     if trip.scheduled_time <= now_utc() + timedelta(minutes=5):
         scheduler.add_job(
             lambda: send_email(
                 to_email=driver.email,
                 subject="⚡ Reminder: Trip just started",
-                body=f"Hello {driver.name},\n\nThis is a follow-up reminder that your trip scheduled for {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} has already started.\n\nStay prepared!\n\n- Medilogic Team"
+                body=f"""Hello {driver.name},
+
+This is a follow-up reminder that your trip scheduled for {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} has already started.
+
+🚛 Delivery Type: {get_delivery_label(trip)}
+📍 Pickup: {trip.pickup_location}
+🎯 Dropoff: {trip.dropoff_location}
+🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
+🏷️ Priority: {trip.priority}{notes_section}
+
+Stay prepared and confirm your status in the dashboard.
+
+- Medilogic Team"""
             ),
             trigger="date",
             run_date=now_utc() + timedelta(minutes=10),
