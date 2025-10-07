@@ -67,65 +67,85 @@ def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
             replace_existing=True
         )
 
-# ✅ Scheduled reminders (1h before + 15m before)
 def notify_upcoming_trips():
     """
-    Sends reminders to drivers:
-      - 1 hour before their scheduled trips
-      - 15 minutes before their scheduled trips
+    Sends intelligent reminders to drivers based on how soon their trips start:
+      - < 10 minutes  → "Trip starting now" reminder
+      - 10–20 minutes → "15 minutes left" reminder
+      - 50–70 minutes → "1 hour left" reminder
+      Includes admin notes if available.
     """
-    now = now_utc()  # 🔹 use UTC-aware now
-    one_hour_from_now = now + timedelta(hours=1)
-    fifteen_minutes_from_now = now + timedelta(minutes=15)
+    now = now_utc()
+    trips = db.query(Trip).filter(Trip.scheduled_time > now).all()
 
-    # --- Trips starting in the next hour ---
-    trips_one_hour = db.query(Trip).filter(
-        Trip.scheduled_time.between(now, one_hour_from_now)
-    ).all()
-
-    for trip in trips_one_hour:
+    for trip in trips:
         driver = db.query(User).filter(User.id == trip.driver_id).first()
-        if driver:
-            local_scheduled_time = to_local(trip.scheduled_time)
-            subject = "⏰ Trip Reminder - 1 Hour Left"
+        if not driver:
+            continue
+
+        time_diff = trip.scheduled_time - now
+        local_scheduled_time = to_local(trip.scheduled_time)
+
+        # ✉️ Optional notes section
+        notes_section = ""
+        if getattr(trip, "notes", None):  # only include if notes exist
+            notes_section = f"\n📝 **Admin Notes:** {trip.notes}\n"
+
+        # 🚨 Trip starting now (less than 10 minutes)
+        if time_diff < timedelta(minutes=10):
+            subject = "⚡ Trip Starting Soon!"
             body = f"""
             Hello {driver.name},
 
-            Reminder: You have a trip starting in 1 hour.
+            Your trip is starting now or within a few minutes!
 
             🚛 Delivery Type: {get_delivery_label(trip)}
             📍 Pickup: {trip.pickup_location}
             🎯 Dropoff: {trip.dropoff_location}
             🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
-            🏷️ Priority: {trip.priority}
+            🏷️ Priority: {trip.priority}{notes_section}
 
-            Stay prepared!
+            Please get ready immediately and confirm your status on the dashboard.
 
             - Medilogic Team
             """
             send_email(to_email=driver.email, subject=subject, body=body)
 
-    # --- Trips starting in the next 15 minutes ---
-    trips_fifteen_minutes = db.query(Trip).filter(
-        Trip.scheduled_time.between(now, fifteen_minutes_from_now)
-    ).all()
-
-    for trip in trips_fifteen_minutes:
-        driver = db.query(User).filter(User.id == trip.driver_id).first()
-        if driver:
-            local_scheduled_time = to_local(trip.scheduled_time)
-            subject = "⚡ Trip Reminder - 15 Minutes Left"
+        # ⏱️ Trip starting in 10–20 minutes
+        elif timedelta(minutes=10) <= time_diff <= timedelta(minutes=20):
+            subject = "⏰ Trip Reminder - 15 Minutes Left"
             body = f"""
             Hello {driver.name},
 
-            Reminder: You have a trip starting in 15 minutes.
+            Reminder: You have a trip starting in about 15 minutes.
+
             🚛 Delivery Type: {get_delivery_label(trip)}
             📍 Pickup: {trip.pickup_location}
             🎯 Dropoff: {trip.dropoff_location}
             🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
-            🏷️ Priority: {trip.priority}
+            🏷️ Priority: {trip.priority}{notes_section}
 
             Stay sharp — it's almost time!
+
+            - Medilogic Team
+            """
+            send_email(to_email=driver.email, subject=subject, body=body)
+
+        # 🕐 Trip starting in 50–70 minutes
+        elif timedelta(minutes=50) <= time_diff <= timedelta(minutes=70):
+            subject = "⏰ Trip Reminder - 1 Hour Left"
+            body = f"""
+            Hello {driver.name},
+
+            Reminder: You have a trip starting in about 1 hour.
+
+            🚛 Delivery Type: {get_delivery_label(trip)}
+            📍 Pickup: {trip.pickup_location}
+            🎯 Dropoff: {trip.dropoff_location}
+            🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
+            🏷️ Priority: {trip.priority}{notes_section}
+
+            Stay prepared and make sure everything is ready on your end.
 
             - Medilogic Team
             """
