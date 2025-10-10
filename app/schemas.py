@@ -104,9 +104,9 @@ class UserOut(BaseModel):
     
 class UserUpdate(BaseModel):
     name: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
     address: Optional[str] = None
-    phone_number: Optional[str] = None    
     
 class UserAdminOut(BaseModel):
     id: UUID
