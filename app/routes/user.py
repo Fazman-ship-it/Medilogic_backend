@@ -1,4 +1,4 @@
-# app/routes/user.py
+hi# app/routes/user.py
 from app.schemas import UserCreate, UserOut
 from app.models import User
 from fastapi import APIRouter, HTTPException, Depends, status
@@ -95,10 +95,6 @@ def update_my_account(
         current_user.name = updates.name
     if updates.email:
         current_user.email = updates.email
-    if updates.address:
-        current_user.address = updates.address
-    if updates.phone_number:
-        current_user.phone_number = updates.phone_number
 
     db.commit()
     db.refresh(current_user)
@@ -109,8 +105,7 @@ def update_my_account(
         action="update_account",
         details=(
             f"User updated their account. "
-            f"Name: {current_user.name}, Email: {current_user.email}, "
-            f"Address: {current_user.address}, Phone: {current_user.phone_number}"
+            f"Name: {current_user.name}, Email: {current_user.email}"
         )
     )
 
@@ -118,9 +113,7 @@ def update_my_account(
         "message": "Account updated successfully.",
         "user": {
             "name": current_user.name,
-            "email": current_user.email,
-            "address": current_user.address,
-            "phone_number": current_user.phone_number
+            "email": current_user.email
         }
     }
     
