@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from app import models
+from app import schemas
 from ..database import get_db
 from datetime import datetime
 from pydantic import BaseModel, EmailStr
