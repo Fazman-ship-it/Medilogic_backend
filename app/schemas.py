@@ -483,7 +483,16 @@ class OrganizationOut(BaseModel):
     address_line: Optional[str]
     postal_code: Optional[str]
     license_number: Optional[str]
-    ico_registration_number: Optional[str]=None    
+    ico_registration_number: Optional[str]=None
+    waste_processing_capability: Optional[str]
+    delivery_capacity: Optional[int]
+    contact_person_name: Optional[str]
+    contact_person_role: Optional[str]
+    latitude: Optional[float]
+    longitude: Optional[float]
+    license_expiry_date: Optional[date] = None
+    supported_waste_types: Optional[List[str]] = None
+            
     
     class Config:
         from_attributes = True
