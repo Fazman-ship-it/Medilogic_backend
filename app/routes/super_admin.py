@@ -222,15 +222,26 @@ def update_organization(
 def get_organization_details(
     org_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("super_admin"))
+    current_user: models.User = Depends(get_current_user)
 ):
+    # 🔒 Role-based access
+    if current_user.role not in ["admin", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 🧩 Admins can only see their own organization
+    if current_user.role == "admin" and current_user.organization_id != org_id:
+        raise HTTPException(status_code=403, detail="You can only view your own organization details.")
+
+    # 🔍 Get organization
     org = db.query(models.Organization).filter_by(id=org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
+    # 👥 Get users and trips in that organization
     users = db.query(models.User).filter_by(organization_id=org.id).all()
     trip_count = db.query(models.Trip).filter_by(organization_id=org.id).count()
 
+    # 📦 Return data
     return {
         "organization": {
             "id": org.id,
@@ -246,7 +257,7 @@ def get_organization_details(
             "data_retention_years": org.data_retention_years,
             "license_expiry": org.license_expiry,
             "supported_waste_types": org.supported_waste_types,
-            "ico_registration_number":org.ico_registration_number
+            "ico_registration_number": org.ico_registration_number
         },
         "user_count": len(users),
         "trip_count": trip_count,
