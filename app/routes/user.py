@@ -1,4 +1,4 @@
-hi# app/routes/user.py
+# app/routes/user.py
 from app.schemas import UserCreate, UserOut
 from app.models import User
 from fastapi import APIRouter, HTTPException, Depends, status
