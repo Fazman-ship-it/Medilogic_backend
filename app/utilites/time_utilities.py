@@ -6,11 +6,20 @@ LOCAL_TZ = pytz.timezone("Africa/Lagos")
 
 def to_utc(dt: datetime) -> datetime:
     """
-    Convert a datetime to UTC.
+    Convert a datetime to UTC safely.
     If naive, assume it's in LOCAL_TZ.
+    Always return timezone-aware UTC datetime.
     """
+    if dt is None:
+        return None
+
     if dt.tzinfo is None:
+        # Assume Nigeria local time if no tzinfo
         dt = LOCAL_TZ.localize(dt)
+    else:
+        # Normalize tzinfo to handle any inconsistencies
+        dt = dt.astimezone(LOCAL_TZ)
+
     return dt.astimezone(pytz.UTC)
 
 def to_local(dt: datetime) -> datetime:
