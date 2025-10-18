@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.config import settings
 from sqlalchemy.exc import OperationalError
@@ -22,9 +22,9 @@ def create_stable_engine():
                 pool_recycle=1800,         # recycle stale connections every 30 mins
                 connect_args={"connect_timeout": 10},
             )
-            # test connection
+            # ✅ Test connection safely (SQLAlchemy 2.x requires `text()`)
             with engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             print("✅ Database connection established successfully.")
             return engine
         except OperationalError as e:
