@@ -35,6 +35,7 @@ def get_profile(
         org_data["invite_code"] = organization.invite_code
 
     return {
+        "user_id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
         "role": current_user.role,
