@@ -264,3 +264,62 @@ async def list_pod_files(
     ]
 
     return presigned_urls
+
+@router.get("/", response_model=List[schemas.PODResponse])
+def list_all_pods(
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    driver_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    ✅ Retrieve all PODs in the organization.
+    - Drivers: see only their own PODs.
+    - Admins/Managers: see all PODs in their organization.
+    - Optional filters: date range, driver_id.
+    """
+    query = db.query(models.POD).filter(
+        models.POD.organization_id == current_user.organization_id
+    )
+
+    # Restrict to driver’s own PODs if driver
+    if current_user.role == "driver":
+        query = query.filter(models.POD.driver_id == current_user.id)
+    elif driver_id:
+        query = query.filter(models.POD.driver_id == driver_id)
+
+    # Optional date filters
+    if start_date:
+        query = query.filter(models.POD.created_at >= start_date)
+    if end_date:
+        query = query.filter(models.POD.created_at <= end_date)
+
+    pods = query.order_by(models.POD.created_at.desc()).all()
+
+    results = []
+    for pod in pods:
+        # ✅ Generate presigned URLs for each POD file
+        file_urls = []
+        if hasattr(pod, "files") and pod.files:
+            for file in pod.files:
+                try:
+                    url = generate_presigned_url(file.s3_key)
+                    file_urls.append(url)
+                except Exception:
+                    continue
+
+        results.append(
+            schemas.PODResponse(
+                id=pod.id,
+                trip_id=pod.trip_id,
+                driver_id=pod.driver_id,
+                signature=pod.signature,
+                notes=pod.notes,
+                delivered_to=pod.delivered_to,
+                created_at=pod.created_at,
+                file_urls=file_urls
+            )
+        )
+
+    return results
