@@ -146,10 +146,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.utilites.time_utilities import to_utc, to_local, now_utc, now_local  # ✅ Same helper used in admin trips
 
-@router.get(
-    "/driver/{driver_id}/trips",
-    response_model=DriverDashboardResponse,
-    summary="Get all trips assigned to a driver")
+@router.get("/driver/{driver_id}/trips", summary="Get all trips assigned to a driver")
 def get_driver_trips(
     driver_id: UUID,
     status: Optional[str] = Query(None, description="Filter by trip status"),
@@ -205,15 +202,15 @@ def get_driver_trips(
                 "trip_id": t.id,
                 "delivery_type": (
                     t.custom_delivery_description
-                    if t.delivery_type and t.delivery_type.value.lower() == "others"
-                    else (t.delivery_type.value if t.delivery_type else None)
+                    if t.delivery_type and str(t.delivery_type).lower() == "others"
+                    else (t.delivery_type if t.delivery_type else None)
                 ),
                 "client_name": t.client_name,
                 "pickup_location": t.pickup_location,
                 "dropoff_location": t.dropoff_location,
                 "scheduled_time": t.scheduled_time,
                 "created_at": t.created_at,
-                "status": t.status.value if t.status else None,
+                "status": t.status,   # ✅ now plain string
                 "priority": t.priority,
                 "vehicle_type": t.vehicle_type,
                 "distance_km": t.distance_km,
