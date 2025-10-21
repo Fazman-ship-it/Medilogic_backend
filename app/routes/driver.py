@@ -135,3 +135,76 @@ def get_driver_location_history_by_id(
 
     return history
     
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import Optional
+from uuid import UUID
+from datetime import datetime
+from app import models
+from app.database import get_db
+from app.dependencies import get_current_user
+
+router = APIRouter(prefix="/dashboard", tags=["Driver Dashboard"])
+
+@router.get("/driver/{driver_id}/trips", summary="Get all trips assigned to a driver")
+def get_driver_trips(
+    driver_id: UUID,
+    status: Optional[str] = Query(None, description="Filter by trip status"),
+    delivery_type: Optional[str] = Query(None, description="Filter by delivery type"),
+    start_date: Optional[datetime] = Query(None, description="Start of date range"),
+    end_date: Optional[datetime] = Query(None, description="End of date range"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Retrieve all trips assigned to a specific driver.
+    Drivers can view only their own trips.
+    Admins and managers can view any driver’s trips.
+    """
+
+    # ✅ Access Control
+    if current_user.role == "client":
+        raise HTTPException(status_code=403, detail="Clients cannot view driver trips.")
+
+    if current_user.role == "driver" and current_user.id != driver_id:
+        raise HTTPException(status_code=403, detail="You can only view your own assigned trips.")
+
+    # ✅ Base Query
+    query = db.query(models.Trip).filter(
+        models.Trip.driver_id == driver_id,
+        models.Trip.organization_id == current_user.organization_id
+    )
+
+    # ✅ Apply filters
+    if status:
+        query = query.filter(models.Trip.status == status)
+    if delivery_type:
+        query = query.filter(models.Trip.delivery_type == delivery_type)
+    if start_date and end_date:
+        query = query.filter(models.Trip.scheduled_time.between(start_date, end_date))
+
+    # ✅ Execute query
+    trips = query.order_by(models.Trip.scheduled_time.asc()).all()
+
+    # ✅ Return simplified data
+    return {
+        "driver_id": driver_id,
+        "total_trips": len(trips),
+        "assigned_trips": [
+            {
+                "trip_id": t.id,
+                "delivery_type": t.delivery_type.value if t.delivery_type else None,
+                "client_name": t.client_name,
+                "pickup_location": t.pickup_location,
+                "dropoff_location": t.dropoff_location,
+                "scheduled_time": t.scheduled_time,
+                "status": t.status.value if t.status else None,
+                "priority": t.priority,
+                "vehicle_type": t.vehicle_type,
+                "distance_km": t.distance_km,
+                "cost": t.cost,
+            }
+            for t in trips
+        ]
+    }
+    
