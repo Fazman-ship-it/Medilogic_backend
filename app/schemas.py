@@ -68,6 +68,20 @@ class PaginatedTripsResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class DriverTripResponse(BaseModel):
+    id: UUID
+    delivery_type: DeliveryType
+    client_name: Optional[str]=None
+    pickup_location: Optional[str]=None
+    dropoff_location: Optional[str]=None
+    scheduled_time: Optional[datetime]=None
+    cost: Optional[float]=None
+    status:TripStatus = TripStatus.pending
+    priority: Optional[str]=None
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 # --------------------------
 # User Schemas
 # --------------------------
