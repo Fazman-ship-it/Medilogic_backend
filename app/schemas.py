@@ -68,17 +68,27 @@ class PaginatedTripsResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class DriverTripResponse(BaseModel):
-    id: UUID
-    delivery_type: DeliveryType
-    client_name: Optional[str]=None
-    pickup_location: Optional[str]=None
-    dropoff_location: Optional[str]=None
-    scheduled_time: Optional[datetime]=None
-    cost: Optional[float]=None
-    status:TripStatus = TripStatus.pending
-    priority: Optional[str]=None
-    notes: Optional[str] = None
+class DriverTrip(BaseModel):
+    trip_id: UUID
+    delivery_type: Optional[str]
+    client_name: Optional[str]
+    pickup_location: Optional[str]
+    dropoff_location: Optional[str]
+    scheduled_time: Optional[datetime]
+    status: Optional[str]
+    priority: Optional[str]
+    vehicle_type: Optional[str]
+    distance_km: Optional[float]
+    cost: Optional[float]
+    compliance_flag: Optional[bool]
+    shift_window: Optional[str]
+    recurrence_rule: Optional[str]
+    notes: Optional[str]
+    
+class DriverDashboardResponse(BaseModel):
+    driver_id: UUID
+    total_trips: int
+    assigned_trips: list[DriverTrip]
 
     class Config:
         from_attributes = True
