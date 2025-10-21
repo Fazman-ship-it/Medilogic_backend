@@ -135,16 +135,17 @@ def get_driver_location_history_by_id(
 
     return history
     
+    
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import desc, case
 from typing import Optional
 from uuid import UUID
-from app.schemas import DriverTrip, DriverDashboardResponse
 from datetime import datetime
 from app import models
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.utilites.time_utilities import to_utc, to_local, now_utc, now_local  # ✅ Same helper used in admin trips
+from app.utilities.time_utilities import to_utc, to_local  # ✅ time conversion helpers
 
 @router.get("/driver/{driver_id}/trips", summary="Get all trips assigned to a driver")
 def get_driver_trips(
@@ -158,8 +159,9 @@ def get_driver_trips(
 ):
     """
     Retrieve all trips assigned to a specific driver.
-    Drivers can view only their own trips.
-    Admins and managers can view any driver’s trips.
+    - Drivers can view only their own trips.
+    - Admins and managers can view any driver’s trips.
+    - Sorted so most recent trips appear first for better UX.
     """
 
     # ✅ Access Control
@@ -183,8 +185,16 @@ def get_driver_trips(
     if start_date and end_date:
         query = query.filter(models.Trip.scheduled_time.between(start_date, end_date))
 
-    # ✅ Execute query
-    trips = query.order_by(models.Trip.scheduled_time.asc()).all()
+    # ✅ UX Enhancement: Show most recent trips first
+    # Sort by scheduled_time DESC, fallback to created_at if scheduled_time is NULL
+    trips = query.order_by(
+        desc(
+            case(
+                (models.Trip.scheduled_time != None, models.Trip.scheduled_time),
+                else_=models.Trip.created_at
+            )
+        )
+    ).all()
 
     # ✅ Convert timestamps to local time
     for t in trips:
@@ -200,6 +210,7 @@ def get_driver_trips(
         "assigned_trips": [
             {
                 "trip_id": t.id,
+                "trip_label": f"{t.client_name} — {t.delivery_type or 'Unspecified'}",  # 🧠 for UI dropdown
                 "delivery_type": (
                     t.custom_delivery_description
                     if t.delivery_type and str(t.delivery_type).lower() == "others"
@@ -210,7 +221,7 @@ def get_driver_trips(
                 "dropoff_location": t.dropoff_location,
                 "scheduled_time": t.scheduled_time,
                 "created_at": t.created_at,
-                "status": t.status,   # ✅ now plain string
+                "status": t.status,   # ✅ plain string
                 "priority": t.priority,
                 "vehicle_type": t.vehicle_type,
                 "distance_km": t.distance_km,
