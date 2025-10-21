@@ -144,7 +144,6 @@ from app import models
 from app.database import get_db
 from app.dependencies import get_current_user
 
-router = APIRouter(prefix="/dashboard", tags=["Driver Dashboard"])
 
 @router.get("/driver/{driver_id}/trips", summary="Get all trips assigned to a driver")
 def get_driver_trips(
