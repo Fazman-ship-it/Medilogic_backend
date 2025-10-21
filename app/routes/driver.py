@@ -139,6 +139,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from uuid import UUID
+from app.schemas import DriverTrip, DriverDashboardResponse
 from datetime import datetime
 from app import models
 from app.database import get_db
