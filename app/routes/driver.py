@@ -145,7 +145,18 @@ from datetime import datetime
 from app import models
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.utilities.time_utilities import to_utc, to_local  # ✅ time conversion helpers
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import Optional
+from uuid import UUID
+from app.schemas import DriverTrip, DriverDashboardResponse
+from datetime import datetime
+from app import models
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.utilites.time_utilities import to_utc, to_local, now_utc, now_local  # ✅ Same helper used in admin trips
+
+
 
 @router.get("/driver/{driver_id}/trips", summary="Get all trips assigned to a driver")
 def get_driver_trips(
