@@ -143,6 +143,7 @@ from datetime import datetime
 from app import models
 from app.database import get_db
 from app.dependencies import get_current_user
+from   # ✅ Same helper used in admin trips
 
 
 @router.get("/driver/{driver_id}/trips", summary="Get all trips assigned to a driver")
@@ -176,34 +177,61 @@ def get_driver_trips(
 
     # ✅ Apply filters
     if status:
-        query = query.filter(models.Trip.status == status)
+        query = query.filter(models.Trip.status.ilike(f"%{status}%"))
     if delivery_type:
-        query = query.filter(models.Trip.delivery_type == delivery_type)
+        query = query.filter(models.Trip.delivery_type.ilike(f"%{delivery_type}%"))
     if start_date and end_date:
         query = query.filter(models.Trip.scheduled_time.between(start_date, end_date))
 
     # ✅ Execute query
     trips = query.order_by(models.Trip.scheduled_time.asc()).all()
 
-    # ✅ Return simplified data
+    # ✅ Convert timestamps to local time
+    for t in trips:
+        if t.scheduled_time:
+            t.scheduled_time = to_local(t.scheduled_time)
+        if t.created_at:
+            t.created_at = to_local(t.created_at)
+
+    # ✅ Return structured trip info
     return {
         "driver_id": driver_id,
         "total_trips": len(trips),
         "assigned_trips": [
             {
                 "trip_id": t.id,
-                "delivery_type": t.delivery_type.value if t.delivery_type else None,
+                "delivery_type": (
+                    t.custom_delivery_description
+                    if t.delivery_type and t.delivery_type.value.lower() == "others"
+                    else (t.delivery_type.value if t.delivery_type else None)
+                ),
                 "client_name": t.client_name,
                 "pickup_location": t.pickup_location,
                 "dropoff_location": t.dropoff_location,
                 "scheduled_time": t.scheduled_time,
+                "created_at": t.created_at,
                 "status": t.status.value if t.status else None,
                 "priority": t.priority,
                 "vehicle_type": t.vehicle_type,
                 "distance_km": t.distance_km,
                 "cost": t.cost,
+                "compliance_flag": t.compliance_flag,
+                "shift_window": t.shift_window,
+                "recurrence_rule": t.recurrence_rule,
+                "notes": t.notes,
             }
             for t in trips
         ]
     }
-    
+
+# ✅ Optional: Auto-detect driver from JWT (for mobile apps)
+# @router.get("/driver/trips", summary="Get all trips for the logged-in driver")
+# def get_my_trips(
+#     db: Session = Depends(get_db),
+#     current_user: models.User = Depends(require_role("driver"))
+# ):
+#     return get_driver_trips(
+#         driver_id=current_user.id,
+#         db=db,
+#         current_user=current_user
+#     )
