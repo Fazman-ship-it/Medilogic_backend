@@ -115,6 +115,7 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import require_role, get_current_user
 from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async
+
 @router.post("/upload", response_model=schemas.PODResponse)
 async def create_pod_with_file(
     trip_id: UUID = Form(...),
@@ -162,20 +163,17 @@ async def create_pod_with_file(
     db.refresh(new_pod)
 
     # ✅ Step 4: Generate and upload PDF receipt to S3
-    # ✅ Step 4: Generate and upload PDF receipt to S3
-receipt_filename = f"{new_pod.id}_receipt.pdf"
-receipt_path = f"/tmp/{receipt_filename}"
-generate_pod_pdf(new_pod, receipt_path)
+    receipt_filename = f"{new_pod.id}_receipt.pdf"
+    receipt_path = f"/tmp/{receipt_filename}"
+    generate_pod_pdf(new_pod, receipt_path)
 
-with open(receipt_path, "rb") as pdf_file:
-    uploaded_receipt_key = await upload_file_to_s3_async(
-        file=pdf_file,
-        prefix="receipts",
-        filename=receipt_filename,
-        content_type="application/pdf"
-    )
-    uploaded_receipt_key = await upload_file_to_s3_async(upload_file, prefix="receipts")
-        uploaded_receipt_key = await upload_file_to_s3_async(upload_file, prefix="receipts")
+    with open(receipt_path, "rb") as pdf_file:
+        uploaded_receipt_key = await upload_file_to_s3_async(
+            file=pdf_file,
+            prefix="receipts",
+            filename=receipt_filename,
+            content_type="application/pdf"
+        )
 
     # ✅ Step 5: Save file metadata
     if raw_key:
