@@ -156,7 +156,7 @@ async def create_pod_with_files(
             if file.content_type not in ["image/jpeg", "image/png", "application/pdf"]:
                 raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.filename}")
 
-            uploaded_key = await upload_file_to_s3_async(file, prefix="uploads")
+            uploaded_key = await upload_file_to_s3_async(file, prefix="pods/uploads")
 
             file_type = (
                 "pdf" if file.content_type == "application/pdf"
@@ -177,7 +177,7 @@ async def create_pod_with_files(
     with open(receipt_path, "rb") as pdf_file:
         uploaded_receipt_key = await upload_file_to_s3_async(
             file=pdf_file,
-            prefix="receipts",
+            prefix="pods/receipts",
             filename=receipt_filename,
             content_type="application/pdf"
         )
