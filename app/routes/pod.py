@@ -142,7 +142,6 @@ async def create_pod_with_file(
         if file.content_type not in ["image/jpeg", "image/png", "application/pdf"]:
             raise HTTPException(status_code=400, detail="Unsupported file type")
 
-        # Upload original file
         uploaded_key = await upload_file_to_s3_async(file, prefix="pods/uploads")
 
         if file.content_type == "application/pdf":
@@ -150,7 +149,7 @@ async def create_pod_with_file(
         else:
             raw_key = uploaded_key
 
-    # ✅ Step 3: Save POD to DB (keys only, no URLs yet)
+    # ✅ Step 3: Save POD to DB
     new_pod = models.POD(
         trip_id=trip_id,
         delivered_to=delivered_to,
@@ -163,22 +162,26 @@ async def create_pod_with_file(
     db.commit()
     db.refresh(new_pod)
 
-    # ✅ Step 4: Generate PDF receipt and upload to S3
+    # ✅ Step 4: Generate and upload PDF receipt to S3
     receipt_filename = f"{new_pod.id}_receipt.pdf"
-    generate_pod_pdf(new_pod, receipt_filename)
+    receipt_path = f"/tmp/{receipt_filename}"   # 🧩 Render-safe temporary location
 
-    receipt_key = f"pods/receipts/{receipt_filename}"
-    with open(receipt_filename, "rb") as pdf_file:
-        upload_file = UploadFile(filename=receipt_filename, file=pdf_file, content_type="application/pdf")
+    generate_pod_pdf(new_pod, receipt_path)     # 🧩 Save PDF into /tmp/
+
+    # Now open it safely from /tmp/
+    with open(receipt_path, "rb") as pdf_file:
+        upload_file = UploadFile(
+            filename=receipt_filename,
+            file=pdf_file,
+            content_type="application/pdf"
+        )
         uploaded_receipt_key = await upload_file_to_s3_async(upload_file, prefix="pods/receipts")
 
-    # ✅ Step 5: Store files in DB
+    # ✅ Step 5: Save file metadata in DB
     if raw_key:
         db.add(models.PODFile(pod_id=new_pod.id, s3_key=raw_key, file_type="raw"))
-
     if pdf_key:
         db.add(models.PODFile(pod_id=new_pod.id, s3_key=pdf_key, file_type="pdf"))
-
     db.add(models.PODFile(pod_id=new_pod.id, s3_key=uploaded_receipt_key, file_type="receipt"))
 
     db.commit()
