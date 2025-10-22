@@ -253,7 +253,7 @@ class PODResponse(PODBase):
     id: UUID
     driver_id: Optional[UUID] = None
     created_at: datetime
-    files: List[PODFileOut] = []  # ✅ clean: all files linked to this POD
+    files: Optional[List[PODFileOut]] = []  # ✅ clean: all files linked to this POD
 
     class Config:
         from_attributes = True
