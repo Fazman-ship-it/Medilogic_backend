@@ -118,12 +118,12 @@ from app.dependencies import require_role, get_current_user
 from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async
 
 @router.post("/upload", response_model=schemas.PODResponse)
-async def create_pod_with_file(
+async def create_pod_with_files(
     trip_id: UUID = Form(...),
     delivered_to: str = Form(...),
     notes: Optional[str] = Form(None),
     signature: Optional[str] = Form(None),
-    file: UploadFile = File(None),
+    files: Optional[List[UploadFile]] = File(None),  # ✅ Multiple file uploads
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("driver"))
 ):
@@ -136,21 +136,7 @@ async def create_pod_with_file(
     if not trip:
         raise HTTPException(status_code=403, detail="You are not authorized for this trip.")
 
-    # ✅ Step 2: Upload file to S3
-    raw_key = None
-    pdf_key = None
-    if file:
-        if file.content_type not in ["image/jpeg", "image/png", "application/pdf"]:
-            raise HTTPException(status_code=400, detail="Unsupported file type")
-
-        uploaded_key = await upload_file_to_s3_async(file, prefix="uploads")
-
-        if file.content_type == "application/pdf":
-            pdf_key = uploaded_key
-        else:
-            raw_key = uploaded_key
-
-    # ✅ Step 3: Save POD record
+    # ✅ Step 2: Create the POD record first
     new_pod = models.POD(
         trip_id=trip_id,
         delivered_to=delivered_to,
@@ -163,10 +149,30 @@ async def create_pod_with_file(
     db.commit()
     db.refresh(new_pod)
 
-    # ✅ Step 4: Generate and upload PDF receipt to S3
+    # ✅ Step 3: Handle multiple file uploads (images + PDFs)
+    uploaded_files = []
+    if files:
+        for file in files:
+            if file.content_type not in ["image/jpeg", "image/png", "application/pdf"]:
+                raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.filename}")
+
+            uploaded_key = await upload_file_to_s3_async(file, prefix="uploads")
+
+            file_type = (
+                "pdf" if file.content_type == "application/pdf"
+                else "raw"
+            )
+
+            db.add(models.PODFile(pod_id=new_pod.id, s3_key=uploaded_key, file_type=file_type))
+            uploaded_files.append(uploaded_key)
+
+    db.commit()
+
+    # ✅ Step 4: Generate & upload ONE receipt PDF for all uploaded files
     receipt_filename = f"{new_pod.id}_receipt.pdf"
     receipt_path = f"/tmp/{receipt_filename}"
-    generate_pod_pdf(new_pod, receipt_path)
+
+    generate_pod_pdf(new_pod, receipt_path)  # same as before
 
     with open(receipt_path, "rb") as pdf_file:
         uploaded_receipt_key = await upload_file_to_s3_async(
@@ -176,17 +182,14 @@ async def create_pod_with_file(
             content_type="application/pdf"
         )
 
-    # ✅ Step 5: Save file metadata
-    if raw_key:
-        db.add(models.PODFile(pod_id=new_pod.id, s3_key=raw_key, file_type="raw"))
-    if pdf_key:
-        db.add(models.PODFile(pod_id=new_pod.id, s3_key=pdf_key, file_type="pdf"))
+    # ✅ Step 5: Save the receipt file record
     db.add(models.PODFile(pod_id=new_pod.id, s3_key=uploaded_receipt_key, file_type="receipt"))
     db.commit()
     db.refresh(new_pod)
 
-    # ✅ Optional: clean temp file
-    os.remove(receipt_path)
+    # ✅ Clean up temporary file
+    if os.path.exists(receipt_path):
+        os.remove(receipt_path)
 
     return new_pod
     
