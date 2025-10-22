@@ -316,6 +316,7 @@ async def list_all_pods(
                 try:
                     url = await generate_presigned_url_async(f.s3_key, expires_in=600)
                     files_data.append({
+                        "id": f.id,
                         "file_type": f.file_type,
                         "s3_key": f.s3_key,
                         "url": url
