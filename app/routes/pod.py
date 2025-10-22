@@ -229,18 +229,21 @@ async def download_pod_file(
 
     return {"download_url": download_url}
 from app.config import settings
-@router.get("/{pod_id}/files", response_model=List[str])
+
+@router.get("/{pod_id}/files", response_model=List[schemas.PODFileOut])
 async def list_pod_files(
     pod_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """Return all files for a specific POD, with type and URL."""
+    
     # ✅ Step 1: Fetch POD
     pod = db.query(models.POD).filter(models.POD.id == pod_id).first()
     if not pod:
         raise HTTPException(status_code=404, detail="POD not found")
 
-    # ✅ Step 2: Org & role access control
+    # ✅ Step 2: Access control
     if pod.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -261,13 +264,19 @@ async def list_pod_files(
     if not pod_files:
         return []
 
-    # ✅ Step 4: Generate presigned URLs for each file (async)
-    presigned_urls = [
-        await generate_presigned_url_async(pf.s3_key, expires_in=settings.PRESIGNED_EXPIRY)
-        for pf in pod_files
-    ]
+    # ✅ Step 4: Generate presigned URLs for each file
+    response_files = []
+    for pf in pod_files:
+        url = await generate_presigned_url_async(pf.s3_key, expires_in=settings.PRESIGNED_EXPIRY)
+        response_files.append({
+            "id": str(pf.id),
+            "file_type": pf.file_type,
+            "s3_key": pf.s3_key,
+            "url": url
+        })
 
-    return presigned_urls
+    # ✅ Step 5: Return full file info
+    return response_files
     
 from typing import List, Optional
 from datetime import datetime
