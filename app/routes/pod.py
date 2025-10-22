@@ -110,6 +110,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import Optional, List
 import uuid
+import os
 from app import models, schemas
 from app.database import get_db
 from app.dependencies import require_role, get_current_user
