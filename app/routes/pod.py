@@ -208,7 +208,7 @@ async def download_pod_file(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # ✅ Step 1: Find the PODFile record by filename and organization
+    # ✅ Step 1: Find the PODFile record by filename and org
     pod_file = (
         db.query(models.PODFile)
         .join(models.POD)
@@ -224,7 +224,7 @@ async def download_pod_file(
 
     pod = pod_file.pod
 
-    # ✅ Step 2: Role-based access control
+    # ✅ Step 2: Role-based access
     if current_user.role == "driver" and pod.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don’t have access to this POD file")
 
@@ -244,20 +244,18 @@ async def download_pod_file(
     try:
         async with session.client(
             "s3",
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-            region_name=AWS_REGION
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_REGION
         ) as s3:
-            s3_object = await s3.get_object(Bucket=AWS_S3_BUCKET, Key=key)
+            s3_object = await s3.get_object(Bucket=settings.AWS_S3_BUCKET, Key=key)
             file_stream = s3_object["Body"]
             content_type = s3_object.get("ContentType", "application/octet-stream")
 
             return StreamingResponse(
                 file_stream,
                 media_type=content_type,
-                headers={
-                    "Content-Disposition": f'attachment; filename="{download_name}"'
-                },
+                headers={"Content-Disposition": f'attachment; filename="{download_name}"'}
             )
 
     except ClientError as e:
