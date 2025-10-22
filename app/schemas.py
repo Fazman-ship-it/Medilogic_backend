@@ -231,7 +231,8 @@ class PODCreate(PODBase):
 class PODFileOut(BaseModel):
     id: UUID
     s3_key: str
-    file_type: Optional[str]
+    file_type: Optional[str] = None
+    url: Optional[str] = None
 
     class Config:
         from_attributes = True
