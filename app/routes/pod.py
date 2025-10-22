@@ -200,12 +200,7 @@ from botocore.exceptions import ClientError
 import aioboto3
 from app import models
 from app.dependencies import get_db, get_current_user
-from app.config import (
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY,
-    AWS_REGION,
-    AWS_S3_BUCKET,
-)
+from app.config import settings 
 
 @router.get("/download/{filename}")
 async def download_pod_file(
