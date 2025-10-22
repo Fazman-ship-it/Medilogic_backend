@@ -274,9 +274,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import get_db
+from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async
 
 @router.get("/", response_model=List[schemas.PODResponse])
-def list_all_pods(
+async def list_all_pods(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     driver_id: Optional[str] = Query(None),
@@ -309,27 +310,28 @@ def list_all_pods(
 
     results = []
     for pod in pods:
-        # ✅ Generate presigned URLs for each POD file
-        file_urls = []
-        if hasattr(pod, "files") and pod.files:
-            for file in pod.files:
+        files_data = []
+        if pod.files:
+            for f in pod.files:
                 try:
-                    url = generate_presigned_url(file.s3_key)
-                    file_urls.append(url)
+                    url = await generate_presigned_url_async(f.s3_key, expires_in=600)
+                    files_data.append({
+                        "file_type": f.file_type,
+                        "s3_key": f.s3_key,
+                        "url": url
+                    })
                 except Exception:
                     continue
 
-        results.append(
-            schemas.PODResponse(
-                id=pod.id,
-                trip_id=pod.trip_id,
-                driver_id=pod.driver_id,
-                signature=pod.signature,
-                notes=pod.notes,
-                delivered_to=pod.delivered_to,
-                created_at=pod.created_at,
-                file_urls=file_urls
-            )
-        )
+        results.append({
+            "id": pod.id,
+            "trip_id": pod.trip_id,
+            "driver_id": pod.driver_id,
+            "signature": pod.signature,
+            "notes": pod.notes,
+            "delivered_to": pod.delivered_to,
+            "created_at": pod.created_at,
+            "files": files_data
+        })
 
     return results
