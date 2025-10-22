@@ -337,3 +337,45 @@ async def list_all_pods(
         })
 
     return results
+
+from fastapi import status
+from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async, delete_file_from_s3
+
+@router.delete("/pods/{pod_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pod(
+    pod_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Delete a POD and all associated files (both DB + S3)
+    Only the driver who created the POD can delete it.
+    """
+    # ✅ Step 1: Fetch POD
+    pod = db.query(models.POD).filter(models.POD.id == pod_id).first()
+    if not pod:
+        raise HTTPException(status_code=404, detail="POD not found")
+
+    # ✅ Step 2: Ensure user belongs to same organization
+    if pod.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="You don't have access to this POD")
+
+    # ✅ Step 3: Allow only the driver who created the POD
+    if current_user.role != "driver" or pod.driver_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the driver who created this POD can delete it")
+
+    # ✅ Step 4: Fetch related files
+    pod_files = db.query(models.PODFile).filter(models.PODFile.pod_id == pod.id).all()
+
+    # ✅ Step 5: Delete files from S3 (async)
+    for f in pod_files:
+        try:
+            await delete_file_from_s3(f.s3_key)
+        except Exception as e:
+            print(f"⚠️ Failed to delete S3 file {f.s3_key}: {e}")
+
+    # ✅ Step 6: Delete the POD (cascade removes its files)
+    db.delete(pod)
+    db.commit()
+
+    return {"detail": "POD and all files deleted successfully"}
