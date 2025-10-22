@@ -208,7 +208,7 @@ async def download_pod_file(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # ✅ Step 1: Find the PODFile record by filename and org
+    # ✅ Find the PODFile in DB using LIKE or ILIKE
     pod_file = (
         db.query(models.PODFile)
         .join(models.POD)
@@ -222,12 +222,14 @@ async def download_pod_file(
     if not pod_file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    pod = pod_file.pod
+    # ✅ Use the *exact* key from DB (not hardcoded or modified)
+    key = pod_file.s3_key
+    download_name = key.split("/")[-1]
 
-    # ✅ Step 2: Role-based access
+    # ✅ Role-based access check
+    pod = pod_file.pod
     if current_user.role == "driver" and pod.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don’t have access to this POD file")
-
     if current_user.role == "client":
         trip = db.query(models.Trip).filter(
             models.Trip.id == pod.trip_id,
@@ -236,17 +238,14 @@ async def download_pod_file(
         if not trip or trip.client_name != current_user.name:
             raise HTTPException(status_code=403, detail="You don’t have access to this POD file")
 
-    # ✅ Step 3: Stream file directly from S3
-    key = pod_file.s3_key
-    download_name = key.split("/")[-1]
-
+    # ✅ Stream file from S3 using the *full* key
     session = aioboto3.Session()
     try:
         async with session.client(
             "s3",
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_REGION
+            region_name=settings.AWS_REGION,
         ) as s3:
             s3_object = await s3.get_object(Bucket=settings.AWS_S3_BUCKET, Key=key)
             file_stream = s3_object["Body"]
