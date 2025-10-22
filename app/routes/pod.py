@@ -162,14 +162,16 @@ async def create_pod_with_file(
     db.refresh(new_pod)
 
     # ✅ Step 4: Generate and upload PDF receipt to S3
-    receipt_filename = f"{new_pod.id}_receipt.pdf"
-    receipt_path = f"/tmp/{receipt_filename}"
-    generate_pod_pdf(new_pod, receipt_path)
+    # ✅ Step 4: Generate and upload PDF receipt to S3
+receipt_filename = f"{new_pod.id}_receipt.pdf"
+receipt_path = f"/tmp/{receipt_filename}"
+generate_pod_pdf(new_pod, receipt_path)
 
-    with open(receipt_path, "rb") as pdf_file:
-    upload_file = UploadFile(
-        filename=receipt_filename,
+with open(receipt_path, "rb") as pdf_file:
+    uploaded_receipt_key = await upload_file_to_s3_async(
         file=pdf_file,
+        prefix="receipts",
+        filename=receipt_filename,
         content_type="application/pdf"
     )
     uploaded_receipt_key = await upload_file_to_s3_async(upload_file, prefix="receipts")
