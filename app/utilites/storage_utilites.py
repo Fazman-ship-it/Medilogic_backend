@@ -10,11 +10,22 @@ AWS_REGION = os.getenv("AWS_REGION")
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 
-async def upload_file_to_s3_async(file: UploadFile, prefix: str) -> str:
-    """Uploads file to S3 asynchronously and returns S3 key"""
-    ext = os.path.splitext(file.filename)[1]
-    key = f"intl_applications/{prefix}/{uuid.uuid4().hex}{ext}"
-    content = await file.read()
+async def upload_file_to_s3_async(file, prefix: str, filename: str = None, content_type: str = None) -> str:
+    """Uploads a file (UploadFile or regular file object) to S3 asynchronously and returns the S3 key"""
+    import mimetypes
+
+    # Determine filename and content type
+    if hasattr(file, "filename"):  # FastAPI UploadFile
+        ext = os.path.splitext(file.filename)[1]
+        filename = filename or file.filename
+        content_type = content_type or file.content_type
+        content = await file.read()
+    else:  # Regular file object (like from open())
+        ext = os.path.splitext(filename or "file")[1]
+        content = file.read()
+        content_type = content_type or mimetypes.guess_type(filename or "file")[0] or "application/octet-stream"
+
+    key = f"pods/{prefix}/{uuid.uuid4().hex}{ext}"
 
     session = aioboto3.Session()
     async with session.client(
@@ -23,7 +34,13 @@ async def upload_file_to_s3_async(file: UploadFile, prefix: str) -> str:
         aws_secret_access_key=AWS_SECRET_KEY,
         region_name=AWS_REGION
     ) as s3:
-        await s3.put_object(Bucket=AWS_BUCKET, Key=key, Body=content, ContentType=file.content_type)
+        await s3.put_object(
+            Bucket=AWS_BUCKET,
+            Key=key,
+            Body=content,
+            ContentType=content_type
+        )
+
     return key
 
 async def generate_presigned_url_async(key: str, expires_in: int = 3600) -> str:
