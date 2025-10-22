@@ -64,36 +64,37 @@ async def get_pod_by_id(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # ✅ Step 1: Fetch POD
     pod = db.query(models.POD).filter(models.POD.id == pod_id).first()
     if not pod:
         raise HTTPException(status_code=404, detail="POD not found")
 
-    # ✅ Step 2: Multi-tenant org check
+    # ✅ Organization & role checks
     if pod.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="You don't have access to this POD")
-
-    # ✅ Step 3: Role-based access
     if current_user.role == "driver" and pod.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not the driver for this POD")
-
     if current_user.role == "client":
         trip = db.query(models.Trip).filter(
             models.Trip.id == pod.trip_id,
             models.Trip.organization_id == current_user.organization_id
         ).first()
-        if not trip or trip.client_name != current_user.full_name:  
+        if not trip or trip.client_name != current_user.full_name:
             raise HTTPException(status_code=403, detail="You don't have access to this POD")
 
-    # ✅ Step 4: Fetch related files + presigned URLs
+    # ✅ Fetch related files + generate URLs
     pod_files = db.query(models.PODFile).filter(models.PODFile.pod_id == pod.id).all()
-    urls = []
+    file_objects = []
     for f in pod_files:
         if f.s3_key:
-            url = await generate_presigned_url_async(f.s3_key)  # 🔄 use your helper
-            urls.append(url)
+            url = await generate_presigned_url_async(f.s3_key)
+            file_objects.append({
+                "id": str(f.id),
+                "s3_key": f.s3_key,
+                "file_type": f.file_type,
+                "url": url
+            })
 
-    # ✅ Step 5: Return schema-friendly response
+    # ✅ Return schema-compliant structure
     return schemas.PODResponse(
         id=pod.id,
         trip_id=pod.trip_id,
@@ -102,7 +103,7 @@ async def get_pod_by_id(
         notes=pod.notes,
         delivered_to=pod.delivered_to,
         created_at=pod.created_at,
-        file_urls=urls
+        files=file_objects   # 🔥 correct field name!
     )
 # app/routes/pods.py
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
