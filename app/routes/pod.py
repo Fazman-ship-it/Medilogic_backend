@@ -167,11 +167,12 @@ async def create_pod_with_file(
     generate_pod_pdf(new_pod, receipt_path)
 
     with open(receipt_path, "rb") as pdf_file:
-        upload_file = UploadFile(
-            filename=receipt_filename,
-            file=pdf_file,
-            content_type="application/pdf"
-        )
+    upload_file = UploadFile(
+        filename=receipt_filename,
+        file=pdf_file,
+        content_type="application/pdf"
+    )
+    uploaded_receipt_key = await upload_file_to_s3_async(upload_file, prefix="receipts")
         uploaded_receipt_key = await upload_file_to_s3_async(upload_file, prefix="receipts")
 
     # ✅ Step 5: Save file metadata
