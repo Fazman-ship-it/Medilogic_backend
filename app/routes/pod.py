@@ -193,6 +193,15 @@ async def create_pod_with_files(
 
     return new_pod
     
+from fastapi.responses import StreamingResponse
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+import aioboto3
+from botocore.exceptions import ClientError
+from app import models
+from app.dependencies import get_db, get_current_user
+from app.config import settings
+
 @router.get("/download/{filename}")
 async def download_pod_file(
     filename: str,
@@ -205,7 +214,7 @@ async def download_pod_file(
         .join(models.POD)
         .filter(
             models.POD.organization_id == current_user.organization_id,
-            models.PODFile.s3_key.like(f"%{filename}")  # match by file name
+            models.PODFile.s3_key.like(f"%{filename}")
         )
         .first()
     )
@@ -213,9 +222,9 @@ async def download_pod_file(
     if not pod_file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    pod = pod_file.pod  # thanks to relationship
+    pod = pod_file.pod
 
-    # ✅ Step 2: Verify role-based access
+    # ✅ Step 2: Verify access
     if current_user.role == "driver" and pod.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don’t have access to this POD file")
 
@@ -227,10 +236,34 @@ async def download_pod_file(
         if not trip or trip.client_name != current_user.name:
             raise HTTPException(status_code=403, detail="You don’t have access to this POD file")
 
-    # ✅ Step 3: Generate presigned download URL (10 mins expiry)
-    download_url = await generate_presigned_url_async(pod_file.s3_key, expires_in=600)
+    # ✅ Step 3: Stream file from S3 asynchronously
+    key = pod_file.s3_key
+    download_name = key.split("/")[-1]
 
-    return {"download_url": download_url}
+    session = aioboto3.Session()
+    try:
+        async with session.client(
+            "s3",
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name=AWS_REGION
+        ) as s3:
+            s3_object = await s3.get_object(Bucket=AWS_BUCKET, Key=key)
+            file_stream = s3_object["Body"]
+            content_type = s3_object.get("ContentType", "application/octet-stream")
+
+            # ✅ Stream the file directly as a real download
+            return StreamingResponse(
+                file_stream,
+                media_type=content_type,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{download_name}"'
+                },
+            )
+
+    except ClientError as e:
+        raise HTTPException(status_code=404, detail=f"S3 error: {str(e)}")
+        
 from app.config import settings
 
 @router.get("/{pod_id}/files", response_model=List[schemas.PODFileOut])
