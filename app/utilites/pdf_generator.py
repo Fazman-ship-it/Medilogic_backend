@@ -5,8 +5,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 import os
-from app.utilites.time_utils import to_utc, to_local  # ✅ Import your new global utilities
-
+from app.utilites.time_utilities import now_utc,to_local  # ✅ Import your new global utilities
 
 def generate_pod_pdf(pod, filename):
     # ✅ Create tenant-specific folder path
