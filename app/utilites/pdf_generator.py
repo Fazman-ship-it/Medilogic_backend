@@ -5,8 +5,8 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 import os
-import pytz
-from datetime import timezone
+from app.utilites.time_utils import to_utc, to_local  # ✅ Import your new global utilities
+
 
 def generate_pod_pdf(pod, filename):
     # ✅ Create tenant-specific folder path
@@ -17,12 +17,16 @@ def generate_pod_pdf(pod, filename):
     # ✅ Full path
     path = os.path.join(folder_path, filename)
 
-    # ✅ Always store timestamp in UTC (standard global format)
-    timestamp = pod.timestamp
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    # ✅ Get the organization timezone (fallback to Africa/Lagos)
+    org_timezone = getattr(pod.driver.organization, "timezone", "Africa/Lagos")
 
-    utc_time = timestamp.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    # ✅ Convert timestamp to both UTC and local
+    utc_dt = to_utc(pod.timestamp, tz_name=org_timezone)
+    local_dt = to_local(utc_dt, tz_name=org_timezone)
+
+    # Format the timestamps
+    utc_time = utc_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+    local_time = local_dt.strftime(f"%Y-%m-%d %H:%M:%S %Z")  # e.g. BST, WAT, EST
 
     # ✅ Start PDF
     c = canvas.Canvas(path, pagesize=A4)
@@ -52,7 +56,8 @@ def generate_pod_pdf(pod, filename):
     line("Trip ID", pod.trip_id)
     line("Submitted By", pod.driver.name)
     line("Delivered To", pod.delivered_to)
-    line("Timestamp", utc_time)
+    line("Timestamp (UTC)", utc_time)
+    line("Timestamp (Local)", local_time)
     line("Notes", pod.notes or "None")
 
     # --- OPTIONAL: Signature block ---
