@@ -118,7 +118,7 @@ async def log_custody_event(
         db=db,
         user_id=current_user.id,
         action=f"Logged custody event: {event.event_type}",
-        details=f"Custody logged for Trip #{event.trip_id} by {current_user.full_name}",
+        details=f"Custody logged for Trip #{event.trip_id} by {current_user.name}",
         trip_id=event.trip_id,
     )
 
