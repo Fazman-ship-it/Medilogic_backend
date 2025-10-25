@@ -31,19 +31,23 @@ from app.utilites.storage_utilites import (
     delete_file_from_s3,
     generate_presigned_url_async,
 )
+import json
 
 ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
 MAX_FILE_SIZE_MB = 8
 PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
 
-
 @router.post("/", response_model=schemas.ChainOfCustodyOut)
 async def log_custody_event(
-    event: schemas.ChainOfCustodyCreate,
+    event: str = Form(...),  # ✅ Changed to accept form-data JSON as string
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user),
     file: UploadFile = File(None),
 ):
+    # ✅ Parse the JSON string from the "event" field
+    event_data = json.loads(event)
+    event = schemas.ChainOfCustodyCreate(**event_data)
+
     # Step 1: Validate trip and multi-tenancy
     trip = db.query(models.Trip).filter(models.Trip.id == event.trip_id).first()
     if not trip:
@@ -68,7 +72,8 @@ async def log_custody_event(
         size_mb = len(contents) / (1024 * 1024)
         if size_mb > MAX_FILE_SIZE_MB:
             raise HTTPException(
-                status_code=400, detail=f"File too large. Max size is {MAX_FILE_SIZE_MB} MB"
+                status_code=400,
+                detail=f"File too large. Max size is {MAX_FILE_SIZE_MB} MB"
             )
 
         # safe S3 key with org + trip context
@@ -133,7 +138,6 @@ async def log_custody_event(
         attachment_urls=attachment_urls,
         timestamp=custody_log.timestamp,
     )
-
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
 async def get_custody_events(
     trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
