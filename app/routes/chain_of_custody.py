@@ -410,7 +410,7 @@ def custody_chart_data(
 
     return fig.to_dict()
 
-@router.get("/export/{trip_id}")
+@router.get("/export_all/{trip_id}")
 def export_custody_log(
     trip_id: UUID,
     format: str = "csv",
