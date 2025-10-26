@@ -147,6 +147,7 @@ async def log_custody_event(
     
 # ✅ Generate a presigned upload URL for signatures or related files
 # ✅ Generate a presigned upload URL for signature images
+from app.config import settings
 @router.get("/upload/signature-url")
 async def get_signature_upload_url(
     file_ext: str = "png",
@@ -181,7 +182,7 @@ async def get_signature_upload_url(
     )
 
     # Construct final public S3 URL
-    public_url = f"https://medilogic-storage.s3.eu-west-2.amazonaws.com/{s3_key}"
+    public_url = public_url = f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
 
     return {
         "upload_url": upload_url,   # frontend PUTs the file here
