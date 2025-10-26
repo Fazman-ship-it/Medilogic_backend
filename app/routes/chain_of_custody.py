@@ -38,12 +38,28 @@ ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
 MAX_FILE_SIZE_MB = 8
 PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
 
+@import json
+import os
+import uuid
+from typing import List
+from fastapi import Form, File, UploadFile, HTTPException, Depends
+from sqlalchemy.orm import Session
+from app import models, schemas, database
+from app.utilites.time_utilities import now_utc
+from app.utilites.storage_utilites import upload_file_to_s3_async, delete_file_from_s3, generate_presigned_url_async
+from app.utilites.activity_logger import log_activity
+
+ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
+MAX_FILE_SIZE_MB = 8
+PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
+
+
 @router.post("/", response_model=schemas.ChainOfCustodyOut)
 async def log_custody_event(
-    event: str = Form(...),  # ✅ Changed to accept form-data JSON as string
+    event: str = Form(...),  # ✅ still accepts JSON as string
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user),
-    file: UploadFile = File(None),
+    files: List[UploadFile] = File(None),  # ✅ changed from single file to multiple
 ):
     # ✅ Parse the JSON string from the "event" field
     event_data = json.loads(event)
@@ -57,46 +73,46 @@ async def log_custody_event(
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized for this trip")
 
-    # Step 2: Prepare optional upload
-    s3_key = None
-    mime_type = None
-    contents = None
+    # Step 2: Prepare uploads
+    attachment_urls = []
+    s3_keys = []
 
-    if file:
-        ext = os.path.splitext(file.filename)[-1].lower()
-        if ext not in ALLOWED_EXTS:
-            raise HTTPException(status_code=400, detail="Unsupported file type")
+    if files:
+        for file in files:
+            ext = os.path.splitext(file.filename)[-1].lower()
+            if ext not in ALLOWED_EXTS:
+                raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 
-        # ✅ async read (since UploadFile is async)
-        contents = await file.read()
+            contents = await file.read()
+            size_mb = len(contents) / (1024 * 1024)
+            if size_mb > MAX_FILE_SIZE_MB:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {file.filename} too large. Max size is {MAX_FILE_SIZE_MB} MB"
+                )
 
-        size_mb = len(contents) / (1024 * 1024)
-        if size_mb > MAX_FILE_SIZE_MB:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File too large. Max size is {MAX_FILE_SIZE_MB} MB"
-            )
+            # Generate safe S3 key
+            unique_filename = f"{uuid.uuid4()}{ext}"
+            s3_key = f"custody_photos/{trip.organization_id}/{unique_filename}"
+            s3_keys.append(s3_key)
 
-        # safe S3 key with org + trip context
-        unique_filename = f"{uuid.uuid4()}{ext}"
-        s3_key = f"custody_photos/{trip.organization_id}/{unique_filename}"
-        mime_type = file.content_type or (
-            "application/pdf" if ext == ".pdf" else f"image/{ext.replace('.', '')}"
-        )
-
-    # Step 3: Upload + DB in a safe transaction
-    try:
-        if s3_key:
-            # ✅ use async helper
+            # Upload to S3
             await upload_file_to_s3_async(file, prefix=f"custody_photos/{trip.organization_id}")
 
+            # Generate presigned URL
+            url = await generate_presigned_url_async(s3_key, expires_in=PRESIGNED_EXPIRES)
+            attachment_urls.append(url)
+
+    # Step 3: Save to DB in a transaction
+    try:
         custody_log = models.ChainOfCustody(
             trip_id=event.trip_id,
             driver_id=current_user.id,
             event_type=event.event_type,
             location=event.location,
             notes=event.notes,
-            attachment_url=s3_key,  # store S3 key only
+            # ✅ store the list of S3 keys (comma-separated for simplicity)
+            attachment_url=",".join(s3_keys) if s3_keys else None,
             timestamp=now_utc(),
             organization_id=current_user.organization_id,
         )
@@ -106,11 +122,12 @@ async def log_custody_event(
 
     except Exception as exc:
         db.rollback()
-        try:
-            if s3_key:
-                await delete_file_from_s3(s3_key)  # ✅ async cleanup
-        except Exception:
-            pass
+        # ✅ Cleanup failed uploads
+        for key in s3_keys:
+            try:
+                await delete_file_from_s3(key)
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Failed to create custody log: {str(exc)}")
 
     # Step 4: Activity log
@@ -122,13 +139,7 @@ async def log_custody_event(
         trip_id=event.trip_id,
     )
 
-    # Step 5: Generate presigned URL(s)
-    attachment_urls = []
-    if s3_key:
-        url = await generate_presigned_url_async(s3_key, expires_in=PRESIGNED_EXPIRES)
-        attachment_urls.append(url)
-
-    # Step 6: Return API-friendly response
+    # Step 5: Return response
     return schemas.ChainOfCustodyOut(
         id=custody_log.id,
         trip_id=custody_log.trip_id,
@@ -136,9 +147,10 @@ async def log_custody_event(
         event_type=custody_log.event_type,
         location=custody_log.location,
         notes=custody_log.notes,
-        attachment_urls=attachment_urls,
+        attachment_urls=attachment_urls,  # ✅ now includes multiple URLs
         timestamp=custody_log.timestamp,
     )
+
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
 async def get_custody_events(
     trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
