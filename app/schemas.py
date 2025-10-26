@@ -827,7 +827,7 @@ class ChainOfCustodyOut(BaseModel):
     timestamp: datetime
     location: Optional[str] = None
     notes: Optional[str] = None
-    attachment_url: List[str]= []
+    attachment_urls: Optional[List[str]] = []
     signature_image_url: Optional[str] = None
     signature_timestamp: Optional[datetime] = None
     signed_by: Optional[str] = None
