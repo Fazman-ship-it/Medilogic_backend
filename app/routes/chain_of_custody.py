@@ -38,14 +38,15 @@ ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
 MAX_FILE_SIZE_MB = 8
 PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
 
-
 @router.post("/", response_model=schemas.ChainOfCustodyOut)
 async def log_custody_event(
     event: str = Form(...),  # ✅ still accepts JSON as string
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(get_current_user),
-    files: List[UploadFile] = File(None),  # ✅ changed from single file to multiple
+    files: List[UploadFile] = File(None),  # ✅ now supports multiple file uploads
 ):
+    import json
+
     # ✅ Parse the JSON string from the "event" field
     event_data = json.loads(event)
     event = schemas.ChainOfCustodyCreate(**event_data)
@@ -96,8 +97,11 @@ async def log_custody_event(
             event_type=event.event_type,
             location=event.location,
             notes=event.notes,
-            # ✅ store the list of S3 keys (comma-separated for simplicity)
-            attachment_url=",".join(s3_keys) if s3_keys else None,
+            signed_by=event.signed_by,
+            signature_image_url=event.signature_image_url,
+            signature_timestamp=event.signature_timestamp,
+            witness_name=event.witness_name,
+            attachment_url=",".join(s3_keys) if s3_keys else None,  # ✅ multiple file keys stored
             timestamp=now_utc(),
             organization_id=current_user.organization_id,
         )
@@ -132,10 +136,15 @@ async def log_custody_event(
         event_type=custody_log.event_type,
         location=custody_log.location,
         notes=custody_log.notes,
-        attachment_urls=attachment_urls,  # ✅ now includes multiple URLs
+        signed_by=custody_log.signed_by,
+        signature_image_url=custody_log.signature_image_url,
+        signature_timestamp=custody_log.signature_timestamp,
+        witness_name=custody_log.witness_name,
+        organization_id=custody_log.organization_id,
+        attachment_urls=attachment_urls,  # ✅ now supports multiple URLs
         timestamp=custody_log.timestamp,
     )
-
+    
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
 async def get_custody_events(
     trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
