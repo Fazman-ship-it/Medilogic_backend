@@ -145,6 +145,44 @@ async def log_custody_event(
         timestamp=custody_log.timestamp,
     )
     
+# ✅ Generate a presigned upload URL for signatures or related files
+@router.get("/upload/signature-url")
+async def get_signature_upload_url(
+    file_ext: str = "png",  # frontend can send ?file_ext=jpg or ?file_ext=pdf
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Generates a secure presigned URL for uploading a signature image or file directly to S3.
+    Supports PNG, JPG, JPEG, and PDF formats.
+    The frontend uploads the file to this URL, then sends the returned S3 URL
+    as `signature_image_url` (or related field) when creating the custody log.
+    """
+
+    allowed_exts = {"png", "jpg", "jpeg", "pdf"}
+    file_ext = file_ext.lower().replace(".", "")
+
+    if file_ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+
+    # Create unique S3 key for this user’s organization
+    s3_key = f"signatures/{current_user.organization_id}/{uuid.uuid4()}.{file_ext}"
+
+    # Generate a presigned PUT URL (valid for 5 minutes)
+    upload_url = await generate_presigned_url_async(
+        s3_key,
+        method="put_object",
+        expires_in=300  # URL valid for 5 minutes
+    )
+
+    # Construct the final public URL to store in DB
+    public_url = f"https://medilogic-storage.s3.eu-west-2.amazonaws.com/{s3_key}"
+
+    return {
+        "upload_url": upload_url,   # 👉 frontend PUTs file to this URL
+        "file_key": s3_key,         # optional internal key reference
+        "file_url": public_url      # 👉 send this as `signature_image_url` in custody log
+    }
+       
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
 async def get_custody_events(
     trip_id: UUID = Path(..., description="Trip ID to fetch custody events for"),
