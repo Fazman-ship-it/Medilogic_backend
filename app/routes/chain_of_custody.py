@@ -38,21 +38,6 @@ ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
 MAX_FILE_SIZE_MB = 8
 PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
 
-@import json
-import os
-import uuid
-from typing import List
-from fastapi import Form, File, UploadFile, HTTPException, Depends
-from sqlalchemy.orm import Session
-from app import models, schemas, database
-from app.utilites.time_utilities import now_utc
-from app.utilites.storage_utilites import upload_file_to_s3_async, delete_file_from_s3, generate_presigned_url_async
-from app.utilites.activity_logger import log_activity
-
-ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".pdf"}
-MAX_FILE_SIZE_MB = 8
-PRESIGNED_EXPIRES = 600  # seconds (10 minutes)
-
 
 @router.post("/", response_model=schemas.ChainOfCustodyOut)
 async def log_custody_event(
