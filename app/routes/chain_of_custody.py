@@ -170,7 +170,6 @@ async def get_signature_upload_url(
     # Generate a presigned PUT URL (valid for 5 minutes)
     upload_url = await generate_presigned_url_async(
         s3_key,
-        method="put_object",
         expires_in=300  # URL valid for 5 minutes
     )
 
