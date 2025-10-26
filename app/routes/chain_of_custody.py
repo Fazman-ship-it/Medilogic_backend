@@ -146,40 +146,48 @@ async def log_custody_event(
     )
     
 # ✅ Generate a presigned upload URL for signatures or related files
+# ✅ Generate a presigned upload URL for signature images
 @router.get("/upload/signature-url")
 async def get_signature_upload_url(
-    file_ext: str = "png",  # frontend can send ?file_ext=jpg or ?file_ext=pdf
+    file_ext: str = "png",
     current_user: models.User = Depends(get_current_user)
 ):
     """
-    Generates a secure presigned URL for uploading a signature image or file directly to S3.
-    Supports PNG, JPG, JPEG, and PDF formats.
-    The frontend uploads the file to this URL, then sends the returned S3 URL
-    as `signature_image_url` (or related field) when creating the custody log.
+    Generates a secure presigned URL for uploading a signature (png/jpg/pdf)
+    directly to S3. The frontend uploads to this URL, then stores the returned
+    `file_url` as `signature_image_url` when creating the custody log.
     """
 
-    allowed_exts = {"png", "jpg", "jpeg", "pdf"}
-    file_ext = file_ext.lower().replace(".", "")
+    # Supported file types and their MIME types
+    content_type_map = {
+        "png": "image/png",
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "pdf": "application/pdf",
+    }
 
-    if file_ext not in allowed_exts:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+    # Determine MIME type or default fallback
+    content_type = content_type_map.get(file_ext.lower(), "application/octet-stream")
 
-    # Create unique S3 key for this user’s organization
-    s3_key = f"signatures/{current_user.organization_id}/{uuid.uuid4()}.{file_ext}"
+    # Create unique S3 key
+    s3_key = f"signatures/{current_user.organization_id}/{uuid.uuid4()}.{file_ext.lower()}"
 
     # Generate a presigned PUT URL (valid for 5 minutes)
     upload_url = await generate_presigned_url_async(
         s3_key,
-        expires_in=300  # URL valid for 5 minutes
+        method="put_object",
+        expires_in=300,  # 5 minutes
+        content_type=content_type  # 👈 IMPORTANT: include this
     )
 
-    # Construct the final public URL to store in DB
+    # Construct final public S3 URL
     public_url = f"https://medilogic-storage.s3.eu-west-2.amazonaws.com/{s3_key}"
 
     return {
-        "upload_url": upload_url,   # 👉 frontend PUTs file to this URL
-        "file_key": s3_key,         # optional internal key reference
-        "file_url": public_url      # 👉 send this as `signature_image_url` in custody log
+        "upload_url": upload_url,   # frontend PUTs the file here
+        "file_key": s3_key,
+        "file_url": public_url,     # send this as `signature_image_url`
+        "content_type": content_type,
     }
        
 @router.get("/{trip_id}", response_model=List[schemas.ChainOfCustodyOut])
