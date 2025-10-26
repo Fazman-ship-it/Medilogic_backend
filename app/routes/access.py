@@ -20,7 +20,7 @@ from app.config import settings
 import secrets
 from fastapi import Request  # ✅ Add this import at the top
 from uuid import uuid4  # ✅ Import uuid4 for generating session IDs
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc,to_utc
 # Set up FastAPI router
 router = APIRouter()
 
@@ -101,7 +101,7 @@ from fastapi import Request  # ✅ Make sure this is imported
 from uuid import uuid4
 from datetime import timedelta
 from app import models
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc,to_utc
 
 @router.post("/login-step-2")
 def login_step_2(
