@@ -43,21 +43,41 @@ async def upload_file_to_s3_async(file, prefix: str, filename: str = None, conte
 
     return key
 
-async def generate_presigned_url_async(key: str, expires_in: int = 3600) -> str:
-    """Generate presigned URL asynchronously"""
+async def generate_presigned_url_async(
+    key: str,
+    method: str = "get_object",
+    expires_in: int = 3600,
+    content_type: str | None = None
+) -> str:
+    """
+    Generate a presigned URL asynchronously for S3.
+
+    Supports both 'get_object' (download) and 'put_object' (upload) methods.
+    Optionally includes ContentType for uploads (important for jpg/png/pdf).
+    """
     session = aioboto3.Session()
+
     async with session.client(
         "s3",
         aws_access_key_id=AWS_ACCESS_KEY,
         aws_secret_access_key=AWS_SECRET_KEY,
-        region_name=AWS_REGION
+        region_name=AWS_REGION,
     ) as s3:
+
+        params = {"Bucket": AWS_BUCKET, "Key": key}
+
+        # ✅ Include ContentType if provided (used for uploads)
+        if content_type:
+            params["ContentType"] = content_type
+
         url = await s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": AWS_BUCKET, "Key": key},
-            ExpiresIn=expires_in
+            ClientMethod=method,
+            Params=params,
+            ExpiresIn=expires_in,
         )
+
     return url
+
 
 async def handle_file_upload(app, file: UploadFile, prefix: str, field_name: str, db, user_id: uuid.UUID, action: str):
     """Generic helper to upload, update DB, log, and return presigned URL"""
