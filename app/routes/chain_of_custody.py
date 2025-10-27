@@ -296,7 +296,7 @@ async def export_custody_log(
                 event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 event.event_type,
                 event.location,
-                driver.full_name if driver else "Unknown",
+                driver.name if driver else "Unknown",
                 event.notes or "",
                 attachment_url
             ])
@@ -373,7 +373,7 @@ async def export_custody_log(
                 e.timestamp.strftime("%Y-%m-%d %H:%M"),
                 e.event_type,
                 e.location,
-                driver.full_name if driver else "Unknown",
+                driver.name if driver else "Unknown",
                 e.notes or "",
                 attachment_url
             ])
@@ -528,7 +528,7 @@ def export_custody_log(
                 event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 event.event_type,
                 event.location,
-                driver.full_name if driver else "Unknown",
+                driver.name if driver else "Unknown",
                 event.notes,
                 event.attachment_url or ""
             ])
