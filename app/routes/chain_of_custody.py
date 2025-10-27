@@ -407,7 +407,6 @@ async def export_custody_log(
         )
 
 
-
 @router.get("/analytics/{trip_id}")
 def custody_chart_data(
     trip_id: UUID,
@@ -418,7 +417,7 @@ def custody_chart_data(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    # Authorization
+    # ✅ Authorization checks
     if current_user.role == "driver" and trip.driver_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     if current_user.role == "client" and trip.client_name != current_user.name:
@@ -426,14 +425,18 @@ def custody_chart_data(
     if trip.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    events = db.query(models.ChainOfCustody)\
-        .filter_by(trip_id=trip_id)\
-        .order_by(models.ChainOfCustody.timestamp).all()
+    # ✅ Get custody events
+    events = (
+        db.query(models.ChainOfCustody)
+        .filter_by(trip_id=trip_id)
+        .order_by(models.ChainOfCustody.timestamp)
+        .all()
+    )
 
     if not events:
         raise HTTPException(status_code=404, detail="No events found")
 
-    # Prepare chart data
+    # ✅ Prepare chart data
     timestamps = [e.timestamp for e in events]
     event_types = [e.event_type for e in events]
     drivers = [
@@ -441,10 +444,11 @@ def custody_chart_data(
          if db.query(models.User).filter_by(id=e.driver_id).first() else "Unknown")
         for e in events
     ]
-    severity_colors = {"low": "green", "moderate": "orange", "critical": "red"}
-    colors = [severity_colors.get(e.severity.lower(), "blue") for e in events]
 
-    # Plotly Scatter Timeline
+    # ✅ Use a single color (blue) for all points
+    colors = ["blue" for _ in events]
+
+    # ✅ Plotly Scatter Timeline
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=timestamps,
