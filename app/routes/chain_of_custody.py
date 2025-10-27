@@ -437,7 +437,7 @@ def custody_chart_data(
     timestamps = [e.timestamp for e in events]
     event_types = [e.event_type for e in events]
     drivers = [
-        (db.query(models.User).filter_by(id=e.driver_id).first().full_name 
+        (db.query(models.User).filter_by(id=e.driver_id).first().name
          if db.query(models.User).filter_by(id=e.driver_id).first() else "Unknown")
         for e in events
     ]
