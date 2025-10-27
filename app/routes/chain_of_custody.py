@@ -182,7 +182,7 @@ async def get_signature_upload_url(
     )
 
     # Construct final public S3 URL
-    public_url = public_url = public_url = f"https://{settings.AWS_S3_BUCKET}.s3.{settings.AWS_REGION}.amazonaws.com/{s3_key}"
+    public_url = f"https://medilogic-uploads-prod.s3.eu-west-2.amazonaws.com/{s3_key}"
 
     return {
         "upload_url": upload_url,   # frontend PUTs the file here
