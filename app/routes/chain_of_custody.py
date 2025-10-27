@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+I'm from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 from app import models, schemas, database
 from app.dependencies import get_current_user
@@ -240,7 +240,7 @@ async def get_custody_events(
         user_id=current_user.id,
         trip_id=trip.id,
         action="Viewed custody events",
-        details=f"User {getattr(current_user, 'full_name', current_user.id)} retrieved custody events for trip {trip.id}"
+        details=f"User {getattr(current_user, 'name', current_user.id)} retrieved custody events for trip {trip.id}"
     )
 
     return response_events
