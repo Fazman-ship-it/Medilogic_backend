@@ -248,7 +248,6 @@ async def get_custody_events(
 @router.get("/export/{trip_id}")
 async def export_custody_log(
     trip_id: UUID,
-    format: str = "csv",  # Supports "csv" and "pdf"
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -273,138 +272,39 @@ async def export_custody_log(
     if not events:
         raise HTTPException(status_code=404, detail="No custody events found for this trip")
 
-    # --- EXPORT TO CSV ---
-    if format.lower() == "csv":
-        output = io.StringIO()
-        writer = csv.writer(output)
+    # --- EXPORT TO CSV ONLY ---
+    output = io.StringIO()
+    writer = csv.writer(output)
 
-        # Write header row
+    # Write header row
+    writer.writerow([
+        "Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachments"
+    ])
+
+    for event in events:
+        driver = db.query(User).filter(User.id == event.driver_id).first()
+
+        # ✅ Use async helper for presigned URLs
+        attachment_url = (
+            await generate_presigned_url_async(event.attachment_url)
+            if event.attachment_url else ""
+        )
+
         writer.writerow([
-            "Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachments"
+            event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            event.event_type,
+            event.location,
+            driver.name if driver else "Unknown",
+            event.notes or "",
+            attachment_url
         ])
 
-        for event in events:
-            driver = db.query(User).filter(User.id == event.driver_id).first()
-
-            # ✅ Use async helper for presigned URLs
-            attachment_url = (
-                await generate_presigned_url_async(event.attachment_url)
-                if event.attachment_url else ""
-            )
-
-            writer.writerow([
-                event.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                event.event_type,
-                event.location,
-                driver.name if driver else "Unknown",
-                event.notes or "",
-                attachment_url
-            ])
-
-        output.seek(0)
-        return StreamingResponse(
-            output,
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=custody_trip_{trip_id}.csv"}
-        )
-
-    # --- EXPORT TO PDF ---
-    elif format.lower() == "pdf":
-        from reportlab.lib.pagesizes import A4
-        from reportlab.pdfgen import canvas
-        from reportlab.platypus import Table, TableStyle
-        from reportlab.lib import colors
-
-        # Generate chart of event counts
-        event_counts = {}
-        for e in events:
-            event_counts[e.event_type] = event_counts.get(e.event_type, 0) + 1
-
-        plt.figure(figsize=(6, 3))
-        plt.bar(event_counts.keys(), event_counts.values(), color="#4e73df")
-        plt.title("Custody Event Frequency", fontsize=12)
-        plt.xlabel("Event Type", fontsize=10)
-        plt.ylabel("Count", fontsize=10)
-        plt.tight_layout()
-
-        # Save chart to bytes
-        chart_bytes = io.BytesIO()
-        plt.savefig(chart_bytes, format="PNG")
-        plt.close()
-        chart_bytes.seek(0)
-
-        # Create PDF
-        pdf_bytes = io.BytesIO()
-        c = canvas.Canvas(pdf_bytes, pagesize=A4)
-        width, height = A4
-
-        # Header
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(50, height - 50, "Medilogic - Chain of Custody Report")
-        c.setFont("Helvetica", 11)
-        y = height - 80
-        c.drawString(50, y, f"Trip ID: {trip_id}")
-        y -= 15
-        c.drawString(50, y, f"Client: {trip.client_name}")
-        y -= 15
-        c.drawString(50, y, f"Driver: {current_user.name}")
-        y -= 15
-        c.drawString(50, y, f"Total Events: {len(events)}")
-        y -= 30
-
-        # Draw chart
-        from reportlab.lib.utils import ImageReader
-        chart_image = ImageReader(chart_bytes)
-        c.drawImage(chart_image, 50, y - 140, width=500, height=140)
-        y -= 160
-
-        # Table of events
-        table_data = [["Timestamp", "Event Type", "Location", "Driver", "Notes", "Attachment URL"]]
-        for e in events:
-            driver = db.query(User).filter(User.id == e.driver_id).first()
-
-            # ✅ Use async helper for presigned URLs
-            attachment_url = (
-                await generate_presigned_url_async(e.attachment_url)
-                if e.attachment_url else ""
-            )
-
-            table_data.append([
-                e.timestamp.strftime("%Y-%m-%d %H:%M"),
-                e.event_type,
-                e.location,
-                driver.name if driver else "Unknown",
-                e.notes or "",
-                attachment_url
-            ])
-
-        table = Table(table_data, colWidths=[80, 70, 100, 80, 140, 120])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#dee2e6")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#212529")),
-            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
-            ('FONTSIZE', (0,0), (-1,-1), 8),
-            ('GRID', (0,0), (-1,-1), 0.25, colors.grey),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ]))
-        table.wrapOn(c, width, height)
-        table.drawOn(c, 50, max(y - len(events)*12, 50))
-
-        c.showPage()
-        c.save()
-        pdf_bytes.seek(0)
-
-        return StreamingResponse(
-            pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=custody_trip_{trip_id}.pdf"}
-        )
-
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported export format. Use ?format=csv or ?format=pdf"
-        )
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=custody_trip_{trip_id}.csv"}
+    )
 
 
 @router.get("/analytics/{trip_id}")
