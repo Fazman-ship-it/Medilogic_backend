@@ -5,7 +5,8 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 import os
-from app.utilites.time_utilities import now_utc,to_local,to_utc  # ✅ Import your new global utilities
+from app.utilites.time_utilities import now_utc, to_local, to_utc  # ✅ Import your global utilities
+
 
 def generate_pod_pdf(pod, filename):
     # ✅ Create tenant-specific folder path
@@ -13,10 +14,10 @@ def generate_pod_pdf(pod, filename):
     folder_path = os.path.join("app", "uploads", "pods", f"org_{org_id}")
     os.makedirs(folder_path, exist_ok=True)
 
-    # ✅ Full path
+    # ✅ Full file path
     path = os.path.join(folder_path, filename)
 
-    # ✅ Get the organization timezone (fallback to Africa/Lagos)
+    # ✅ Get organization timezone (fallback to Africa/Lagos)
     org_timezone = getattr(pod.driver.organization, "timezone", "Africa/Lagos")
 
     # ✅ Convert timestamp to both UTC and local
@@ -25,7 +26,7 @@ def generate_pod_pdf(pod, filename):
 
     # Format the timestamps
     utc_time = utc_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-    local_time = local_dt.strftime(f"%Y-%m-%d %H:%M:%S %Z")  # e.g. BST, WAT, EST
+    local_time = local_dt.strftime(f"%Y-%m-%d %H:%M:%S %Z")
 
     # ✅ Start PDF
     c = canvas.Canvas(path, pagesize=A4)
@@ -58,14 +59,6 @@ def generate_pod_pdf(pod, filename):
     line("Timestamp (UTC)", utc_time)
     line("Timestamp (Local)", local_time)
     line("Notes", pod.notes or "None")
-
-    # --- OPTIONAL: Signature block ---
-    if pod.signature_path and os.path.exists(pod.signature_path):
-        y -= 30
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(1 * inch, y, "Signature:")
-        c.drawImage(pod.signature_path, 2.8 * inch, y - 40, width=100, height=40, mask='auto')
-        y -= 50
 
     # --- FOOTER ---
     c.setFont("Helvetica-Oblique", 9)
