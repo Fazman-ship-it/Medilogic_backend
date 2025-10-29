@@ -216,35 +216,42 @@ def get_driver_trips(
 
     # ✅ Return structured trip info
     return {
-        "driver_id": driver_id,
-        "total_trips": len(trips),
-        "assigned_trips": [
-            {
-                "trip_id": t.id,
-                "trip_label": f"{t.client_name} — {t.delivery_type or 'Unspecified'}",  # 🧠 for UI dropdown
-                "delivery_type": (
-                    t.custom_delivery_description
-                    if t.delivery_type and str(t.delivery_type).lower() == "others"
-                    else (t.delivery_type if t.delivery_type else None)
-                ),
-                "client_name": t.client_name,
-                "pickup_location": t.pickup_location,
-                "dropoff_location": t.dropoff_location,
-                "scheduled_time": t.scheduled_time,
-                "created_at": t.created_at,
-                "status": t.status,   # ✅ plain string
-                "priority": t.priority,
-                "vehicle_type": t.vehicle_type,
-                "distance_km": t.distance_km,
-                "cost": t.cost,
-                "compliance_flag": t.compliance_flag,
-                "shift_window": t.shift_window,
-                "recurrence_rule": t.recurrence_rule,
-                "notes": t.notes,
-            }
-            for t in trips
-        ]
-    }
+    "driver_id": driver_id,
+    "total_trips": len(trips),
+    "assigned_trips": [
+        {
+            "trip_id": t.id,
+            # 👇 Trip label now shows the custom description when delivery_type == 'others'
+            "trip_label": f"{t.client_name} — {(
+                t.custom_delivery_description
+                if t.delivery_type and str(t.delivery_type).lower() == 'others'
+                else (t.delivery_type or 'Unspecified')
+            )}",
+            # 👇 delivery_type field also matches custom text for 'others'
+            "delivery_type": (
+                t.custom_delivery_description
+                if t.delivery_type and str(t.delivery_type).lower() == "others"
+                else (t.delivery_type if t.delivery_type else None)
+            ),
+            "client_name": t.client_name,
+            "pickup_location": t.pickup_location,
+            "dropoff_location": t.dropoff_location,
+            "scheduled_time": t.scheduled_time,
+            "created_at": t.created_at,
+            "status": t.status,
+            "priority": t.priority,
+            "vehicle_type": t.vehicle_type,
+            "distance_km": t.distance_km,
+            "cost": t.cost,
+            "compliance_flag": t.compliance_flag,
+            "shift_window": t.shift_window,
+            "recurrence_rule": t.recurrence_rule,
+            "notes": t.notes,
+        }
+        for t in trips
+    ]
+}
+
 
 # ✅ Optional: Auto-detect driver from JWT (for mobile apps)
 # @router.get("/driver/trips", summary="Get all trips for the logged-in driver")
