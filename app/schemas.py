@@ -70,7 +70,7 @@ class PaginatedTripsResponse(BaseModel):
 
 class DriverTrip(BaseModel):
     trip_id: UUID
-    delivery_type: Optional[str]
+    delivery_type: DeliveryType
     client_name: Optional[str]
     pickup_location: Optional[str]
     dropoff_location: Optional[str]
