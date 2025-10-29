@@ -84,6 +84,7 @@ class DriverTrip(BaseModel):
     shift_window: Optional[str]
     recurrence_rule: Optional[str]
     notes: Optional[str]
+    custom_delivery_description: Optional[str] = None
     
 class DriverDashboardResponse(BaseModel):
     driver_id: UUID
