@@ -247,6 +247,7 @@ def get_driver_trips(
             "shift_window": t.shift_window,
             "recurrence_rule": t.recurrence_rule,
             "notes": t.notes,
+            "custom_delivery_description": t.custom_ delivery_description,
         }
         for t in trips
     ]
