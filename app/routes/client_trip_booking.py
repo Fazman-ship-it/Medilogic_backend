@@ -142,3 +142,72 @@ def update_trip_status(
     )
 
     return {"message": f"Trip {trip.id} status updated to {trip.status}"}
+    
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import desc, case
+from datetime import datetime
+from uuid import UUID
+from typing import List, Optional
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.utilites.time_utilities import to_utc, now_utc,to_local
+
+
+@router.get("/assigned", response_model=List[schemas.TripResponse], summary="Get trips assigned to the current client or their organization")
+def get_assigned_client_trips(
+    status: Optional[str] = Query(None, description="Filter by trip status"),
+    delivery_type: Optional[str] = Query(None, description="Filter by delivery type"),
+    start_date: Optional[datetime] = Query(None, description="Start of date range"),
+    end_date: Optional[datetime] = Query(None, description="End of date range"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Retrieve all trips assigned to the logged-in client.
+    - Clients see only their own trips.
+    - Admins/managers see all client trips within their organization.
+    - Sorted by most recent trips first.
+    """
+
+    # ✅ Access control: drivers cannot use this endpoint
+    if current_user.role == "driver":
+        raise HTTPException(status_code=403, detail="Drivers cannot view client trips.")
+
+    # ✅ Base query — organization scoped
+    query = db.query(models.Trip).filter(
+        models.Trip.organization_id == current_user.organization_id
+    )
+
+    # If client, limit to their own trips only
+    if current_user.role == "client":
+        query = query.filter(models.Trip.client_id == current_user.id)
+
+    # ✅ Apply filters
+    if status:
+        query = query.filter(models.Trip.status.ilike(f"%{status}%"))
+    if delivery_type:
+        query = query.filter(models.Trip.delivery_type.ilike(f"%{delivery_type}%"))
+    if start_date and end_date:
+        query = query.filter(models.Trip.scheduled_time.between(start_date, end_date))
+
+    # ✅ Sort: most recent trips first
+    trips = query.order_by(
+        desc(
+            case(
+                (models.Trip.scheduled_time != None, models.Trip.scheduled_time),
+                else_=models.Trip.created_at
+            )
+        )
+    ).all()
+
+    # ✅ Convert timestamps to local time
+    for t in trips:
+        if t.scheduled_time:
+            t.scheduled_time = to_local(t.scheduled_time)
+        if t.created_at:
+            t.created_at = to_local(t.created_at)
+
+    # ✅ Return all assigned trips directly (schema handles structure)
+    return trips
