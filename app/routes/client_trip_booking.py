@@ -155,7 +155,11 @@ from app.dependencies import get_current_user
 from app.utilites.time_utilities import to_utc, now_utc,to_local
 
 
-@router.get("/assigned", summary="Get trips assigned to the current client or their organization")
+@router.get(
+    "/assigned",
+    response_model=schemas.ClientAssignedTripsResponse,
+    summary="Get trips assigned to the current client or their organization"
+)
 def get_assigned_client_trips(
     status: Optional[str] = Query(None, description="Filter by trip status"),
     delivery_type: Optional[str] = Query(None, description="Filter by delivery type"),
