@@ -155,12 +155,9 @@ from app.dependencies import get_current_user
 from app.utilites.time_utilities import to_utc, now_utc,to_local
 
 
-@router.get(
-    "/assigned",
-    response_model=schemas.ClientAssignedTripsResponse,
-    summary="Get trips assigned to the current client or their organization"
-)
-def get_assigned_client_trips(
+@router.get("/client/{client_id}/trips", summary="Get all trips assigned to a client")
+def get_client_trips(
+    client_id: UUID,
     status: Optional[str] = Query(None, description="Filter by trip status"),
     delivery_type: Optional[str] = Query(None, description="Filter by delivery type"),
     start_date: Optional[datetime] = Query(None, description="Start of date range"),
@@ -169,23 +166,24 @@ def get_assigned_client_trips(
     current_user: models.User = Depends(get_current_user)
 ):
     """
-    Retrieve all trips assigned to the logged-in client.
-    - Clients see only their own trips.
-    - Admins/managers see all client trips within their organization.
-    - Sorted by most recent trips first.
+    Retrieve all trips associated with a specific client.
+    - Clients can view only their own trips.
+    - Admins and managers can view any client’s trips.
+    - Sorted so most recent trips appear first for better UX.
     """
 
-    # ✅ Access control
+    # ✅ Access Control
     if current_user.role == "driver":
         raise HTTPException(status_code=403, detail="Drivers cannot view client trips.")
 
-    # ✅ Base query
+    if current_user.role == "client" and current_user.id != client_id:
+        raise HTTPException(status_code=403, detail="You can only view your own assigned trips.")
+
+    # ✅ Base Query
     query = db.query(models.Trip).filter(
+        models.Trip.client_id == client_id,
         models.Trip.organization_id == current_user.organization_id
     )
-
-    if current_user.role == "client":
-        query = query.filter(models.Trip.client_id == current_user.id)
 
     # ✅ Apply filters
     if status:
@@ -195,7 +193,7 @@ def get_assigned_client_trips(
     if start_date and end_date:
         query = query.filter(models.Trip.scheduled_time.between(start_date, end_date))
 
-    # ✅ Sort by most recent
+    # ✅ UX Enhancement: Show most recent trips first
     trips = query.order_by(
         desc(
             case(
@@ -212,18 +210,24 @@ def get_assigned_client_trips(
         if t.created_at:
             t.created_at = to_local(t.created_at)
 
-    # ✅ Structure response for frontend clarity
+    # ✅ Return structured trip info
     return {
-        "client_id": current_user.id,
+        "client_id": client_id,
         "total_trips": len(trips),
         "assigned_trips": [
             {
                 "trip_id": t.id,
-                "trip_label": f"{t.driver_name or 'Unassigned'} — {(
+                # 👇 Trip label now shows custom text for 'others'
+                "trip_label": f"{t.client_name} — {(
                     t.custom_delivery_description
                     if t.delivery_type and str(t.delivery_type).lower() == 'others'
                     else (t.delivery_type or 'Unspecified')
                 )}",
+                "delivery_type": (
+                    t.custom_delivery_description
+                    if t.delivery_type and str(t.delivery_type).lower() == "others"
+                    else (t.delivery_type if t.delivery_type else None)
+                ),
                 "driver_name": t.driver_name,
                 "pickup_location": t.pickup_location,
                 "dropoff_location": t.dropoff_location,
