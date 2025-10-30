@@ -36,50 +36,64 @@ def create_trip(
             detail="Custom delivery description is required when delivery type is 'Others'."
         )
 
-    # ✅ Prepare trip data
     trip_data = trip.dict()
 
-    # 🔹 Inject organization_id automatically
+    # ✅ Inject organization_id automatically (from admin)
     trip_data["organization_id"] = current_user.organization_id
 
-    # 🔹 Optional driver: set None if not provided
+    # ✅ Validate and assign client if provided
+    if trip_data.get("client_id"):
+        client = db.query(models.User).filter(
+            models.User.id == trip_data["client_id"],
+            models.User.organization_id == current_user.organization_id,
+            models.User.role == "client"
+        ).first()
+
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found or not in your organization.")
+    else:
+        trip_data["client_id"] = None  # optional client
+
+    # ✅ Optional driver: set None if not provided
     if not trip_data.get("driver_id"):
         trip_data["driver_id"] = None
 
-    # 🔹 Convert schedule_time to UTC before saving
-    if "scheduled_time" in trip_data:
+    # ✅ Convert scheduled_time to UTC before saving
+    if "scheduled_time" in trip_data and trip_data["scheduled_time"]:
         trip_data["scheduled_time"] = to_utc(trip_data["scheduled_time"])
 
-    # Ensure status is valid; default to pending
+    # ✅ Validate status, default to pending
     status_value = trip_data.get("status", TripStatus.pending.value)
     if status_value not in [s.value for s in TripStatus]:
         raise HTTPException(status_code=400, detail="Invalid trip status")
     trip_data["status"] = status_value
 
+    # ✅ Defaults
     trip_data.setdefault("compliance_flag", False)
     trip_data.setdefault("priority", "normal")
     trip_data.setdefault("recurrence_rule", "none")
 
-    # ✅ Create and commit trip
+    # ✅ Create trip
     db_trip = models.Trip(**trip_data)
     db.add(db_trip)
     db.commit()
     db.refresh(db_trip)
 
-    # ✅ Log activity for audit
+    # ✅ Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
         action="admin_created_trip",
         trip_id=db_trip.id,
-        details=f"Admin {current_user.name} created trip ID {db_trip.id}"
+        details=f"Admin {current_user.name} created trip ID {db_trip.id} for client {trip_data.get('client_id')}"
     )
 
-    # 🔹 Optional: convert schedule_time back to local before returning
-    db_trip.scheduled_time = to_local(db_trip.scheduled_time)
+    # ✅ Convert scheduled_time back to local before returning
+    if db_trip.scheduled_time:
+        db_trip.scheduled_time = to_local(db_trip.scheduled_time)
 
     return db_trip
-
+    
 @router.get(
     "/trips/",
     response_model=schemas.PaginatedTripsResponse,
