@@ -103,6 +103,7 @@ def get_trips(
     status: Optional[str] = Query(None, description="Filter by trip status"),
     priority: Optional[str] = Query(None, description="Filter by priority level (e.g. 'normal', 'urgent', 'stat')"),
     client_name: Optional[str] = Query(None, description="Filter by client name"),
+    client_id: Optional[UUID] = Query(None, description="Filter by client ID"),  # ✅ NEW
     driver_name: Optional[str] = Query(None, description="Filter by driver name"),
     delivery_type: Optional[str] = Query(None, description="Filter by delivery type"),
     from_date: Optional[datetime] = Query(None, description="Start date for filtering (e.g. 2025-06-10T00:00:00)"),
@@ -139,6 +140,10 @@ def get_trips(
 
     if client_name:
         query = query.filter(models.Trip.client_name.ilike(f"%{client_name}%"))
+
+    # ✅ NEW: filter by client_id
+    if client_id:
+        query = query.filter(models.Trip.client_id == client_id)
 
     if driver_name:
         query = query.filter(models.Trip.driver_name.ilike(f"%{driver_name}%"))
@@ -265,7 +270,19 @@ def update_trip(
             if not driver:
                 raise HTTPException(status_code=400, detail=f"Driver with ID {driver_id} not found or not a valid driver")
 
-    # ✅ Apply updates
+    # ✅ Validate client_id if provided
+    if "client_id" in update_data:
+        client_id = update_data["client_id"]
+        if client_id is not None:
+            client = db.query(models.User).filter(
+                models.User.id == client_id,
+                models.User.role == "client",
+                models.User.organization_id == current_user.organization_id
+            ).first()
+            if not client:
+                raise HTTPException(status_code=400, detail=f"Client with ID {client_id} not found or not a valid client")
+
+    # ✅ Apply updates safely
     for field, value in update_data.items():
         setattr(trip, field, value)
 
@@ -273,10 +290,10 @@ def update_trip(
     db.refresh(trip)
 
     # 🔹 Convert schedule_time back to local before returning
-    trip.scheduled_time = to_local(trip.scheduled_time)
+    if trip.scheduled_time:
+        trip.scheduled_time = to_local(trip.scheduled_time)
 
     return trip
-
 
 @router.delete("/trips/{trip_id}", status_code=200)
 def delete_trip(
