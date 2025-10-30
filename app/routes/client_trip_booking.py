@@ -75,18 +75,30 @@ def get_client_trips(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
 ):
-    if current_user.role != "client":
+    """
+    Retrieve trips for:
+    - Clients → only their own trips
+    - Admins → all client trips under their organization
+    """
+
+    # ✅ Role-based filtering
+    if current_user.role == "client":
+        query = db.query(models.Trip).filter(models.Trip.client_id == current_user.id)
+    elif current_user.role == "admin":
+        query = db.query(models.Trip).filter(
+            models.Trip.organization_id == current_user.organization_id
+        )
+    else:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    query = db.query(models.Trip).filter(models.Trip.client_id == current_user.id)
-
+    # ✅ Optional filters
     if status:
         query = query.filter(models.Trip.status == status)
 
     if delivery_type:
         query = query.filter(models.Trip.delivery_type == delivery_type)
 
-    # 🔹 Convert start_date and end_date to UTC datetimes
+    # ✅ Convert start_date and end_date to UTC datetimes
     if start_date:
         start_dt = to_utc(datetime.combine(start_date, time.min))
         query = query.filter(models.Trip.scheduled_time >= start_dt)
@@ -95,9 +107,9 @@ def get_client_trips(
         end_dt = to_utc(datetime.combine(end_date, time.max))
         query = query.filter(models.Trip.scheduled_time <= end_dt)
 
-    return query.order_by(models.Trip.scheduled_time.desc()).all()    
-
-
+    # ✅ Sort by most recent scheduled_time
+    return query.order_by(models.Trip.scheduled_time.desc()).all()
+    
 @router.patch("/{trip_id}/status")
 def update_trip_status(
     trip_id: UUID,
