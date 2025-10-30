@@ -155,7 +155,7 @@ from app.dependencies import get_current_user
 from app.utilites.time_utilities import to_utc, now_utc,to_local
 
 
-@router.get("/assigned", response_model=List[schemas.TripResponse], summary="Get trips assigned to the current client or their organization")
+@router.get("/assigned", summary="Get trips assigned to the current client or their organization")
 def get_assigned_client_trips(
     status: Optional[str] = Query(None, description="Filter by trip status"),
     delivery_type: Optional[str] = Query(None, description="Filter by delivery type"),
@@ -171,16 +171,15 @@ def get_assigned_client_trips(
     - Sorted by most recent trips first.
     """
 
-    # ✅ Access control: drivers cannot use this endpoint
+    # ✅ Access control
     if current_user.role == "driver":
         raise HTTPException(status_code=403, detail="Drivers cannot view client trips.")
 
-    # ✅ Base query — organization scoped
+    # ✅ Base query
     query = db.query(models.Trip).filter(
         models.Trip.organization_id == current_user.organization_id
     )
 
-    # If client, limit to their own trips only
     if current_user.role == "client":
         query = query.filter(models.Trip.client_id == current_user.id)
 
@@ -192,7 +191,7 @@ def get_assigned_client_trips(
     if start_date and end_date:
         query = query.filter(models.Trip.scheduled_time.between(start_date, end_date))
 
-    # ✅ Sort: most recent trips first
+    # ✅ Sort by most recent
     trips = query.order_by(
         desc(
             case(
@@ -209,5 +208,34 @@ def get_assigned_client_trips(
         if t.created_at:
             t.created_at = to_local(t.created_at)
 
-    # ✅ Return all assigned trips directly (schema handles structure)
-    return trips
+    # ✅ Structure response for frontend clarity
+    return {
+        "client_id": current_user.id,
+        "total_trips": len(trips),
+        "assigned_trips": [
+            {
+                "trip_id": t.id,
+                "trip_label": f"{t.driver_name or 'Unassigned'} — {(
+                    t.custom_delivery_description
+                    if t.delivery_type and str(t.delivery_type).lower() == 'others'
+                    else (t.delivery_type or 'Unspecified')
+                )}",
+                "driver_name": t.driver_name,
+                "pickup_location": t.pickup_location,
+                "dropoff_location": t.dropoff_location,
+                "scheduled_time": t.scheduled_time,
+                "created_at": t.created_at,
+                "status": t.status,
+                "priority": t.priority,
+                "vehicle_type": t.vehicle_type,
+                "distance_km": t.distance_km,
+                "cost": t.cost,
+                "compliance_flag": t.compliance_flag,
+                "shift_window": t.shift_window,
+                "recurrence_rule": t.recurrence_rule,
+                "notes": t.notes,
+                "custom_delivery_description": t.custom_delivery_description,
+            }
+            for t in trips
+        ]
+    }
