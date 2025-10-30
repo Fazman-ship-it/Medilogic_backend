@@ -95,6 +95,36 @@ class DriverDashboardResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        
+
+class AssignedTrip(BaseModel):
+    trip_id: UUID
+    trip_label: str
+    driver_name: Optional[str]
+    pickup_location: Optional[str]
+    dropoff_location: Optional[str]
+    scheduled_time: Optional[datetime]
+    created_at: Optional[datetime]
+    status: Optional[str]
+    priority: Optional[str]
+    vehicle_type: Optional[str]
+    distance_km: Optional[float]
+    cost: Optional[float]
+    compliance_flag: Optional[bool]
+    shift_window: Optional[str]
+    recurrence_rule: Optional[str]
+    notes: Optional[str]
+    custom_delivery_description: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class ClientAssignedTripsResponse(BaseModel):
+    client_id: UUID
+    total_trips: int
+    assigned_trips: List[AssignedTrip]        
+        
 # --------------------------
 # User Schemas
 # --------------------------
