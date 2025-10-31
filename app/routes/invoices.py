@@ -244,3 +244,33 @@ def export_invoices_csv(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=invoices_export.csv"}
     )
+    
+@router.patch("/{invoice_id}/update-status", response_model=schemas.InvoiceResponse)
+def update_invoice_status(
+    invoice_id: UUID,
+    body: schemas.InvoiceStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_role("admin"))  # ✅ Only admin can update
+):
+    invoice = db.query(models.Invoice).filter(
+        models.Invoice.id == invoice_id,
+        models.Invoice.organization_id == current_user.organization_id
+    ).first()
+
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # ✅ Update the status
+    invoice.status = body.new_status
+    db.commit()
+    db.refresh(invoice)
+
+    # ✅ Log activity
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="invoice_status_updated",
+        details=f"Admin {current_user.name} changed invoice {invoice.invoice_number} status to {body.new_status}",
+    )
+
+    return invoice
