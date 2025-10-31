@@ -107,7 +107,12 @@ class TripStatus(str, enum.Enum):
     pending = "pending"
     in_progress = "in_progress"
     completed = "completed"
-    cancelled = "cancelled"    
+    cancelled = "cancelled"
+    
+class InvoiceStatus(str, Enum):
+    paid = "paid"
+    unpaid = "unpaid"
+    overdue = "overdue"       
 
     
 class Trip(Base):
