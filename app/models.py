@@ -109,7 +109,7 @@ class TripStatus(str, enum.Enum):
     completed = "completed"
     cancelled = "cancelled"
     
-class InvoiceStatus(str, Enum):
+class InvoiceStatus(str, enum.Enum):
     paid = "paid"
     unpaid = "unpaid"
     overdue = "overdue"       
