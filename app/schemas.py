@@ -345,6 +345,9 @@ class InvoiceResponse(BaseModel):
     start_date: date
     end_date: date
     amount: float
+    
+class InvoiceStatusUpdate(BaseModel):
+    status: InvoiceStatus
 
 # --------------------------
 # AI Optimizer
