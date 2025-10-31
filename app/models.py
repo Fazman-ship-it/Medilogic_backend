@@ -109,11 +109,6 @@ class TripStatus(str, enum.Enum):
     completed = "completed"
     cancelled = "cancelled"
     
-class InvoiceStatus(str, enum.Enum):
-    paid = "paid"
-    unpaid = "unpaid"
-    overdue = "overdue"       
-
     
 class Trip(Base):
     __tablename__ = "trips"
