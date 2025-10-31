@@ -250,7 +250,7 @@ def update_invoice_status(
     invoice_id: UUID,
     body: schemas.InvoiceStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ Only admin can update
+    current_user: models.User = Depends(require_role("admin"))
 ):
     invoice = db.query(models.Invoice).filter(
         models.Invoice.id == invoice_id,
@@ -260,17 +260,17 @@ def update_invoice_status(
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # ✅ Update the status
-    invoice.status = body.new_status
+    # ✅ Use the correct field name
+    invoice.status = body.status  
+
     db.commit()
     db.refresh(invoice)
 
-    # ✅ Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
         action="invoice_status_updated",
-        details=f"Admin {current_user.name} changed invoice {invoice.invoice_number} status to {body.new_status}",
+        details=f"Admin {current_user.name} changed invoice {invoice.invoice_number} status to {invoice.status}",
     )
 
     return invoice
