@@ -891,4 +891,12 @@ class IncidentFile(Base):
     incident_id = Column(UUID(as_uuid=True), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False)
     s3_key = Column(String, nullable=False)
     file_type = Column(String, nullable=True)  # e.g., "image", "pdf", "docx"
-    incident = relationship("Incident", back_populates="files")           
+    incident = relationship("Incident", back_populates="files")
+
+class TripNotification(Base):
+    __tablename__ = "trip_notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE"))
+    notification_type = Column(String, nullable=False)  # "1_day_left", "4_hours_left", etc.
+    sent_at = Column(DateTime(timezone=True), default=now_utc)
