@@ -274,3 +274,85 @@ def update_invoice_status(
     )
 
     return invoice
+    
+@router.get("/{invoice_id}", response_model=schemas.InvoiceResponse)
+def get_invoice_detail(
+    invoice_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # 🔍 Fetch the invoice
+    invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # 🔒 Ensure it belongs to same organization
+    if invoice.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 🔒 Role access — clients can only see their own
+    if current_user.role == "client" and invoice.client_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only view your own invoices")
+
+    return invoice
+    
+import csv
+import io
+from fastapi.responses import StreamingResponse
+
+@router.get("/{invoice_id}/download")
+def download_invoice_csv(
+    invoice_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # 🔍 Fetch invoice
+    invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    # 🔒 Tenant isolation
+    if invoice.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 🔒 Role access
+    if current_user.role == "client" and invoice.client_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only download your own invoices")
+
+    # 🧾 Create CSV in-memory
+    csv_buffer = io.StringIO()
+    writer = csv.writer(csv_buffer)
+
+    writer.writerow([
+        "Invoice ID",
+        "Client Name",
+        "Amount",
+        "Status",
+        "Reference Code",
+        "Invoice Number",
+        "Due Date",
+        "Created At",
+        "Organization"
+    ])
+
+    writer.writerow([
+        str(invoice.id),
+        invoice.client_name if hasattr(invoice, "client_name") else "",
+        invoice.amount,
+        invoice.status,
+        invoice.reference_code,
+        invoice.invoice_number,
+        invoice.due_date.strftime("%Y-%m-%d") if invoice.due_date else "",
+        invoice.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        invoice.organization.name if invoice.organization else "",
+    ])
+
+    csv_buffer.seek(0)
+
+    # 📦 Send as downloadable file
+    filename = f"invoice_{invoice.invoice_number or invoice.id}.csv"
+    return StreamingResponse(
+        csv_buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
