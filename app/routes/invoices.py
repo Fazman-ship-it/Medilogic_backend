@@ -300,38 +300,46 @@ import csv
 import io
 from fastapi.responses import StreamingResponse
 
+
 @router.get("/{invoice_id}/download")
 def download_invoice_csv(
     invoice_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    """
+    📦 Download a single invoice as a CSV file.
+    - Clients can only download their own invoices.
+    - Admins can download any invoice in their organization.
+    - Includes audit logging for compliance.
+    """
+
     # 🔍 Fetch invoice
     invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    # 🔒 Tenant isolation
+    # 🔒 Tenant isolation: ensure same organization
     if invoice.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # 🔒 Role access
+    # 🔒 Role-based restriction: clients can only access their own invoices
     if current_user.role == "client" and invoice.client_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only download your own invoices")
 
-    # 🧾 Create CSV in-memory
+    # 🧾 Generate CSV in-memory
     csv_buffer = io.StringIO()
     writer = csv.writer(csv_buffer)
 
     writer.writerow([
         "Invoice ID",
         "Client Name",
-        "Amount",
+        "Amount (£)",
         "Status",
         "Reference Code",
         "Invoice Number",
         "Due Date",
-        "Created At",
+        "Generated At",
         "Organization"
     ])
 
@@ -343,13 +351,21 @@ def download_invoice_csv(
         invoice.reference_code,
         invoice.invoice_number,
         invoice.due_date.strftime("%Y-%m-%d") if invoice.due_date else "",
-        invoice.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        invoice.generated_at.strftime("%Y-%m-%d %H:%M:%S") if invoice.generated_at else "",
         invoice.organization.name if invoice.organization else "",
     ])
 
     csv_buffer.seek(0)
 
-    # 📦 Send as downloadable file
+    # 🧠 Log activity for audit and compliance
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="invoice_csv_downloaded",
+        details=f"User {current_user.name} downloaded invoice {invoice.invoice_number or invoice.id}"
+    )
+
+    # 📦 Return as downloadable CSV file
     filename = f"invoice_{invoice.invoice_number or invoice.id}.csv"
     return StreamingResponse(
         csv_buffer,
