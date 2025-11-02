@@ -194,49 +194,68 @@ def export_invoices_csv(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_role("admin"))  # ✅ Access org
 ):
-    # ✅ Filter only invoices from current user's organization
-    query = db.query(models.Invoice).filter(
-        models.Invoice.organization_id == current_user.organization_id
+    # ✅ Base query with JOIN to include client name in one query
+    query = (
+        db.query(
+            models.Invoice,
+            models.User.name.label("client_name")
+        )
+        .join(models.User, models.Invoice.client_id == models.User.id)
+        .filter(models.Invoice.organization_id == current_user.organization_id)
     )
 
+    # ✅ Apply filters
     if client_id:
         query = query.filter(models.Invoice.client_id == client_id)
     if status:
         query = query.filter(models.Invoice.status == status)
 
-    invoices = query.all()
-    if not invoices:
+    results = query.all()
+    if not results:
         raise HTTPException(status_code=404, detail="No invoices found for export")
 
-    # ✅ Generate CSV data in-memory
+    # ✅ Create CSV in memory
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Invoice ID", "Client ID", "Organization ID", "Amount", "Status",
-        "Reference Code", "Invoice Number", "Start Date", "End Date", "Due Date", "Generated At"
+        "Invoice ID",
+        "Client ID",
+        "Client Name",
+        "Organization ID",
+        "Amount (£)",
+        "Status",
+        "Reference Code",
+        "Invoice Number",
+        "Start Date",
+        "End Date",
+        "Due Date",
+        "Generated At"
     ])
-    for invoice in invoices:
+
+    for invoice, client_name in results:
         writer.writerow([
-            invoice.id,
-            invoice.client_id,
-            invoice.organization_id,
+            str(invoice.id),
+            str(invoice.client_id),
+            client_name or "Unknown",
+            str(invoice.organization_id),
             invoice.amount,
             invoice.status,
             invoice.reference_code,
             invoice.invoice_number,
-            invoice.start_date,
-            invoice.end_date,
-            invoice.due_date,
-            invoice.generated_at
+            invoice.start_date.strftime("%Y-%m-%d") if invoice.start_date else "",
+            invoice.end_date.strftime("%Y-%m-%d") if invoice.end_date else "",
+            invoice.due_date.strftime("%Y-%m-%d") if invoice.due_date else "",
+            invoice.generated_at.strftime("%Y-%m-%d %H:%M:%S") if invoice.generated_at else "",
         ])
+
     output.seek(0)
 
-    # ✅ Log export
+    # ✅ Log export activity
     log_activity(
         db=db,
         user_id=current_user.id,
         action="invoice_export_csv",
-        details=f"Admin {current_user.name} exported {len(invoices)} invoices to CSV"
+        details=f"Admin {current_user.name} exported {len(results)} invoices to CSV (JOIN optimized)"
     )
 
     return StreamingResponse(
@@ -300,7 +319,6 @@ import csv
 import io
 from fastapi.responses import StreamingResponse
 
-
 @router.get("/{invoice_id}/download")
 def download_invoice_csv(
     invoice_id: UUID,
@@ -323,9 +341,14 @@ def download_invoice_csv(
     if invoice.organization_id != current_user.organization_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # 🔒 Role-based restriction: clients can only access their own invoices
+    # 🔒 Restrict clients to their own invoices
     if current_user.role == "client" and invoice.client_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only download your own invoices")
+
+    # 🔍 Fetch client details
+    client = db.query(models.User).filter(models.User.id == invoice.client_id).first()
+    client_name = client.name if client else "Unknown"
+    client_id = str(invoice.client_id) if invoice.client_id else "N/A"
 
     # 🧾 Generate CSV in-memory
     csv_buffer = io.StringIO()
@@ -333,6 +356,7 @@ def download_invoice_csv(
 
     writer.writerow([
         "Invoice ID",
+        "Client ID",
         "Client Name",
         "Amount (£)",
         "Status",
@@ -345,7 +369,8 @@ def download_invoice_csv(
 
     writer.writerow([
         str(invoice.id),
-        invoice.client_name if hasattr(invoice, "client_name") else "",
+        client_id,
+        client_name,
         invoice.amount,
         invoice.status,
         invoice.reference_code,
