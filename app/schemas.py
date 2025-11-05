@@ -653,7 +653,7 @@ class EnquiryOut(BaseModel):
 class IncidentCreate(BaseModel):
     title: str
     description: str
-    incident_type: Optional[str] = None 
+    incident_type: str
     location: Optional[str] = None
     severity: Optional[str] = "low"  # can be low, moderate, critical
     is_visible_to_regulator: Optional[bool] = False
