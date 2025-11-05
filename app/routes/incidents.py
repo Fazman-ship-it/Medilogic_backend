@@ -25,25 +25,37 @@ from app.config import settings
 from app.utilites.storage_utilites import upload_file_to_s3_async  # ✅ import your new helper
 
 @router.post("/submit", response_model=schemas.IncidentOut)
-async def submit_incident(   # ✅ must be async now because S3 upload is async
+async def submit_incident(
     title: str = Form(...),
     description: str = Form(...),
-    files: List[UploadFile] = File(None),  # ✅ allow multiple files
+    incident_type: str = Form(...),  # ✅ required field
+    location: Optional[str] = Form(None),
+    severity: Optional[str] = Form("low"),  # ✅ default value
+    is_visible_to_regulator: Optional[bool] = Form(False),
+    files: List[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     # ✅ Only admins can submit incidents
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only organization admins can submit incidents.")
+        raise HTTPException(
+            status_code=403,
+            detail="Only organization admins can submit incidents."
+        )
 
-    # ✅ Create incident record first
+    # ✅ Create the incident record
     new_incident = models.Incident(
         title=title,
         description=description,
+        incident_type=incident_type,  # ✅ now included
+        location=location,
+        severity=severity,
+        is_visible_to_regulator=is_visible_to_regulator,
         organization_id=current_user.organization_id,
         submitted_by_id=current_user.id,
         status="pending"
     )
+
     db.add(new_incident)
     db.commit()
     db.refresh(new_incident)
@@ -55,13 +67,11 @@ async def submit_incident(   # ✅ must be async now because S3 upload is async
             if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
                 raise HTTPException(status_code=400, detail=f"File type {ext} not allowed")
 
-            # ✅ use async uploader
             s3_key = await upload_file_to_s3_async(
                 file,
                 prefix=f"incidents/{current_user.organization_id}/{new_incident.id}"
             )
 
-            # Save to IncidentFile
             db.add(models.IncidentFile(
                 incident_id=new_incident.id,
                 s3_key=s3_key,
