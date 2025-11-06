@@ -210,9 +210,9 @@ async def submit_incident_as_driver(   # ✅ must be async now
             )
             file_urls.append(presigned_url)
 
-        subject = f"🚨 New Incident from {current_user.full_name} - Severity: {severity.title()}"
+        subject = f"🚨 New Incident from {current_user.name} - Severity: {severity.title()}"
         body = f"""
-A new incident has been reported by {current_user.full_name} ({current_user.email}):
+A new incident has been reported by {current_user.name} ({current_user.email}):
 
 📝 Title: {title}
 📍 Location: {location}
