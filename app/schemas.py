@@ -551,7 +551,7 @@ class OrganizationOut(BaseModel):
     contact_person_role: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
-    license_expiry_date: Optional[date]
+    license_expiry: Optional[date]
     supported_waste_types: Optional[List[str]] = None
     country: Optional[str]
     state: Optional[str]
@@ -574,7 +574,7 @@ class OrganizationUpdate(BaseModel):
     contact_person_role: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
-    license_expiry_date: Optional[date]
+    license_expiry: Optional[date]
     supported_waste_types: Optional[List[str]] = None
     country: Optional[str]
     state: Optional[str]
