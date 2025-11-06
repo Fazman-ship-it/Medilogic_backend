@@ -553,8 +553,10 @@ class OrganizationOut(BaseModel):
     longitude: Optional[float]
     license_expiry_date: Optional[date] = None
     supported_waste_types: Optional[List[str]] = None
+    country: Optional[str]
+    state: Optional[str]
+    region: Optional[str]
             
-    
     class Config:
         from_attributes = True
     
@@ -574,6 +576,9 @@ class OrganizationUpdate(BaseModel):
     longitude: Optional[float]
     license_expiry_date: Optional[date] = None
     supported_waste_types: Optional[List[str]] = None
+    country: Optional[str]
+    state: Optional[str]
+    region: Optional[str]
             
 
     class Config:
