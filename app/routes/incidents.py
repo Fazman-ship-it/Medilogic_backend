@@ -488,7 +488,8 @@ from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc
 from app import models, schemas
-from app.dependencies import get_db, get_current_user
+from app.dependencies import get_current_user
+from app.database import get_db
 
 async def get_all_incidents_for_regulator(
     db: Session = Depends(get_db),
