@@ -145,6 +145,7 @@ async def get_incident_detail(
         status=incident.status,
         created_at=incident.created_at,
         files=file_responses,
+        updated_at=incident.updated_at,
     )
 
 @router.post("/incidents/driver", response_model=schemas.IncidentOut)
@@ -367,6 +368,7 @@ async def get_incident_details(
         status=incident.status,
         created_at=incident.created_at,
         files=file_responses,
+        updated_at=incident.updated_at,
     )
     
 from fastapi import APIRouter, Depends, HTTPException, Body
