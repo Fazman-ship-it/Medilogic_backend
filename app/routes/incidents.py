@@ -287,6 +287,47 @@ def get_driver_incidents(
 
     return incidents
     
+@router.get("/{incident_id}", response_model=schemas.IncidentOut)
+async def get_incident_details(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # 🔒 Role-based visibility
+    if current_user.role == "driver" and incident.submitted_by_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only view your own incidents.")
+
+    if current_user.role == "admin" and incident.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="You can only view incidents in your organization.")
+
+    # ✅ Generate presigned URLs for file access
+    file_responses = []
+    for f in incident.files:
+        presigned_url = await generate_presigned_url_async(f.s3_key, expires_in=settings.PRESIGNED_EXPIRY)
+        file_responses.append(
+            schemas.IncidentFileOut(id=f.id, s3_key=presigned_url, file_type=f.file_type)
+        )
+
+    # ✅ Return full incident details
+    return schemas.IncidentOut(
+        id=incident.id,
+        title=incident.title,
+        description=incident.description,
+        incident_type=incident.incident_type,
+        location=incident.location,
+        severity=incident.severity,
+        status=incident.status,
+        is_visible_to_regulator=incident.is_visible_to_regulator,
+        organization_id=incident.organization_id,
+        submitted_by_id=incident.submitted_by_id,
+        created_at=incident.created_at,
+        files=file_responses
+    )
+    
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from uuid import UUID
