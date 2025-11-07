@@ -287,8 +287,16 @@ def get_driver_incidents(
 
     return incidents
     
-from uuid import UUID    
-    
+from fastapi import APIRouter, Depends, HTTPException, Body,Form,File
+from sqlalchemy.orm import Session
+from uuid import UUID
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user  
+from app.dependencies import require_role
+from typing import List,Optional
+from datetime import datetime
+
 @router.get("/{incident_id}", response_model=schemas.IncidentOut)
 async def get_incident_details(
     incident_id: UUID,
