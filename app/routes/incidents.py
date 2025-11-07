@@ -287,6 +287,7 @@ def get_driver_incidents(
 
     return incidents
     
+from fastapi import APIRouter, Depends, HTTPException, Body
 @router.patch("/{incident_id}/status")
 def update_incident_status(
     incident_id: UUID,
