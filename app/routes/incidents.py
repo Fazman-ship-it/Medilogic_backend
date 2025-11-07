@@ -416,10 +416,17 @@ def update_incident_status(
             detail=f"Invalid transition from '{current_status}' to '{status}' for your role."
         )
 
-    # ✅ Update status
+    # ✅ Update status (this will automatically update 'updated_at' due to onupdate=func.now())
     incident.status = status
     db.commit()
     db.refresh(incident)
 
-    return {"message": f"Incident status updated to {status}", "incident": incident}
-    
+    # ✅ Return with updated timestamp
+    return {
+        "message": f"Incident status updated to {status}",
+        "incident": {
+            "id": incident.id,
+            "status": incident.status,
+            "updated_at": incident.updated_at
+        }
+    }
