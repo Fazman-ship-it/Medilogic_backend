@@ -246,9 +246,10 @@ def get_org_incidents_for_admin(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view incidents")
 
+    # ✅ Sort by latest updates first
     incidents = db.query(models.Incident).filter(
         models.Incident.organization_id == current_user.organization_id
-    ).order_by(models.Incident.created_at.desc()).all()
+    ).order_by(models.Incident.updated_at.desc()).all()
 
     return incidents
     
@@ -275,15 +276,14 @@ def get_driver_incidents(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # ✅ Only drivers can view their own submitted incidents
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can view their submitted incidents.")
 
-    # ✅ Fetch incidents submitted by this driver
+    # ✅ Sort by latest updated incidents
     incidents = (
         db.query(models.Incident)
         .filter(models.Incident.submitted_by_id == current_user.id)
-        .order_by(models.Incident.created_at.desc())
+        .order_by(models.Incident.updated_at.desc())
         .all()
     )
 
