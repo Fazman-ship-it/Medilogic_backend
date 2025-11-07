@@ -491,6 +491,7 @@ from app import models, schemas
 from app.dependencies import get_current_user
 from app.database import get_db
 
+
 async def get_all_incidents_for_regulator(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -499,35 +500,39 @@ async def get_all_incidents_for_regulator(
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Base query
-    query = db.query(models.Incident).join(models.Organization)
+    # Base query (without join to avoid filtering issues)
+    query = db.query(models.Incident)
 
-    # ✅ Super admin can view all incidents
     if current_user.role == "super_admin":
+        # Super admin sees all incidents
         query = query.order_by(desc(models.Incident.updated_at))
     else:
-        # ✅ Regulator — filter by jurisdiction
-        filters = []
+        # Regulator — filter by jurisdiction + visibility/escalation
+        filters = [or_(
+            models.Incident.is_visible_to_regulator == True,
+            models.Incident.status == "escalated"
+        )]
 
-        if current_user.regulated_country:
-            filters.append(models.Organization.country == current_user.regulated_country)
-        if current_user.regulated_state:
-            filters.append(models.Organization.state == current_user.regulated_state)
-        if current_user.regulated_region:
-            filters.append(models.Organization.region == current_user.regulated_region)
+        # Apply jurisdiction filters using a subquery on Organization
+        if any([current_user.regulated_country, current_user.regulated_state, current_user.regulated_region]):
+            org_subq = db.query(models.Organization.id)
+            if current_user.regulated_country:
+                org_subq = org_subq.filter(models.Organization.country == current_user.regulated_country)
+            if current_user.regulated_state:
+                org_subq = org_subq.filter(models.Organization.state == current_user.regulated_state)
+            if current_user.regulated_region:
+                org_subq = org_subq.filter(models.Organization.region == current_user.regulated_region)
 
-        # Regulator sees only visible or escalated incidents
-        filters.append(
-            or_(
-                models.Incident.is_visible_to_regulator == True,
-                models.Incident.status == "escalated"
-            )
-        )
+            filters.append(models.Incident.organization_id.in_(org_subq))
 
         query = query.filter(*filters).order_by(desc(models.Incident.updated_at))
 
-    # ✅ Execute query
+    # Execute query
     incidents = query.all()
+
+    # ✅ Return 404 if no incidents found
+    if not incidents:
+        raise HTTPException(status_code=404, detail="No incidents found for your jurisdiction")
 
     # ✅ Generate presigned URLs for files
     results = []
