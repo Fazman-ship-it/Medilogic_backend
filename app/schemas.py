@@ -676,6 +676,7 @@ class IncidentFileOut(BaseModel):
 # --------------------------
 # Schema for updating an incident
 class IncidentUpdate(BaseModel):
+    id: Optional[UUID]
     title: Optional[str]
     description: Optional[str]
     incident_type: Optional[str]
