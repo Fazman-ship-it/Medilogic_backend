@@ -85,10 +85,11 @@ async def submit_incident(
 
 from app.config import settings
 from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
+from uuid import UUID
 
 @router.get("/{incident_id}", response_model=schemas.IncidentOut)
 async def get_incident_detail(
-    incident_id: int,
+    incident_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
