@@ -483,9 +483,13 @@ def toggle_incident_escalation(
         },
     }
     
-from sqlalchemy import or_
- 
-@router.get("/regulator/all", response_model=List[schemas.IncidentOut])
+from sqlalchemy import or_,desc
+from fastapi import HTTPException, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, desc
+from app import models, schemas, settings
+from app.dependencies import get_db, get_current_user
+
 async def get_all_incidents_for_regulator(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -494,17 +498,16 @@ async def get_all_incidents_for_regulator(
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
+    # Base query
     query = db.query(models.Incident).join(models.Organization)
 
     # ✅ Super admin can view all incidents
     if current_user.role == "super_admin":
-        incidents = query.order_by(models.Incident.updated_at.desc()).all()
-
-    # ✅ Regulator — restricted by jurisdiction
+        query = query.order_by(desc(models.Incident.updated_at))
     else:
+        # ✅ Regulator — filter by jurisdiction
         filters = []
 
-        # Filter by jurisdiction (country, state, region)
         if current_user.regulated_country:
             filters.append(models.Organization.country == current_user.regulated_country)
         if current_user.regulated_state:
@@ -512,7 +515,7 @@ async def get_all_incidents_for_regulator(
         if current_user.regulated_region:
             filters.append(models.Organization.region == current_user.regulated_region)
 
-        # Regulator can only see visible or escalated incidents
+        # Regulator sees only visible or escalated incidents
         filters.append(
             or_(
                 models.Incident.is_visible_to_regulator == True,
@@ -520,11 +523,10 @@ async def get_all_incidents_for_regulator(
             )
         )
 
-        incidents = (
-            query.filter(*filters)
-            .order_by(models.Incident.updated_at.desc())
-            .all()
-        )
+        query = query.filter(*filters).order_by(desc(models.Incident.updated_at))
+
+    # ✅ Execute query
+    incidents = query.all()
 
     # ✅ Generate presigned URLs for files
     results = []
@@ -535,7 +537,11 @@ async def get_all_incidents_for_regulator(
                 f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
             )
             file_responses.append(
-                schemas.IncidentFileOut(id=f.id, s3_key=presigned_url, file_type=f.file_type)
+                schemas.IncidentFileOut(
+                    id=f.id,
+                    s3_key=presigned_url,
+                    file_type=f.file_type
+                )
             )
 
         results.append(
@@ -551,8 +557,8 @@ async def get_all_incidents_for_regulator(
                 submitted_by_id=incident.submitted_by_id,
                 status=incident.status,
                 created_at=incident.created_at,
-                files=file_responses,
                 updated_at=incident.updated_at,
+                files=file_responses,
             )
         )
 
