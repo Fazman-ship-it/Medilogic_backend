@@ -701,6 +701,7 @@ class IncidentOut(BaseModel):
     severity: Optional[str] = "low"  # low, moderate, critical
     files: List[IncidentFileOut] = []  # ✅ list of uploaded files
     escalated: Optional[bool] = False  # ✅ added this
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
