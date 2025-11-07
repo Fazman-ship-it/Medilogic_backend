@@ -287,6 +287,8 @@ def get_driver_incidents(
 
     return incidents
     
+from uuid import UUID    
+    
 @router.get("/{incident_id}", response_model=schemas.IncidentOut)
 async def get_incident_details(
     incident_id: UUID,
