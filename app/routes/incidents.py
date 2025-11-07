@@ -288,6 +288,12 @@ def get_driver_incidents(
     return incidents
     
 from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.orm import Session
+from uuid import UUID
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+
 @router.patch("/{incident_id}/status")
 def update_incident_status(
     incident_id: UUID,
