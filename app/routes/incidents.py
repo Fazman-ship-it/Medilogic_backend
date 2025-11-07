@@ -484,7 +484,7 @@ def toggle_incident_escalation(
     }
     
 from sqlalchemy import or_,desc
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Query 
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc
 from app import models, schemas
@@ -493,6 +493,8 @@ from app.database import get_db
 
 
 async def get_all_incidents_for_regulator(
+    skip: int = Query(0, ge=0, description="Number of incidents to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of incidents to return"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -500,20 +502,18 @@ async def get_all_incidents_for_regulator(
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Base query (without join to avoid filtering issues)
+    # Base query
     query = db.query(models.Incident)
 
     if current_user.role == "super_admin":
-        # Super admin sees all incidents
         query = query.order_by(desc(models.Incident.updated_at))
     else:
-        # Regulator — filter by jurisdiction + visibility/escalation
         filters = [or_(
             models.Incident.is_visible_to_regulator == True,
             models.Incident.status == "escalated"
         )]
 
-        # Apply jurisdiction filters using a subquery on Organization
+        # Filter by jurisdiction using subquery
         if any([current_user.regulated_country, current_user.regulated_state, current_user.regulated_region]):
             org_subq = db.query(models.Organization.id)
             if current_user.regulated_country:
@@ -527,14 +527,13 @@ async def get_all_incidents_for_regulator(
 
         query = query.filter(*filters).order_by(desc(models.Incident.updated_at))
 
-    # Execute query
-    incidents = query.all()
+    # ✅ Apply pagination
+    incidents = query.offset(skip).limit(limit).all()
 
-    # ✅ Return 404 if no incidents found
     if not incidents:
         raise HTTPException(status_code=404, detail="No incidents found for your jurisdiction")
 
-    # ✅ Generate presigned URLs for files
+    # ✅ Generate presigned URLs
     results = []
     for incident in incidents:
         file_responses = []
