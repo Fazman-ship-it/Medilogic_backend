@@ -297,35 +297,65 @@ async def get_incident_details(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    # 🔒 Role-based visibility
-    if current_user.role == "driver" and incident.submitted_by_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only view your own incidents.")
+    org = incident.organization  # ✅ For jurisdiction checks
 
-    if current_user.role == "admin" and incident.organization_id != current_user.organization_id:
-        raise HTTPException(status_code=403, detail="You can only view incidents in your organization.")
+    # 🔒 Role-based access control with jurisdiction
+    if current_user.role == "super_admin":
+        pass  # full unrestricted access
 
-    # ✅ Generate presigned URLs for file access
+    elif current_user.role == "regulator":
+        # ✅ Jurisdiction-based restriction
+        if (
+            (current_user.regulated_country and org.country != current_user.regulated_country)
+            or (current_user.regulated_state and org.state != current_user.regulated_state)
+            or (current_user.regulated_region and org.region != current_user.regulated_region)
+        ):
+            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
+
+        # ✅ Regulator can only see visible or escalated incidents
+        if not (incident.is_visible_to_regulator or incident.status == "escalated"):
+            raise HTTPException(
+                status_code=403,
+                detail="You can only view escalated or regulator-visible incidents."
+            )
+
+    elif current_user.role == "admin":
+        # ✅ Admin can only see incidents within their own organization
+        if incident.organization_id != current_user.organization_id:
+            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
+
+    elif current_user.role == "driver":
+        # ✅ Driver can only see their own incidents
+        if incident.submitted_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only view your own incidents.")
+
+    else:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # ✅ Generate presigned URLs for attached files
     file_responses = []
     for f in incident.files:
-        presigned_url = await generate_presigned_url_async(f.s3_key, expires_in=settings.PRESIGNED_EXPIRY)
+        presigned_url = await generate_presigned_url_async(
+            f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
+        )
         file_responses.append(
             schemas.IncidentFileOut(id=f.id, s3_key=presigned_url, file_type=f.file_type)
         )
 
-    # ✅ Return full incident details
+    # ✅ Return detailed incident info
     return schemas.IncidentOut(
         id=incident.id,
         title=incident.title,
         description=incident.description,
         incident_type=incident.incident_type,
-        location=incident.location,
         severity=incident.severity,
-        status=incident.status,
+        location=incident.location,
         is_visible_to_regulator=incident.is_visible_to_regulator,
         organization_id=incident.organization_id,
         submitted_by_id=incident.submitted_by_id,
+        status=incident.status,
         created_at=incident.created_at,
-        files=file_responses
+        files=file_responses,
     )
     
 from fastapi import APIRouter, Depends, HTTPException, Body
