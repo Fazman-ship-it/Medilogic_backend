@@ -431,6 +431,7 @@ class Incident(Base):
     escalated= Column(Boolean, default=False)  # New field to track escalation status
     is_visible_to_regulator = Column(Boolean, default=False)  # New field to control visibility to regulators
     files = relationship("IncidentFile", back_populates="incident", cascade="all, delete-orphan")
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(),default=func.now())
 
 
 class ComplianceStatus(Base):
