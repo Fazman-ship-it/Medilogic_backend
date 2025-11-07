@@ -486,11 +486,10 @@ def toggle_incident_escalation(
 from sqlalchemy import or_,desc
 from fastapi import HTTPException, Depends, Query 
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc
+from sqlalchemy import or_, desc,func
 from app import models, schemas
 from app.dependencies import get_current_user
 from app.database import get_db
-
 
 async def get_all_incidents_for_regulator(
     skip: int = Query(0, ge=0, description="Number of incidents to skip"),
@@ -527,7 +526,10 @@ async def get_all_incidents_for_regulator(
 
         query = query.filter(*filters).order_by(desc(models.Incident.updated_at))
 
-    # ✅ Apply pagination
+    # ✅ Get total count before pagination
+    total_count = query.with_entities(func.count()).scalar()
+
+    # Apply pagination
     incidents = query.offset(skip).limit(limit).all()
 
     if not incidents:
@@ -567,4 +569,10 @@ async def get_all_incidents_for_regulator(
             )
         )
 
-    return results
+    # ✅ Return data with pagination metadata
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "data": results
+    }
