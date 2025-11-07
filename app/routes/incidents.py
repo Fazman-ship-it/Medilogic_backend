@@ -482,3 +482,76 @@ def toggle_incident_escalation(
             "updated_at": incident.updated_at,
         },
     }
+    
+@router.get("/regulator/all", response_model=List[schemas.IncidentOut])
+async def get_all_incidents_for_regulator(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # ✅ Role check
+    if current_user.role not in ["regulator", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    query = db.query(models.Incident).join(models.Organization)
+
+    # ✅ Super admin can view all incidents
+    if current_user.role == "super_admin":
+        incidents = query.order_by(models.Incident.updated_at.desc()).all()
+
+    # ✅ Regulator — restricted by jurisdiction
+    else:
+        filters = []
+
+        # Filter by jurisdiction (country, state, region)
+        if current_user.regulated_country:
+            filters.append(models.Organization.country == current_user.regulated_country)
+        if current_user.regulated_state:
+            filters.append(models.Organization.state == current_user.regulated_state)
+        if current_user.regulated_region:
+            filters.append(models.Organization.region == current_user.regulated_region)
+
+        # Regulator can only see visible or escalated incidents
+        filters.append(
+            or_(
+                models.Incident.is_visible_to_regulator == True,
+                models.Incident.status == "escalated"
+            )
+        )
+
+        incidents = (
+            query.filter(*filters)
+            .order_by(models.Incident.updated_at.desc())
+            .all()
+        )
+
+    # ✅ Generate presigned URLs for files
+    results = []
+    for incident in incidents:
+        file_responses = []
+        for f in incident.files:
+            presigned_url = await generate_presigned_url_async(
+                f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
+            )
+            file_responses.append(
+                schemas.IncidentFileOut(id=f.id, s3_key=presigned_url, file_type=f.file_type)
+            )
+
+        results.append(
+            schemas.IncidentOut(
+                id=incident.id,
+                title=incident.title,
+                description=incident.description,
+                incident_type=incident.incident_type,
+                severity=incident.severity,
+                location=incident.location,
+                is_visible_to_regulator=incident.is_visible_to_regulator,
+                organization_id=incident.organization_id,
+                submitted_by_id=incident.submitted_by_id,
+                status=incident.status,
+                created_at=incident.created_at,
+                files=file_responses,
+                updated_at=incident.updated_at,
+            )
+        )
+
+    return results
