@@ -432,3 +432,53 @@ def update_incident_status(
             "updated_at": incident.updated_at
         }
     }
+    
+from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.orm import Session
+from uuid import UUID
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+
+    
+@router.patch("/{incident_id}/escalate")
+def toggle_incident_escalation(
+    incident_id: UUID,
+    escalated: bool = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Allows authorized users (admin, regulator, super_admin) to toggle an incident's escalation status.
+    Automatically updates incident status to 'escalated' or 'under_review'.
+    """
+
+    # 🔍 Find the incident
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # 🔒 Role-based control
+    if current_user.role not in ["admin", "regulator", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized to change escalation status")
+
+    # ✅ Update escalation flag and status
+    incident.escalated = escalated
+    if escalated:
+        incident.status = "escalated"
+    else:
+        # If it's de-escalated, move it back to "under_review" for admin review
+        incident.status = "under_review"
+
+    db.commit()
+    db.refresh(incident)
+
+    return {
+        "message": f"Incident escalation status set to {escalated}",
+        "incident": {
+            "id": incident.id,
+            "status": incident.status,
+            "escalated": incident.escalated,
+            "updated_at": incident.updated_at,
+        },
+    }
