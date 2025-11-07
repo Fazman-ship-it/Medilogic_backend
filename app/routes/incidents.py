@@ -483,6 +483,8 @@ def toggle_incident_escalation(
         },
     }
     
+from sqlalchemy import or_
+ 
 @router.get("/regulator/all", response_model=List[schemas.IncidentOut])
 async def get_all_incidents_for_regulator(
     db: Session = Depends(get_db),
