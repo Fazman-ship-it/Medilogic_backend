@@ -86,59 +86,65 @@ async def submit_incident(
 from app.config import settings
 from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
 
-@router.get("/", response_model=List[schemas.IncidentOut])
-async def get_incidents(   # ✅ must be async now
+@router.get("/{incident_id}", response_model=schemas.IncidentOut)
+async def get_incident_detail(
+    incident_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # 🔒 Role-based visibility
+    # 🔍 Find the incident
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # 🔒 Role-based access control
     if current_user.role == "super_admin":
-        incidents = db.query(models.Incident).all()
+        pass  # full access
     elif current_user.role == "regulator":
-        incidents = (
-            db.query(models.Incident)
-            .join(models.Organization)
-            .filter(
-                models.Organization.country == current_user.regulated_country,
-                models.Organization.state == current_user.regulated_state,
-                models.Organization.region == current_user.regulated_region,
-            )
-            .all()
-        )
+        # Only view incidents in their jurisdiction
+        org = incident.organization
+        if (
+            org.country != current_user.regulated_country
+            or org.state != current_user.regulated_state
+            or org.region != current_user.regulated_region
+        ):
+            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
+    elif current_user.role in ["admin", "driver"]:
+        # Only see incidents within their own organization
+        if incident.organization_id != current_user.organization_id:
+            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
     else:
-        raise HTTPException(status_code=403, detail="Not authorized to view incidents.")
+        raise HTTPException(status_code=403, detail="Not authorized")
 
-    # 🔄 Build API response (with presigned URLs for files)
-    result = []
-    for inc in incidents:
-        file_responses = []
-        for f in inc.files:
-            presigned_url = await generate_presigned_url_async(   # ✅ async call
-                f.s3_key,
-                expires_in=settings.PRESIGNED_EXPIRY   # ✅ use expiry from config
-            )
-            file_responses.append(
-                schemas.IncidentFileOut(
-                    id=f.id,
-                    s3_key=presigned_url,  # return URL, not raw key
-                    file_type=f.file_type,
-                )
-            )
-
-        result.append(
-            schemas.IncidentOut(
-                id=inc.id,
-                title=inc.title,
-                description=inc.description,
-                organization_id=inc.organization_id,
-                submitted_by_id=inc.submitted_by_id,
-                status=inc.status,
-                created_at=inc.created_at,
-                files=file_responses,
+    # ✅ Generate presigned URLs for attached files
+    file_responses = []
+    for f in incident.files:
+        presigned_url = await generate_presigned_url_async(
+            f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
+        )
+        file_responses.append(
+            schemas.IncidentFileOut(
+                id=f.id,
+                s3_key=presigned_url,
+                file_type=f.file_type,
             )
         )
 
-    return result
+    # ✅ Return detailed info
+    return schemas.IncidentOut(
+        id=incident.id,
+        title=incident.title,
+        description=incident.description,
+        incident_type=incident.incident_type,
+        severity=incident.severity,
+        location=incident.location,
+        is_visible_to_regulator=incident.is_visible_to_regulator,
+        organization_id=incident.organization_id,
+        submitted_by_id=incident.submitted_by_id,
+        status=incident.status,
+        created_at=incident.created_at,
+        files=file_responses,
+    )
 
 @router.post("/incidents/driver", response_model=schemas.IncidentOut)
 async def submit_incident_as_driver(   # ✅ must be async now
@@ -241,5 +247,42 @@ def get_org_incidents_for_admin(
     incidents = db.query(models.Incident).filter(
         models.Incident.organization_id == current_user.organization_id
     ).order_by(models.Incident.created_at.desc()).all()
+
+    return incidents
+    
+@router.get("/my-submissions", response_model=List[schemas.IncidentOut])
+def get_my_incidents(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # ✅ Only admins can access their organization's incidents
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can view their submitted incidents.")
+
+    incidents = (
+        db.query(models.Incident)
+        .filter(models.Incident.organization_id == current_user.organization_id)
+        .order_by(models.Incident.created_at.desc())
+        .all()
+    )
+
+    return incidents
+    
+@router.get("/driver/my-submissions", response_model=List[schemas.IncidentOut])
+def get_driver_incidents(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # ✅ Only drivers can view their own submitted incidents
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="Only drivers can view their submitted incidents.")
+
+    # ✅ Fetch incidents submitted by this driver
+    incidents = (
+        db.query(models.Incident)
+        .filter(models.Incident.submitted_by_id == current_user.id)
+        .order_by(models.Incident.created_at.desc())
+        .all()
+    )
 
     return incidents
