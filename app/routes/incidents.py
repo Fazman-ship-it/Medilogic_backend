@@ -233,8 +233,7 @@ def get_incidents_for_regulator_paginated(
         "items": incidents  # FastAPI will automatically convert to IncidentOut
     }
     
-
-@router.get("/incidents/admin", response_model=PaginatedIncidents)
+@router.get("/incidents/admin", response_model=schemas.PaginatedIncidents)
 def get_org_incidents_for_admin_paginated(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -245,6 +244,7 @@ def get_org_incidents_for_admin_paginated(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view incidents")
 
+    # ✅ Base query scoped to the admin's organization
     query = db.query(models.Incident).filter(
         models.Incident.organization_id == current_user.organization_id
     )
@@ -257,15 +257,16 @@ def get_org_incidents_for_admin_paginated(
                      .offset(skip).limit(limit) \
                      .all()
 
-    return PaginatedIncidents(
-        total=total_count,
-        skip=skip,
-        limit=limit,
-        data=incidents
-    )
+    # ✅ Return in the standard paginated format
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": incidents  # FastAPI + Pydantic will convert each Incident to IncidentOut
+    }
     
 
-@router.get("/my-submissions", response_model=PaginatedIncidents)
+@router.get("/my-submissions", response_model=schemas.PaginatedIncidents)
 def get_my_incidents_paginated(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -276,6 +277,7 @@ def get_my_incidents_paginated(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view their submitted incidents.")
 
+    # ✅ Base query scoped to the admin's organization
     query = db.query(models.Incident).filter(
         models.Incident.organization_id == current_user.organization_id
     )
@@ -288,14 +290,15 @@ def get_my_incidents_paginated(
                      .offset(skip).limit(limit) \
                      .all()
 
-    return PaginatedIncidents(
-        total=total_count,
-        skip=skip,
-        limit=limit,
-        data=incidents
-    )
+    # ✅ Return in standard paginated format
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": incidents  # FastAPI + Pydantic will convert each Incident to IncidentOut
+    }
     
-@router.get("/driver/my-submissions", response_model=PaginatedIncidents)
+@router.get("/driver/my-submissions", response_model=schemas.PaginatedIncidents)
 def get_driver_incidents_paginated(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -306,6 +309,7 @@ def get_driver_incidents_paginated(
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can view their submitted incidents.")
 
+    # ✅ Base query scoped to the current driver
     query = db.query(models.Incident).filter(
         models.Incident.submitted_by_id == current_user.id
     )
@@ -318,12 +322,13 @@ def get_driver_incidents_paginated(
                      .offset(skip).limit(limit) \
                      .all()
 
-    return PaginatedIncidents(
-        total=total_count,
-        skip=skip,
-        limit=limit,
-        data=incidents
-    )
+    # ✅ Return in the standard paginated format
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": incidents  # Pydantic converts each Incident to IncidentOut automatically
+    }
     
     
 from fastapi import APIRouter, Depends, HTTPException, Body
