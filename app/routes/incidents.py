@@ -204,8 +204,10 @@ def get_incidents_for_regulator_paginated(
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
+    # Base query
     query = db.query(models.Incident)
 
+    # Regulators see only incidents in their jurisdiction
     if current_user.role == "regulator":
         query = query.join(models.Organization)
         if current_user.regulated_country:
@@ -215,20 +217,21 @@ def get_incidents_for_regulator_paginated(
         if current_user.regulated_region:
             query = query.filter(models.Organization.region == current_user.regulated_region)
 
-    # ✅ Total before pagination
+    # Total count before pagination
     total_count = query.count()
 
-    # ✅ Apply sorting and pagination
+    # Apply sorting and pagination
     incidents = query.order_by(models.Incident.updated_at.desc()) \
                      .offset(skip).limit(limit) \
                      .all()
 
-    return PaginatedIncidents(
-        total=total_count,
-        skip=skip,
-        limit=limit,
-        data= data=[schemas.IncidentOut.from_orm(incident) for incident in incidents]
-    )
+    # Return in the same style as your trips endpoint
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": incidents  # FastAPI will automatically convert to IncidentOut
+    }
     
 
 @router.get("/incidents/admin", response_model=PaginatedIncidents)
