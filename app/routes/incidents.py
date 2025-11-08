@@ -53,7 +53,9 @@ async def submit_incident(
         is_visible_to_regulator=is_visible_to_regulator,
         organization_id=current_user.organization_id,
         submitted_by_id=current_user.id,
-        status="pending"
+        status="pending",
+        escalated=False
+        
     )
 
     db.add(new_incident)
