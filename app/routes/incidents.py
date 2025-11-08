@@ -190,22 +190,23 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func
 from typing import List, Optional
 from app import models, schemas
+from pydantic import BaseModel
 
-@router.get("/regulator", response_model=List[schemas.IncidentOut])
-def get_incidents_for_regulator_simple(
+@router.get("/regulator", response_model=PaginatedIncidents)
+def get_incidents_for_regulator_paginated(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
+    skip: int = Query(0, ge=0, description="Number of incidents to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of incidents to return")
 ):
     # 🔒 Role check
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # ✅ Regulators see only incidents in their jurisdiction
     query = db.query(models.Incident)
 
     if current_user.role == "regulator":
         query = query.join(models.Organization)
-
         if current_user.regulated_country:
             query = query.filter(models.Organization.country == current_user.regulated_country)
         if current_user.regulated_state:
@@ -213,62 +214,112 @@ def get_incidents_for_regulator_simple(
         if current_user.regulated_region:
             query = query.filter(models.Organization.region == current_user.regulated_region)
 
-    # ✅ Sort by latest updates
-    incidents = query.order_by(models.Incident.updated_at.desc()).all()
+    # ✅ Total before pagination
+    total_count = query.count()
 
-    return incidents
+    # ✅ Apply sorting and pagination
+    incidents = query.order_by(models.Incident.updated_at.desc()) \
+                     .offset(skip).limit(limit) \
+                     .all()
+
+    return PaginatedIncidents(
+        total=total_count,
+        skip=skip,
+        limit=limit,
+        data=incidents
+    )
     
-    
-@router.get("/incidents/admin", response_model=List[schemas.IncidentOut])
-def get_org_incidents_for_admin(
+
+@router.get("/incidents/admin", response_model=PaginatedIncidents)
+def get_org_incidents_for_admin_paginated(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
+    skip: int = Query(0, ge=0, description="Number of incidents to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of incidents to return")
 ):
+    # 🔒 Role check
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view incidents")
 
-    # ✅ Sort by latest updates first
-    incidents = db.query(models.Incident).filter(
+    query = db.query(models.Incident).filter(
         models.Incident.organization_id == current_user.organization_id
-    ).order_by(models.Incident.updated_at.desc()).all()
+    )
 
-    return incidents
+    # ✅ Total count before pagination
+    total_count = query.count()
+
+    # ✅ Apply sorting and pagination
+    incidents = query.order_by(models.Incident.updated_at.desc()) \
+                     .offset(skip).limit(limit) \
+                     .all()
+
+    return PaginatedIncidents(
+        total=total_count,
+        skip=skip,
+        limit=limit,
+        data=incidents
+    )
     
-@router.get("/my-submissions", response_model=List[schemas.IncidentOut])
-def get_my_incidents(
+
+@router.get("/my-submissions", response_model=PaginatedIncidents)
+def get_my_incidents_paginated(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
+    skip: int = Query(0, ge=0, description="Number of incidents to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of incidents to return")
 ):
-    # ✅ Only admins can access their organization's incidents
+    # 🔒 Role check
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view their submitted incidents.")
 
-    incidents = (
-        db.query(models.Incident)
-        .filter(models.Incident.organization_id == current_user.organization_id)
-        .order_by(models.Incident.created_at.desc())
-        .all()
+    query = db.query(models.Incident).filter(
+        models.Incident.organization_id == current_user.organization_id
     )
 
-    return incidents
+    # ✅ Total count before pagination
+    total_count = query.count()
+
+    # ✅ Apply sorting and pagination
+    incidents = query.order_by(models.Incident.created_at.desc()) \
+                     .offset(skip).limit(limit) \
+                     .all()
+
+    return PaginatedIncidents(
+        total=total_count,
+        skip=skip,
+        limit=limit,
+        data=incidents
+    )
     
-@router.get("/driver/my-submissions", response_model=List[schemas.IncidentOut])
-def get_driver_incidents(
+@router.get("/driver/my-submissions", response_model=PaginatedIncidents)
+def get_driver_incidents_paginated(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
+    skip: int = Query(0, ge=0, description="Number of incidents to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of incidents to return")
 ):
+    # 🔒 Role check
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can view their submitted incidents.")
 
-    # ✅ Sort by latest updated incidents
-    incidents = (
-        db.query(models.Incident)
-        .filter(models.Incident.submitted_by_id == current_user.id)
-        .order_by(models.Incident.updated_at.desc())
-        .all()
+    query = db.query(models.Incident).filter(
+        models.Incident.submitted_by_id == current_user.id
     )
 
-    return incidents
+    # ✅ Total count before pagination
+    total_count = query.count()
+
+    # ✅ Apply sorting and pagination
+    incidents = query.order_by(models.Incident.updated_at.desc()) \
+                     .offset(skip).limit(limit) \
+                     .all()
+
+    return PaginatedIncidents(
+        total=total_count,
+        skip=skip,
+        limit=limit,
+        data=incidents
+    )
     
     
 from fastapi import APIRouter, Depends, HTTPException, Body
