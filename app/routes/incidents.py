@@ -336,25 +336,50 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user
 
-@router.patch("/{incident_id}/escalate")
-def toggle_escalation(
+
+@router.patch("/{incident_id}/toggle-escalation")
+def toggle_incident_escalation(
     incident_id: UUID,
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
-    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    """
+    ✅ Toggle an incident's escalation status (True ↔ False)
+    - Admins or regulators can toggle it
+    - Others will get a 403 error
+    """
+    # 🔒 Role check
+    if current_user.role not in ["admin", "regulator", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized to toggle escalation")
+
+    # 🔍 Find incident within the user’s organization (for data safety)
+    incident = (
+        db.query(models.Incident)
+        .filter(models.Incident.id == incident_id)
+        .first()
+    )
 
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    incident.escalated = not incident.escalated  # Flip between True/False
+    # 🔁 Toggle escalation status
+    incident.escalated = not incident.escalated
     db.commit()
     db.refresh(incident)
+
+    # 📝 Log activity
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="incident_escalation_toggled",
+        details=f"{current_user.role.capitalize()} {current_user.name} set incident '{incident.title}' escalation to {incident.escalated}",
+    )
 
     return {
         "message": f"Incident escalation toggled to {incident.escalated}",
         "incident_id": str(incident.id),
         "escalated": incident.escalated,
-    }   
+    }
     
     
 from app.config import settings
