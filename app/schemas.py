@@ -711,7 +711,7 @@ class PaginatedIncidents(BaseModel):
     total: int
     skip: int
     limit: int
-    data: List[IncidentOut]
+    items: List[IncidentOut]
 
     class Config:
         from_attributes = True
