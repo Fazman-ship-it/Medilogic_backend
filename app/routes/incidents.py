@@ -191,6 +191,7 @@ from sqlalchemy import or_, desc, func
 from typing import List, Optional
 from app import models, schemas
 from pydantic import BaseModel
+from app.schemas import PaginatedIncidents
 
 @router.get("/regulator", response_model=PaginatedIncidents)
 def get_incidents_for_regulator_paginated(
