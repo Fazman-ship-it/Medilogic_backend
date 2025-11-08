@@ -498,7 +498,6 @@ from sqlalchemy import or_, desc, func
 from typing import List, Optional
 from app import models, schemas
 
-
 @router.get("/regulator", response_model=dict)
 async def get_incidents_for_regulator(
     skip: int = Query(0, ge=0, description="Number of incidents to skip"),
@@ -507,49 +506,18 @@ async def get_incidents_for_regulator(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    ✅ Regulators can fetch all incidents within their jurisdiction
-    - Regulators see incidents marked visible_to_regulator or escalated
-    - Super admins see all incidents
+    ✅ Regulators can fetch all incidents that are marked as visible_to_regulator
+    - Simple, clean version without escalation or jurisdiction filters
     """
 
-    # 🔒 Role validation
+    # ✅ Ensure only regulators or super admins can access
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # 🔍 Base query
-    query = db.query(models.Incident)
-
-    if current_user.role == "super_admin":
-        # Super admin sees everything
-        query = query.order_by(desc(models.Incident.updated_at))
-    else:
-        # ✅ Regulator: only visible or escalated incidents
-        filters = [
-            or_(
-                models.Incident.is_visible_to_regulator == True,
-                models.Incident.status == "escalated"
-            )
-        ]
-
-        # ✅ Add jurisdiction filters
-        org_subq = db.query(models.Organization.id)
-
-        if current_user.regulated_country:
-            org_subq = org_subq.filter(
-                models.Organization.country == current_user.regulated_country
-            )
-        if current_user.regulated_state:
-            org_subq = org_subq.filter(
-                models.Organization.state == current_user.regulated_state
-            )
-        if current_user.regulated_region:
-            org_subq = org_subq.filter(
-                models.Organization.region == current_user.regulated_region
-            )
-
-        filters.append(models.Incident.organization_id.in_(org_subq))
-
-        query = query.filter(*filters).order_by(desc(models.Incident.updated_at))
+    # ✅ Base query: only incidents visible to regulator
+    query = db.query(models.Incident).filter(
+        models.Incident.is_visible_to_regulator == True
+    ).order_by(models.Incident.updated_at.desc())
 
     # ✅ Get total count before pagination
     total_count = query.with_entities(func.count()).scalar()
@@ -557,31 +525,9 @@ async def get_incidents_for_regulator(
     # ✅ Apply pagination
     incidents = query.offset(skip).limit(limit).all()
 
-    # ✅ Return empty list if no match
-    if not incidents:
-        return {
-            "total": 0,
-            "skip": skip,
-            "limit": limit,
-            "data": []
-        }
-
-    # ✅ Generate presigned URLs
+    # ✅ Build response
     results = []
     for incident in incidents:
-        file_responses = []
-        for f in incident.files:
-            presigned_url = await generate_presigned_url_async(
-                f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
-            )
-            file_responses.append(
-                schemas.IncidentFileOut(
-                    id=f.id,
-                    s3_key=presigned_url,
-                    file_type=f.file_type
-                )
-            )
-
         results.append(
             schemas.IncidentOut(
                 id=incident.id,
@@ -596,11 +542,20 @@ async def get_incidents_for_regulator(
                 status=incident.status,
                 created_at=incident.created_at,
                 updated_at=incident.updated_at,
-                files=file_responses,
+                files=[
+                    schemas.IncidentFileOut(
+                        id=f.id,
+                        s3_key=await generate_presigned_url_async(
+                            f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
+                        ),
+                        file_type=f.file_type,
+                    )
+                    for f in incident.files
+                ],
             )
         )
 
-    # ✅ Return paginated result
+    # ✅ Return response
     return {
         "total": total_count,
         "skip": skip,
