@@ -703,6 +703,12 @@ class IncidentOut(BaseModel):
     escalated: Optional[bool] = False  # ✅ added this
     updated_at: Optional[datetime] = None
 
+class PaginatedIncidents(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    data: List[IncidentOut]
+
     class Config:
         from_attributes = True
 
