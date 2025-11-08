@@ -440,7 +440,6 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user
 
-    
 @router.patch("/{incident_id}/escalate")
 def toggle_incident_escalation(
     incident_id: UUID,
@@ -449,8 +448,8 @@ def toggle_incident_escalation(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    Allows authorized users (admin, regulator, super_admin) to toggle an incident's escalation status.
-    Automatically updates incident status to 'escalated' or 'under_review'.
+    ✅ Simple endpoint for admins to set 'escalated' to True or False.
+    Updates the incident status accordingly.
     """
 
     # 🔍 Find the incident
@@ -458,36 +457,29 @@ def toggle_incident_escalation(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    # 🔒 Role-based control
-    if current_user.role not in ["admin", "regulator", "super_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized to change escalation status")
+    # 🔒 Only admins can toggle
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can toggle escalation")
 
     # ✅ Update escalation flag and status
     incident.escalated = escalated
-    if escalated:
-        incident.status = "escalated"
-    else:
-        # If it's de-escalated, move it back to "under_review" for admin review
-        incident.status = "under_review"
+    incident.status = "escalated" if escalated else "under_review"
 
     db.commit()
     db.refresh(incident)
 
     return {
-        "message": f"Incident escalation status set to {escalated}",
-        "incident": {
-            "id": incident.id,
-            "status": incident.status,
-            "escalated": incident.escalated,
-            "updated_at": incident.updated_at,
-        },
+        "message": f"Incident escalation set to {escalated}",
+        "incident_id": str(incident.id),
+        "new_status": incident.status,
+        "escalated": incident.escalated,
     }
-    
+
 from sqlalchemy import or_,desc
 from fastapi import HTTPException, Depends, Query 
 from sqlalchemy.orm import Session
 from app import models, schemas
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user,require_role
 from app.database import get_db
 from app.config import settings
 from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
@@ -506,39 +498,67 @@ async def get_incidents_for_regulator(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    ✅ Regulators can fetch incidents visible to them within their jurisdiction
+    ✅ Regulators can fetch all incidents within their jurisdiction (country/state/region).
+    - Super admins can see all incidents.
+    - Regulators only see incidents from organizations that match their regulated areas.
     """
 
-    # ✅ Ensure only regulators or super admins can access
+    # 🔒 Role validation
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # ✅ Base query: only incidents visible to regulator
-    query = db.query(models.Incident).join(models.Organization).filter(
-        models.Incident.is_visible_to_regulator == True
-    )
+    # 🔍 Base query
+    query = db.query(models.Incident)
 
-    # ✅ Apply jurisdiction filters
-    if current_user.role == "regulator":
+    if current_user.role == "super_admin":
+        # Super admin sees everything
+        incidents = query.order_by(models.Incident.updated_at.desc()).offset(skip).limit(limit).all()
+    else:
+        # ✅ Regulator sees only incidents from organizations in their jurisdiction
+        org_subquery = db.query(models.Organization.id)
+
         if current_user.regulated_country:
-            query = query.filter(models.Organization.country == current_user.regulated_country)
+            org_subquery = org_subquery.filter(models.Organization.country == current_user.regulated_country)
         if current_user.regulated_state:
-            query = query.filter(models.Organization.state == current_user.regulated_state)
+            org_subquery = org_subquery.filter(models.Organization.state == current_user.regulated_state)
         if current_user.regulated_region:
-            query = query.filter(models.Organization.region == current_user.regulated_region)
+            org_subquery = org_subquery.filter(models.Organization.region == current_user.regulated_region)
 
-    # ✅ Sort by most recent
-    query = query.order_by(models.Incident.updated_at.desc())
+        incidents = (
+            query.filter(models.Incident.organization_id.in_(org_subquery))
+            .order_by(models.Incident.updated_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
-    # ✅ Total count
+    if not incidents:
+        return {
+            "total": 0,
+            "skip": skip,
+            "limit": limit,
+            "data": []
+        }
+
+    # ✅ Count total before pagination
     total_count = query.with_entities(func.count()).scalar()
-
-    # ✅ Pagination
-    incidents = query.offset(skip).limit(limit).all()
 
     # ✅ Build response
     results = []
     for incident in incidents:
+        file_responses = []
+        for f in incident.files:
+            presigned_url = await generate_presigned_url_async(
+                f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
+            )
+            file_responses.append(
+                schemas.IncidentFileOut(
+                    id=f.id,
+                    s3_key=presigned_url,
+                    file_type=f.file_type,
+                )
+            )
+
         results.append(
             schemas.IncidentOut(
                 id=incident.id,
@@ -553,16 +573,7 @@ async def get_incidents_for_regulator(
                 status=incident.status,
                 created_at=incident.created_at,
                 updated_at=incident.updated_at,
-                files=[
-                    schemas.IncidentFileOut(
-                        id=f.id,
-                        s3_key=await generate_presigned_url_async(
-                            f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
-                        ),
-                        file_type=f.file_type,
-                    )
-                    for f in incident.files
-                ],
+                files=file_responses,
             )
         )
 
