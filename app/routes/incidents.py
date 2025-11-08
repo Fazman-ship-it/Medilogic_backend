@@ -215,7 +215,7 @@ def get_incidents_for_regulator_simple(
 
     return incidents
     
-router.get("/incidents/admin", response_model=List[schemas.IncidentOut])
+@router.get("/incidents/admin", response_model=List[schemas.IncidentOut])
 def get_org_incidents_for_admin(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
