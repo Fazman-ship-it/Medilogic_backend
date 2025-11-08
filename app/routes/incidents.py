@@ -82,6 +82,48 @@ async def submit_incident(
 
     db.refresh(new_incident)
     return new_incident
+    
+from sqlalchemy import or_,desc
+from fastapi import HTTPException, Depends, Query 
+from sqlalchemy.orm import Session
+from app import models, schemas
+from app.dependencies import get_current_user,require_role
+from app.database import get_db
+from app.config import settings
+from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, desc, func
+from typing import List, Optional
+from app import models, schemas
+
+@router.get("/regulator", response_model=List[schemas.IncidentOut])
+def get_incidents_for_regulator_simple(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # 🔒 Role check
+    if current_user.role not in ["regulator", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # ✅ Regulators see only incidents in their jurisdiction
+    query = db.query(models.Incident)
+
+    if current_user.role == "regulator":
+        query = query.join(models.Organization)
+
+        if current_user.regulated_country:
+            query = query.filter(models.Organization.country == current_user.regulated_country)
+        if current_user.regulated_state:
+            query = query.filter(models.Organization.state == current_user.regulated_state)
+        if current_user.regulated_region:
+            query = query.filter(models.Organization.region == current_user.regulated_region)
+
+    # ✅ Sort by latest updates
+    incidents = query.order_by(models.Incident.updated_at.desc()).all()
+
+    return incidents
 
 from app.config import settings
 from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
@@ -460,44 +502,3 @@ def toggle_escalation(
         "escalated": incident.escalated,
     }
 
-from sqlalchemy import or_,desc
-from fastapi import HTTPException, Depends, Query 
-from sqlalchemy.orm import Session
-from app import models, schemas
-from app.dependencies import get_current_user,require_role
-from app.database import get_db
-from app.config import settings
-from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
-from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc, func
-from typing import List, Optional
-from app import models, schemas
-
-@router.get("/regulator", response_model=List[schemas.IncidentOut])
-def get_incidents_for_regulator_simple(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    # 🔒 Role check
-    if current_user.role not in ["regulator", "super_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    # ✅ Regulators see only incidents in their jurisdiction
-    query = db.query(models.Incident)
-
-    if current_user.role == "regulator":
-        query = query.join(models.Organization)
-
-        if current_user.regulated_country:
-            query = query.filter(models.Organization.country == current_user.regulated_country)
-        if current_user.regulated_state:
-            query = query.filter(models.Organization.state == current_user.regulated_state)
-        if current_user.regulated_region:
-            query = query.filter(models.Organization.region == current_user.regulated_region)
-
-    # ✅ Sort by latest updates
-    incidents = query.order_by(models.Incident.updated_at.desc()).all()
-
-    return incidents
