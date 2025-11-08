@@ -702,6 +702,10 @@ class IncidentOut(BaseModel):
     files: List[IncidentFileOut] = []  # ✅ list of uploaded files
     escalated: Optional[bool] = False  # ✅ added this
     updated_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+    
 
 class PaginatedIncidents(BaseModel):
     total: int
