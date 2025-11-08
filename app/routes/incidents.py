@@ -109,6 +109,7 @@ async def submit_incident_as_driver(   # ✅ must be async now
         incident_type=incident_type,
         location=location,
         severity=severity,
+        status="pending",
         is_visible_to_regulator=is_visible_to_regulator,
     )
     db.add(new_incident)
@@ -275,6 +276,7 @@ from uuid import UUID
 from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user
+from app.utilites.logging import log_activity
 
 @router.patch("/{incident_id}/status")
 def update_incident_status(
@@ -283,47 +285,72 @@ def update_incident_status(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    allowed_statuses = ["pending", "under_review", "escalated", "resolved", "closed"]
+    """
+    ✅ Update an incident's status with role-based allowed transitions:
+    - Admin: can move pending → under_review → escalated/resolved
+    - Driver: can move under_review → on_site → resolved
+    - Regulator: can move escalated → resolved → closed
+    - Super_admin: can set any status
+    """
+
+    allowed_statuses = ["pending", "under_review", "on_site", "escalated", "resolved", "closed"]
+
     if status not in allowed_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
 
+    # 🔍 Fetch the incident
     incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    # 🔒 Role-based control with transition logic
+    current_status = incident.status
+
+    # 🔒 Define role-based allowed transitions
     if current_user.role == "admin":
         allowed_transitions = {
             "pending": ["under_review"],
             "under_review": ["escalated", "resolved"],
+            "escalated": ["resolved"]
+        }
+    elif current_user.role == "driver":
+        allowed_transitions = {
+            "under_review": ["on_site"],
+            "on_site": ["resolved"]
         }
     elif current_user.role == "regulator":
         allowed_transitions = {
             "escalated": ["resolved"],
-            "resolved": ["closed"],
+            "resolved": ["closed"]
         }
     elif current_user.role == "super_admin":
-        allowed_transitions = {s: allowed_statuses for s in allowed_statuses}  # full override
+        allowed_transitions = {s: allowed_statuses for s in allowed_statuses}
     else:
         raise HTTPException(status_code=403, detail="You cannot update incident status.")
 
-    current_status = incident.status
+    # ✅ Check if the transition is valid
     next_allowed = allowed_transitions.get(current_status, [])
-
     if status not in next_allowed:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid transition from '{current_status}' to '{status}' for your role."
+            detail=f"Invalid transition from '{current_status}' to '{status}' for role '{current_user.role}'."
         )
 
-    # ✅ Update status (this will automatically update 'updated_at' due to onupdate=func.now())
+    # 🔁 Update the status
     incident.status = status
     db.commit()
     db.refresh(incident)
 
-    # ✅ Return with updated timestamp
+    # 📝 Log the activity
+    log_activity(
+        db=db,
+        user_id=current_user.id,
+        action="incident_status_updated",
+        details=f"{current_user.role.capitalize()} {current_user.name} changed status of '{incident.title}' from '{current_status}' to '{status}'"
+    )
+
+    # ✅ Return updated incident info
     return {
-        "message": f"Incident status updated to {status}",
+        "message": f"Incident status updated to '{status}'",
         "incident": {
             "id": incident.id,
             "status": incident.status,
