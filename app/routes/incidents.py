@@ -227,7 +227,7 @@ def get_incidents_for_regulator_paginated(
         total=total_count,
         skip=skip,
         limit=limit,
-        data=[schemas.IncidentOut.from_orm(i) for i in incidents]
+        data= data=[schemas.IncidentOut.from_orm(incident) for incident in incidents]
     )
     
 
