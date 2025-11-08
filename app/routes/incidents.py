@@ -486,54 +486,85 @@ def toggle_incident_escalation(
 from sqlalchemy import or_,desc
 from fastapi import HTTPException, Depends, Query 
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc,func
 from app import models, schemas
 from app.dependencies import get_current_user
 from app.database import get_db
+from app.config import settings
+from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, desc, func
+from typing import List, Optional
+from app import models, schemas
 
-async def get_all_incidents_for_regulator(
+
+@router.get("/regulator", response_model=dict)
+async def get_incidents_for_regulator(
     skip: int = Query(0, ge=0, description="Number of incidents to skip"),
     limit: int = Query(20, ge=1, le=100, description="Number of incidents to return"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # ✅ Role check
+    """
+    ✅ Regulators can fetch all incidents within their jurisdiction
+    - Regulators see incidents marked visible_to_regulator or escalated
+    - Super admins see all incidents
+    """
+
+    # 🔒 Role validation
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Base query
+    # 🔍 Base query
     query = db.query(models.Incident)
 
     if current_user.role == "super_admin":
+        # Super admin sees everything
         query = query.order_by(desc(models.Incident.updated_at))
     else:
-        filters = [or_(
-            models.Incident.is_visible_to_regulator == True,
-            models.Incident.status == "escalated"
-        )]
+        # ✅ Regulator: only visible or escalated incidents
+        filters = [
+            or_(
+                models.Incident.is_visible_to_regulator == True,
+                models.Incident.status == "escalated"
+            )
+        ]
 
-        # Filter by jurisdiction using subquery
-        if any([current_user.regulated_country, current_user.regulated_state, current_user.regulated_region]):
-            org_subq = db.query(models.Organization.id)
-            if current_user.regulated_country:
-                org_subq = org_subq.filter(models.Organization.country == current_user.regulated_country)
-            if current_user.regulated_state:
-                org_subq = org_subq.filter(models.Organization.state == current_user.regulated_state)
-            if current_user.regulated_region:
-                org_subq = org_subq.filter(models.Organization.region == current_user.regulated_region)
+        # ✅ Add jurisdiction filters
+        org_subq = db.query(models.Organization.id)
 
-            filters.append(models.Incident.organization_id.in_(org_subq))
+        if current_user.regulated_country:
+            org_subq = org_subq.filter(
+                models.Organization.country == current_user.regulated_country
+            )
+        if current_user.regulated_state:
+            org_subq = org_subq.filter(
+                models.Organization.state == current_user.regulated_state
+            )
+        if current_user.regulated_region:
+            org_subq = org_subq.filter(
+                models.Organization.region == current_user.regulated_region
+            )
+
+        filters.append(models.Incident.organization_id.in_(org_subq))
 
         query = query.filter(*filters).order_by(desc(models.Incident.updated_at))
 
     # ✅ Get total count before pagination
     total_count = query.with_entities(func.count()).scalar()
 
-    # Apply pagination
+    # ✅ Apply pagination
     incidents = query.offset(skip).limit(limit).all()
 
+    # ✅ Return empty list if no match
     if not incidents:
-        raise HTTPException(status_code=404, detail="No incidents found for your jurisdiction")
+        return {
+            "total": 0,
+            "skip": skip,
+            "limit": limit,
+            "data": []
+        }
 
     # ✅ Generate presigned URLs
     results = []
@@ -569,7 +600,7 @@ async def get_all_incidents_for_regulator(
             )
         )
 
-    # ✅ Return data with pagination metadata
+    # ✅ Return paginated result
     return {
         "total": total_count,
         "skip": skip,
