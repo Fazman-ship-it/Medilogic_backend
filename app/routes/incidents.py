@@ -335,7 +335,7 @@ from uuid import UUID
 from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user
-
+from app.utilites.logging import log_activity
 
 @router.patch("/{incident_id}/toggle-escalation")
 def toggle_incident_escalation(
