@@ -441,37 +441,22 @@ from app.database import get_db
 from app.dependencies import get_current_user
 
 @router.patch("/{incident_id}/escalate")
-def toggle_incident_escalation(
+def toggle_escalation(
     incident_id: UUID,
-    escalated: bool = Body(..., embed=True),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
 ):
-    """
-    ✅ Simple endpoint for admins to set 'escalated' to True or False.
-    Updates the incident status accordingly.
-    """
-
-    # 🔍 Find the incident
     incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    # 🔒 Only admins can toggle
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can toggle escalation")
-
-    # ✅ Update escalation flag and status
-    incident.escalated = escalated
-    incident.status = "escalated" if escalated else "under_review"
-
+    incident.escalated = not incident.escalated  # Flip between True/False
     db.commit()
     db.refresh(incident)
 
     return {
-        "message": f"Incident escalation set to {escalated}",
+        "message": f"Incident escalation toggled to {incident.escalated}",
         "incident_id": str(incident.id),
-        "new_status": incident.status,
         "escalated": incident.escalated,
     }
 
@@ -490,96 +475,29 @@ from sqlalchemy import or_, desc, func
 from typing import List, Optional
 from app import models, schemas
 
-@router.get("/regulator", response_model=dict)
-async def get_incidents_for_regulator(
-    skip: int = Query(0, ge=0, description="Number of incidents to skip"),
-    limit: int = Query(20, ge=1, le=100, description="Number of incidents to return"),
+@router.get("/regulator", response_model=List[schemas.IncidentOut])
+def get_incidents_for_regulator_simple(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_current_user)
 ):
-    """
-    ✅ Regulators can fetch all incidents within their jurisdiction (country/state/region).
-    - Super admins can see all incidents.
-    - Regulators only see incidents from organizations that match their regulated areas.
-    """
-
-    # 🔒 Role validation
+    # 🔒 Role check
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # 🔍 Base query
+    # ✅ Regulators see only incidents in their jurisdiction
     query = db.query(models.Incident)
 
-    if current_user.role == "super_admin":
-        # Super admin sees everything
-        incidents = query.order_by(models.Incident.updated_at.desc()).offset(skip).limit(limit).all()
-    else:
-        # ✅ Regulator sees only incidents from organizations in their jurisdiction
-        org_subquery = db.query(models.Organization.id)
+    if current_user.role == "regulator":
+        query = query.join(models.Organization)
 
         if current_user.regulated_country:
-            org_subquery = org_subquery.filter(models.Organization.country == current_user.regulated_country)
+            query = query.filter(models.Organization.country == current_user.regulated_country)
         if current_user.regulated_state:
-            org_subquery = org_subquery.filter(models.Organization.state == current_user.regulated_state)
+            query = query.filter(models.Organization.state == current_user.regulated_state)
         if current_user.regulated_region:
-            org_subquery = org_subquery.filter(models.Organization.region == current_user.regulated_region)
+            query = query.filter(models.Organization.region == current_user.regulated_region)
 
-        incidents = (
-            query.filter(models.Incident.organization_id.in_(org_subquery))
-            .order_by(models.Incident.updated_at.desc())
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+    # ✅ Sort by latest updates
+    incidents = query.order_by(models.Incident.updated_at.desc()).all()
 
-    if not incidents:
-        return {
-            "total": 0,
-            "skip": skip,
-            "limit": limit,
-            "data": []
-        }
-
-    # ✅ Count total before pagination
-    total_count = query.with_entities(func.count()).scalar()
-
-    # ✅ Build response
-    results = []
-    for incident in incidents:
-        file_responses = []
-        for f in incident.files:
-            presigned_url = await generate_presigned_url_async(
-                f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
-            )
-            file_responses.append(
-                schemas.IncidentFileOut(
-                    id=f.id,
-                    s3_key=presigned_url,
-                    file_type=f.file_type,
-                )
-            )
-
-        results.append(
-            schemas.IncidentOut(
-                id=incident.id,
-                title=incident.title,
-                description=incident.description,
-                incident_type=incident.incident_type,
-                severity=incident.severity,
-                location=incident.location,
-                is_visible_to_regulator=incident.is_visible_to_regulator,
-                organization_id=incident.organization_id,
-                submitted_by_id=incident.submitted_by_id,
-                status=incident.status,
-                created_at=incident.created_at,
-                updated_at=incident.updated_at,
-                files=file_responses,
-            )
-        )
-
-    return {
-        "total": total_count,
-        "skip": skip,
-        "limit": limit,
-        "data": results
-    }
+    return incidents
