@@ -267,6 +267,96 @@ def get_driver_incidents(
     return incidents
     
     
+from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.orm import Session
+from uuid import UUID
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+
+@router.patch("/{incident_id}/status")
+def update_incident_status(
+    incident_id: UUID,
+    status: str = Body(..., embed=True),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    allowed_statuses = ["pending", "under_review", "escalated", "resolved", "closed"]
+    if status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # 🔒 Role-based control with transition logic
+    if current_user.role == "admin":
+        allowed_transitions = {
+            "pending": ["under_review"],
+            "under_review": ["escalated", "resolved"],
+        }
+    elif current_user.role == "regulator":
+        allowed_transitions = {
+            "escalated": ["resolved"],
+            "resolved": ["closed"],
+        }
+    elif current_user.role == "super_admin":
+        allowed_transitions = {s: allowed_statuses for s in allowed_statuses}  # full override
+    else:
+        raise HTTPException(status_code=403, detail="You cannot update incident status.")
+
+    current_status = incident.status
+    next_allowed = allowed_transitions.get(current_status, [])
+
+    if status not in next_allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid transition from '{current_status}' to '{status}' for your role."
+        )
+
+    # ✅ Update status (this will automatically update 'updated_at' due to onupdate=func.now())
+    incident.status = status
+    db.commit()
+    db.refresh(incident)
+
+    # ✅ Return with updated timestamp
+    return {
+        "message": f"Incident status updated to {status}",
+        "incident": {
+            "id": incident.id,
+            "status": incident.status,
+            "updated_at": incident.updated_at
+        }
+    }
+    
+from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy.orm import Session
+from uuid import UUID
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+
+@router.patch("/{incident_id}/escalate")
+def toggle_escalation(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+):
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    incident.escalated = not incident.escalated  # Flip between True/False
+    db.commit()
+    db.refresh(incident)
+
+    return {
+        "message": f"Incident escalation toggled to {incident.escalated}",
+        "incident_id": str(incident.id),
+        "escalated": incident.escalated,
+    }   
+    
+    
 from app.config import settings
 from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
 from uuid import UUID
@@ -414,93 +504,3 @@ async def get_incident_details(
         files=file_responses,
         updated_at=incident.updated_at,
     )
-    
-from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session
-from uuid import UUID
-from app import models, schemas
-from app.database import get_db
-from app.dependencies import get_current_user
-
-@router.patch("/{incident_id}/status")
-def update_incident_status(
-    incident_id: UUID,
-    status: str = Body(..., embed=True),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    allowed_statuses = ["pending", "under_review", "escalated", "resolved", "closed"]
-    if status not in allowed_statuses:
-        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
-
-    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
-    if not incident:
-        raise HTTPException(status_code=404, detail="Incident not found")
-
-    # 🔒 Role-based control with transition logic
-    if current_user.role == "admin":
-        allowed_transitions = {
-            "pending": ["under_review"],
-            "under_review": ["escalated", "resolved"],
-        }
-    elif current_user.role == "regulator":
-        allowed_transitions = {
-            "escalated": ["resolved"],
-            "resolved": ["closed"],
-        }
-    elif current_user.role == "super_admin":
-        allowed_transitions = {s: allowed_statuses for s in allowed_statuses}  # full override
-    else:
-        raise HTTPException(status_code=403, detail="You cannot update incident status.")
-
-    current_status = incident.status
-    next_allowed = allowed_transitions.get(current_status, [])
-
-    if status not in next_allowed:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid transition from '{current_status}' to '{status}' for your role."
-        )
-
-    # ✅ Update status (this will automatically update 'updated_at' due to onupdate=func.now())
-    incident.status = status
-    db.commit()
-    db.refresh(incident)
-
-    # ✅ Return with updated timestamp
-    return {
-        "message": f"Incident status updated to {status}",
-        "incident": {
-            "id": incident.id,
-            "status": incident.status,
-            "updated_at": incident.updated_at
-        }
-    }
-    
-from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.orm import Session
-from uuid import UUID
-from app import models, schemas
-from app.database import get_db
-from app.dependencies import get_current_user
-
-@router.patch("/{incident_id}/escalate")
-def toggle_escalation(
-    incident_id: UUID,
-    db: Session = Depends(get_db),
-):
-    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
-
-    if not incident:
-        raise HTTPException(status_code=404, detail="Incident not found")
-
-    incident.escalated = not incident.escalated  # Flip between True/False
-    db.commit()
-    db.refresh(incident)
-
-    return {
-        "message": f"Incident escalation toggled to {incident.escalated}",
-        "incident_id": str(incident.id),
-        "escalated": incident.escalated,
-    }
-
