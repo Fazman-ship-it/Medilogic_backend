@@ -83,113 +83,6 @@ async def submit_incident(
     db.refresh(new_incident)
     return new_incident
     
-from sqlalchemy import or_,desc
-from fastapi import HTTPException, Depends, Query 
-from sqlalchemy.orm import Session
-from app import models, schemas
-from app.dependencies import get_current_user,require_role
-from app.database import get_db
-from app.config import settings
-from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
-from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, desc, func
-from typing import List, Optional
-from app import models, schemas
-
-@router.get("/regulator", response_model=List[schemas.IncidentOut])
-def get_incidents_for_regulator_simple(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    # 🔒 Role check
-    if current_user.role not in ["regulator", "super_admin"]:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    # ✅ Regulators see only incidents in their jurisdiction
-    query = db.query(models.Incident)
-
-    if current_user.role == "regulator":
-        query = query.join(models.Organization)
-
-        if current_user.regulated_country:
-            query = query.filter(models.Organization.country == current_user.regulated_country)
-        if current_user.regulated_state:
-            query = query.filter(models.Organization.state == current_user.regulated_state)
-        if current_user.regulated_region:
-            query = query.filter(models.Organization.region == current_user.regulated_region)
-
-    # ✅ Sort by latest updates
-    incidents = query.order_by(models.Incident.updated_at.desc()).all()
-
-    return incidents
-
-from app.config import settings
-from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
-from uuid import UUID
-
-@router.get("/{incident_id}", response_model=schemas.IncidentOut)
-async def get_incident_detail(
-    incident_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    # 🔍 Find the incident
-    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
-    if not incident:
-        raise HTTPException(status_code=404, detail="Incident not found")
-
-    # 🔒 Role-based access control
-    if current_user.role == "super_admin":
-        pass  # full access
-    elif current_user.role == "regulator":
-        # Only view incidents in their jurisdiction
-        org = incident.organization
-        if (
-            org.country != current_user.regulated_country
-            or org.state != current_user.regulated_state
-            or org.region != current_user.regulated_region
-        ):
-            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
-    elif current_user.role in ["admin", "driver"]:
-        # Only see incidents within their own organization
-        if incident.organization_id != current_user.organization_id:
-            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
-    else:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    # ✅ Generate presigned URLs for attached files
-    file_responses = []
-    for f in incident.files:
-        presigned_url = await generate_presigned_url_async(
-            f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
-        )
-        file_responses.append(
-            schemas.IncidentFileOut(
-                id=f.id,
-                s3_key=presigned_url,
-                file_type=f.file_type,
-            )
-        )
-
-    # ✅ Return detailed info
-    return schemas.IncidentOut(
-        id=incident.id,
-        title=incident.title,
-        description=incident.description,
-        incident_type=incident.incident_type,
-        severity=incident.severity,
-        location=incident.location,
-        is_visible_to_regulator=incident.is_visible_to_regulator,
-        organization_id=incident.organization_id,
-        submitted_by_id=incident.submitted_by_id,
-        status=incident.status,
-        created_at=incident.created_at,
-        files=file_responses,
-        updated_at=incident.updated_at,
-    )
-
 @router.post("/incidents/driver", response_model=schemas.IncidentOut)
 async def submit_incident_as_driver(   # ✅ must be async now
     title: str = Form(...),
@@ -279,8 +172,50 @@ Please review this incident in the Medilogic Admin Panel.
         send_email(subject, body, recipient_emails)
 
     return new_incident
+    
+from sqlalchemy import or_,desc
+from fastapi import HTTPException, Depends, Query 
+from sqlalchemy.orm import Session
+from app import models, schemas
+from app.dependencies import get_current_user,require_role
+from app.database import get_db
+from app.config import settings
+from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, desc, func
+from typing import List, Optional
+from app import models, schemas
 
-@router.get("/incidents/admin", response_model=List[schemas.IncidentOut])
+@router.get("/regulator", response_model=List[schemas.IncidentOut])
+def get_incidents_for_regulator_simple(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # 🔒 Role check
+    if current_user.role not in ["regulator", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # ✅ Regulators see only incidents in their jurisdiction
+    query = db.query(models.Incident)
+
+    if current_user.role == "regulator":
+        query = query.join(models.Organization)
+
+        if current_user.regulated_country:
+            query = query.filter(models.Organization.country == current_user.regulated_country)
+        if current_user.regulated_state:
+            query = query.filter(models.Organization.state == current_user.regulated_state)
+        if current_user.regulated_region:
+            query = query.filter(models.Organization.region == current_user.regulated_region)
+
+    # ✅ Sort by latest updates
+    incidents = query.order_by(models.Incident.updated_at.desc()).all()
+
+    return incidents
+    
+router.get("/incidents/admin", response_model=List[schemas.IncidentOut])
 def get_org_incidents_for_admin(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -330,6 +265,73 @@ def get_driver_incidents(
     )
 
     return incidents
+    
+    
+from app.config import settings
+from app.utilites.storage_utilites import generate_presigned_url_async  # ✅ use new async helper
+from uuid import UUID
+
+@router.get("/{incident_id}", response_model=schemas.IncidentOut)
+async def get_incident_detail(
+    incident_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # 🔍 Find the incident
+    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # 🔒 Role-based access control
+    if current_user.role == "super_admin":
+        pass  # full access
+    elif current_user.role == "regulator":
+        # Only view incidents in their jurisdiction
+        org = incident.organization
+        if (
+            org.country != current_user.regulated_country
+            or org.state != current_user.regulated_state
+            or org.region != current_user.regulated_region
+        ):
+            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
+    elif current_user.role in ["admin", "driver"]:
+        # Only see incidents within their own organization
+        if incident.organization_id != current_user.organization_id:
+            raise HTTPException(status_code=403, detail="Not authorized to view this incident")
+    else:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # ✅ Generate presigned URLs for attached files
+    file_responses = []
+    for f in incident.files:
+        presigned_url = await generate_presigned_url_async(
+            f.s3_key, expires_in=settings.PRESIGNED_EXPIRY
+        )
+        file_responses.append(
+            schemas.IncidentFileOut(
+                id=f.id,
+                s3_key=presigned_url,
+                file_type=f.file_type,
+            )
+        )
+
+    # ✅ Return detailed info
+    return schemas.IncidentOut(
+        id=incident.id,
+        title=incident.title,
+        description=incident.description,
+        incident_type=incident.incident_type,
+        severity=incident.severity,
+        location=incident.location,
+        is_visible_to_regulator=incident.is_visible_to_regulator,
+        organization_id=incident.organization_id,
+        submitted_by_id=incident.submitted_by_id,
+        status=incident.status,
+        created_at=incident.created_at,
+        files=file_responses,
+        updated_at=incident.updated_at,
+    )
+
     
 from fastapi import APIRouter, Depends, HTTPException, Body,Form,File
 from sqlalchemy.orm import Session
