@@ -506,8 +506,7 @@ async def get_incidents_for_regulator(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    ✅ Regulators can fetch all incidents that are marked as visible_to_regulator
-    - Simple, clean version without escalation or jurisdiction filters
+    ✅ Regulators can fetch incidents visible to them within their jurisdiction
     """
 
     # ✅ Ensure only regulators or super admins can access
@@ -515,14 +514,26 @@ async def get_incidents_for_regulator(
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # ✅ Base query: only incidents visible to regulator
-    query = db.query(models.Incident).filter(
+    query = db.query(models.Incident).join(models.Organization).filter(
         models.Incident.is_visible_to_regulator == True
-    ).order_by(models.Incident.updated_at.desc())
+    )
 
-    # ✅ Get total count before pagination
+    # ✅ Apply jurisdiction filters
+    if current_user.role == "regulator":
+        if current_user.regulated_country:
+            query = query.filter(models.Organization.country == current_user.regulated_country)
+        if current_user.regulated_state:
+            query = query.filter(models.Organization.state == current_user.regulated_state)
+        if current_user.regulated_region:
+            query = query.filter(models.Organization.region == current_user.regulated_region)
+
+    # ✅ Sort by most recent
+    query = query.order_by(models.Incident.updated_at.desc())
+
+    # ✅ Total count
     total_count = query.with_entities(func.count()).scalar()
 
-    # ✅ Apply pagination
+    # ✅ Pagination
     incidents = query.offset(skip).limit(limit).all()
 
     # ✅ Build response
@@ -555,7 +566,6 @@ async def get_incidents_for_regulator(
             )
         )
 
-    # ✅ Return response
     return {
         "total": total_count,
         "skip": skip,
