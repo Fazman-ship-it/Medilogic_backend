@@ -190,8 +190,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func
 from typing import List, Optional
 from app import models, schemas
-
-@router.get("/regulator", response_model=List[schemas.IncidentOut])
+router.get("/regulator", response_model=List[schemas.IncidentOut])
 def get_incidents_for_regulator_simple(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
@@ -217,6 +216,7 @@ def get_incidents_for_regulator_simple(
     incidents = query.order_by(models.Incident.updated_at.desc()).all()
 
     return incidents
+    
     
 @router.get("/incidents/admin", response_model=List[schemas.IncidentOut])
 def get_org_incidents_for_admin(
