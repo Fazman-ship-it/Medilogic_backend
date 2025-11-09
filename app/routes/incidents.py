@@ -86,21 +86,21 @@ async def submit_incident(
     return new_incident
     
 @router.post("/incidents/driver", response_model=schemas.IncidentOut)
-async def submit_incident_as_driver(   # ✅ must be async now
+async def submit_incident_as_driver(
     title: str = Form(...),
     description: str = Form(...),
     incident_type: str = Form(...),
     location: str = Form(...),
     severity: str = Form(...),
-    is_visible_to_regulator: bool = Form(False),
     files: List[UploadFile] = File([]),  # ✅ support multiple files
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    # 🔒 Role validation
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can submit incidents")
 
-    # ✅ Create incident record first
+    # ✅ Create the incident (always pending at creation)
     new_incident = models.Incident(
         organization_id=current_user.organization_id,
         submitted_by_id=current_user.id,
@@ -110,13 +110,13 @@ async def submit_incident_as_driver(   # ✅ must be async now
         location=location,
         severity=severity,
         status="pending",
-        is_visible_to_regulator=is_visible_to_regulator,
     )
+
     db.add(new_incident)
     db.commit()
     db.refresh(new_incident)
 
-    # ✅ Handle file uploads (store in IncidentFile table)
+    # ✅ Handle file uploads
     for file in files:
         ext = os.path.splitext(file.filename)[-1].lower()
         if ext not in {".jpg", ".jpeg", ".png", ".pdf", ".docx"}:
@@ -131,39 +131,39 @@ async def submit_incident_as_driver(   # ✅ must be async now
         db.add(models.IncidentFile(
             incident_id=new_incident.id,
             s3_key=s3_key,
-            file_type=ext.replace(".", ""),  # e.g., pdf, jpg
+            file_type=ext.replace(".", ""),
         ))
 
     db.commit()
     db.refresh(new_incident)
 
-    # ✅ Notifications (critical or regulator-visible only)
-    recipients = db.query(models.User).filter(
+    # ✅ Notify admins within the same organization
+    admin_recipients = db.query(models.User).filter(
         models.User.organization_id == current_user.organization_id,
-        models.User.role.in_(["admin", "regulator"]),
+        models.User.role == "admin",
         models.User.is_active == True,
         models.User.email.isnot(None)
     ).all()
 
-    recipient_emails = [user.email for user in recipients if user.email]
+    admin_emails = [admin.email for admin in admin_recipients if admin.email]
 
-    if recipient_emails and (severity.lower() == "critical" or is_visible_to_regulator):
+    # 🔔 Send email only if severity is critical
+    if admin_emails and severity.lower() == "critical":
         file_urls = []
         for f in new_incident.files:
-            presigned_url = await generate_presigned_url_async(   # ✅ async download URL
+            presigned_url = await generate_presigned_url_async(
                 f.s3_key,
                 expires_in=settings.PRESIGNED_EXPIRY
             )
             file_urls.append(presigned_url)
 
-        subject = f"🚨 New Incident from {current_user.name} - Severity: {severity.title()}"
+        subject = f"🚨 New Critical Incident from {current_user.name}"
         body = f"""
-A new incident has been reported by {current_user.name} ({current_user.email}):
+A new critical incident has been reported by {current_user.name} ({current_user.email}):
 
 📝 Title: {title}
 📍 Location: {location}
-⚠️ Severity: {severity}
-👁 Visible to Regulator: {"Yes" if is_visible_to_regulator else "No"}
+⚠️ Severity: {severity.title()}
 🏢 Organization: {current_user.organization.name}
 📎 Attachments: {", ".join(file_urls) if file_urls else "None"}
 
@@ -172,7 +172,7 @@ Description:
 
 Please review this incident in the Medilogic Admin Panel.
 """
-        send_email(subject, body, recipient_emails)
+        send_email(subject, body, admin_emails)
 
     return new_incident
     
