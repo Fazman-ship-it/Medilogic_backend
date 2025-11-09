@@ -240,29 +240,35 @@ def get_org_incidents_for_admin_paginated(
     skip: int = Query(0, ge=0, description="Number of incidents to skip"),
     limit: int = Query(20, ge=1, le=100, description="Number of incidents to return")
 ):
+    """
+    Returns all incidents submitted by drivers within the admin's organization.
+    Only accessible to admins.
+    """
     # 🔒 Role check
     if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can view incidents")
+        raise HTTPException(status_code=403, detail="Only admins can view organization incidents.")
 
-    # ✅ Base query scoped to the admin's organization
-    query = db.query(models.Incident).filter(
-        models.Incident.organization_id == current_user.organization_id
+    # ✅ Query only driver-submitted incidents in the admin's organization
+    query = (
+        db.query(models.Incident)
+        .join(models.User, models.Incident.created_by == models.User.id)
+        .filter(
+            models.User.role == "driver",
+            models.Incident.organization_id == current_user.organization_id
+        )
     )
 
-    # ✅ Total count before pagination
     total_count = query.count()
 
-    # ✅ Apply sorting and pagination
     incidents = query.order_by(models.Incident.updated_at.desc()) \
                      .offset(skip).limit(limit) \
                      .all()
 
-    # ✅ Return in the standard paginated format
     return {
         "total": total_count,
         "skip": skip,
         "limit": limit,
-        "items": incidents  # FastAPI + Pydantic will convert each Incident to IncidentOut
+        "items": incidents
     }
     
 
@@ -273,29 +279,30 @@ def get_my_incidents_paginated(
     skip: int = Query(0, ge=0, description="Number of incidents to skip"),
     limit: int = Query(20, ge=1, le=100, description="Number of incidents to return")
 ):
+    """
+    Returns all incidents submitted by the current admin to regulators.
+    Only accessible to admins.
+    """
     # 🔒 Role check
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view their submitted incidents.")
 
-    # ✅ Base query scoped to the admin's organization
+    # ✅ Filter by current user's own submissions
     query = db.query(models.Incident).filter(
-        models.Incident.organization_id == current_user.organization_id
+        models.Incident.created_by == current_user.id
     )
 
-    # ✅ Total count before pagination
     total_count = query.count()
 
-    # ✅ Apply sorting and pagination
     incidents = query.order_by(models.Incident.created_at.desc()) \
                      .offset(skip).limit(limit) \
                      .all()
 
-    # ✅ Return in standard paginated format
     return {
         "total": total_count,
         "skip": skip,
         "limit": limit,
-        "items": incidents  # FastAPI + Pydantic will convert each Incident to IncidentOut
+        "items": incidents
     }
     
 @router.get("/driver/my-submissions", response_model=schemas.PaginatedIncidents)
