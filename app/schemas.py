@@ -655,6 +655,7 @@ class EnquiryOut(BaseModel):
 
 # --------------------------
 # Input schema for creating incidents (no files here)
+
 class IncidentCreate(BaseModel):
     title: str
     description: str
