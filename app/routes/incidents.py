@@ -354,11 +354,11 @@ def update_incident_status(
     current_user: models.User = Depends(get_current_user),
 ):
     """
-    ✅ Update an incident's status with role-based allowed transitions:
-    - Admin: can move pending → under_review → escalated/resolved
-    - Driver: can move under_review → on_site → resolved
-    - Regulator: can move escalated → resolved → closed
-    - Super_admin: can set any status
+    ✅ Update an incident's status with strict role-based permissions:
+    - Admin: can set → under_review, resolved, closed
+    - Driver: can set → pending, on_site
+    - Regulator: can set → under_review, resolved, closed
+    - Super_admin: can set → any status
     """
 
     allowed_statuses = ["pending", "under_review", "on_site", "escalated", "resolved", "closed"]
@@ -373,34 +373,23 @@ def update_incident_status(
 
     current_status = incident.status
 
-    # 🔒 Define role-based allowed transitions
+    # 🔒 Define allowed statuses per role
     if current_user.role == "admin":
-        allowed_transitions = {
-            "pending": ["under_review"],
-            "under_review": ["escalated", "resolved"],
-            "escalated": ["resolved"]
-        }
+        role_allowed_statuses = ["under_review", "resolved", "closed"]
     elif current_user.role == "driver":
-        allowed_transitions = {
-            "under_review": ["on_site"],
-            "on_site": ["resolved"]
-        }
+        role_allowed_statuses = ["pending", "on_site"]
     elif current_user.role == "regulator":
-        allowed_transitions = {
-            "escalated": ["resolved"],
-            "resolved": ["closed"]
-        }
+        role_allowed_statuses = ["under_review", "resolved", "closed"]
     elif current_user.role == "super_admin":
-        allowed_transitions = {s: allowed_statuses for s in allowed_statuses}
+        role_allowed_statuses = allowed_statuses
     else:
-        raise HTTPException(status_code=403, detail="You cannot update incident status.")
+        raise HTTPException(status_code=403, detail="You are not authorized to update incident status.")
 
-    # ✅ Check if the transition is valid
-    next_allowed = allowed_transitions.get(current_status, [])
-    if status not in next_allowed:
+    # ✅ Check if target status is allowed for this role
+    if status not in role_allowed_statuses:
         raise HTTPException(
-            status_code=400,
-            detail=f"Invalid transition from '{current_status}' to '{status}' for role '{current_user.role}'."
+            status_code=403,
+            detail=f"Users with role '{current_user.role}' can only set status to: {role_allowed_statuses}"
         )
 
     # 🔁 Update the status
@@ -421,7 +410,8 @@ def update_incident_status(
         "message": f"Incident status updated to '{status}'",
         "incident": {
             "id": incident.id,
-            "status": incident.status,
+            "previous_status": current_status,
+            "new_status": incident.status,
             "updated_at": incident.updated_at
         }
     }
