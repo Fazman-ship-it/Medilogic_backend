@@ -703,6 +703,8 @@ class IncidentOut(BaseModel):
     files: List[IncidentFileOut] = []  # ✅ list of uploaded files
     escalated: Optional[bool] = False  # ✅ added this
     updated_at: Optional[datetime] = None
+    submitted_by_name: Optional[str] = None
+    organization_name: Optional[str] = None
     
     class Config:
         from_attributes = True
