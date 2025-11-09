@@ -193,7 +193,7 @@ from app import models, schemas
 from pydantic import BaseModel
 from app.schemas import PaginatedIncidents
 
-@router.get("/regulator", response_model=PaginatedIncidents)
+@router.get("/regulator", response_model=schemas.PaginatedIncidents)
 def get_incidents_for_regulator_paginated(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -204,12 +204,15 @@ def get_incidents_for_regulator_paginated(
     if current_user.role not in ["regulator", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Base query
-    query = db.query(models.Incident)
+    # ✅ Base query with joins
+    query = (
+        db.query(models.Incident)
+        .join(models.Organization, models.Incident.organization_id == models.Organization.id)
+        .join(models.User, models.Incident.submitted_by_id == models.User.id)
+    )
 
-    # Regulators see only incidents in their jurisdiction
+    # ✅ Regulators see only incidents in their jurisdiction
     if current_user.role == "regulator":
-        query = query.join(models.Organization)
         if current_user.regulated_country:
             query = query.filter(models.Organization.country == current_user.regulated_country)
         if current_user.regulated_state:
@@ -217,20 +220,31 @@ def get_incidents_for_regulator_paginated(
         if current_user.regulated_region:
             query = query.filter(models.Organization.region == current_user.regulated_region)
 
-    # Total count before pagination
+    # ✅ Total count before pagination
     total_count = query.count()
 
-    # Apply sorting and pagination
+    # ✅ Apply sorting and pagination
     incidents = query.order_by(models.Incident.updated_at.desc()) \
                      .offset(skip).limit(limit) \
                      .all()
 
-    # Return in the same style as your trips endpoint
+    # ✅ Enrich response with readable names
+    enriched_items = []
+    for incident in incidents:
+        enriched_items.append(
+            schemas.IncidentOut(
+                **incident.__dict__,
+                submitted_by_name=incident.submitted_by.name if incident.submitted_by else None,
+                organization_name=incident.organization.name if incident.organization else None
+            )
+        )
+
+    # ✅ Return paginated response
     return {
         "total": total_count,
         "skip": skip,
         "limit": limit,
-        "items": incidents  # FastAPI will automatically convert to IncidentOut
+        "items": enriched_items
     }
     
 @router.get("/incidents/admin", response_model=schemas.PaginatedIncidents)
@@ -248,7 +262,7 @@ def get_org_incidents_for_admin_paginated(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can view organization incidents.")
 
-    # ✅ Query only driver-submitted incidents in the admin's organization
+    # ✅ Join with User to include driver details
     query = (
         db.query(models.Incident)
         .join(models.User, models.Incident.submitted_by_id == models.User.id)
@@ -260,17 +274,29 @@ def get_org_incidents_for_admin_paginated(
 
     total_count = query.count()
 
-    incidents = query.order_by(models.Incident.updated_at.desc()) \
-                     .offset(skip).limit(limit) \
-                     .all()
+    incidents = (
+        query.order_by(models.Incident.updated_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+    # ✅ Enrich incidents with driver (submitted_by) names
+    enriched_items = []
+    for incident in incidents:
+        enriched_items.append(
+            schemas.IncidentOut(
+                **incident.__dict__,
+                submitted_by_name=incident.submitted_by.name if incident.submitted_by else None
+            )
+        )
 
     return {
         "total": total_count,
         "skip": skip,
         "limit": limit,
-        "items": incidents
+        "items": enriched_items
     }
-    
 
 @router.get("/my-submissions", response_model=schemas.PaginatedIncidents)
 def get_my_incidents_paginated(
