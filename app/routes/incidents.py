@@ -251,7 +251,7 @@ def get_org_incidents_for_admin_paginated(
     # ✅ Query only driver-submitted incidents in the admin's organization
     query = (
         db.query(models.Incident)
-        .join(models.User, models.Incident.created_by == models.User.id)
+        .join(models.User, models.Incident.submitted_by_id == models.User.id)
         .filter(
             models.User.role == "driver",
             models.Incident.organization_id == current_user.organization_id
@@ -289,7 +289,7 @@ def get_my_incidents_paginated(
 
     # ✅ Filter by current user's own submissions
     query = db.query(models.Incident).filter(
-        models.Incident.created_by == current_user.id
+        models.Incident.submitted_by_id == current_user.id
     )
 
     total_count = query.count()
