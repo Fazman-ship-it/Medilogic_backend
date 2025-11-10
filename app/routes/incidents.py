@@ -18,6 +18,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.utilites.email_utilites import send_email
 from app.config import settings
+from app.utilites.time_utilities import now_utc
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
@@ -54,7 +55,8 @@ async def submit_incident(
         organization_id=current_user.organization_id,
         submitted_by_id=current_user.id,
         status="pending",
-        escalated=False
+        created_at=now_utc()
+        
         
     )
 
@@ -110,6 +112,7 @@ async def submit_incident_as_driver(
         location=location,
         severity=severity,
         status="pending",
+        created_at=now_utc()
     )
 
     db.add(new_incident)
