@@ -508,27 +508,38 @@ async def get_incident_detail(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # 🔍 Find the incident
-    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    # 🔍 Fetch the incident with relationships preloaded
+    incident = (
+        db.query(models.Incident)
+        .join(models.Organization, models.Incident.organization_id == models.Organization.id)
+        .join(models.User, models.Incident.submitted_by_id == models.User.id)
+        .filter(models.Incident.id == incident_id)
+        .first()
+    )
+
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
+
+    org = incident.organization  # ✅ Get organization for jurisdiction checks
 
     # 🔒 Role-based access control
     if current_user.role == "super_admin":
         pass  # full access
+
     elif current_user.role == "regulator":
-        # Only view incidents in their jurisdiction
-        org = incident.organization
+        # ✅ Check regulator jurisdiction
         if (
-            org.country != current_user.regulated_country
-            or org.state != current_user.regulated_state
-            or org.region != current_user.regulated_region
+            (current_user.regulated_country and org.country != current_user.regulated_country)
+            or (current_user.regulated_state and org.state != current_user.regulated_state)
+            or (current_user.regulated_region and org.region != current_user.regulated_region)
         ):
             raise HTTPException(status_code=403, detail="Not authorized to view this incident")
+
     elif current_user.role in ["admin", "driver"]:
-        # Only see incidents within their own organization
+        # ✅ Ensure incident belongs to the same organization
         if incident.organization_id != current_user.organization_id:
             raise HTTPException(status_code=403, detail="Not authorized to view this incident")
+
     else:
         raise HTTPException(status_code=403, detail="Not authorized")
 
@@ -546,6 +557,10 @@ async def get_incident_detail(
             )
         )
 
+    # ✅ Prepare readable names
+    submitted_by_name = incident.submitted_by.name if incident.submitted_by else None
+    organization_name = incident.organization.name if incident.organization else None
+
     # ✅ Return detailed info
     return schemas.IncidentOut(
         id=incident.id,
@@ -556,13 +571,13 @@ async def get_incident_detail(
         location=incident.location,
         is_visible_to_regulator=incident.is_visible_to_regulator,
         organization_id=incident.organization_id,
+        organization_name=organization_name,  # ✅ Added
         submitted_by_id=incident.submitted_by_id,
+        submitted_by_name=submitted_by_name,  # ✅ Added
         status=incident.status,
         created_at=incident.created_at,
-        files=file_responses,
         updated_at=incident.updated_at,
-        submitted_by_name=submitted_by_name,
-        organization_name=organization_name,
+        files=file_responses,
     )
 
     
@@ -582,7 +597,15 @@ async def get_incident_details(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    incident = db.query(models.Incident).filter(models.Incident.id == incident_id).first()
+    # ✅ Fetch incident with relationships
+    incident = (
+        db.query(models.Incident)
+        .join(models.Organization, models.Incident.organization_id == models.Organization.id)
+        .join(models.User, models.Incident.submitted_by_id == models.User.id)
+        .filter(models.Incident.id == incident_id)
+        .first()
+    )
+
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
@@ -609,12 +632,10 @@ async def get_incident_details(
             )
 
     elif current_user.role == "admin":
-        # ✅ Admin can only see incidents within their own organization
         if incident.organization_id != current_user.organization_id:
             raise HTTPException(status_code=403, detail="Not authorized to view this incident")
 
     elif current_user.role == "driver":
-        # ✅ Driver can only see their own incidents
         if incident.submitted_by_id != current_user.id:
             raise HTTPException(status_code=403, detail="You can only view your own incidents.")
 
@@ -631,7 +652,7 @@ async def get_incident_details(
             schemas.IncidentFileOut(id=f.id, s3_key=presigned_url, file_type=f.file_type)
         )
 
-    # ✅ Return detailed incident info
+    # ✅ Return enriched detailed incident info
     return schemas.IncidentOut(
         id=incident.id,
         title=incident.title,
@@ -641,11 +662,11 @@ async def get_incident_details(
         location=incident.location,
         is_visible_to_regulator=incident.is_visible_to_regulator,
         organization_id=incident.organization_id,
+        organization_name=incident.organization.name if incident.organization else None,  # ✅ Added
         submitted_by_id=incident.submitted_by_id,
+        submitted_by_name=incident.submitted_by.name if incident.submitted_by else None,  # ✅ Added
         status=incident.status,
         created_at=incident.created_at,
-        files=file_responses,
         updated_at=incident.updated_at,
-        submitted_by_name=submitted_by_name,
-        organization_name=organization_name,
+        files=file_responses,
     )
