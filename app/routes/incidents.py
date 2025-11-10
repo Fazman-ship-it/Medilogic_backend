@@ -561,6 +561,8 @@ async def get_incident_detail(
         created_at=incident.created_at,
         files=file_responses,
         updated_at=incident.updated_at,
+        submitted_by_name=submitted_by_name,
+        organization_name=organization_name,
     )
 
     
@@ -644,4 +646,6 @@ async def get_incident_details(
         created_at=incident.created_at,
         files=file_responses,
         updated_at=incident.updated_at,
+        submitted_by_name=submitted_by_name,
+        organization_name=organization_name,
     )
