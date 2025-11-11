@@ -15,6 +15,7 @@ from app.utilites.compliance_alert import generate_compliance_alerts
 from app.models import ComplianceStatus
 from app.utilites.logging import log_activity
 from app.models import Organization
+from typing import List
 router = APIRouter(
     prefix="/compliance",
     tags=["Compliance"],
