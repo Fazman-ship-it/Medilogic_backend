@@ -174,3 +174,45 @@ def get_compliance_alerts(
         "alerts": alerts
     }
     
+@router.get("/regional", response_model=List[ComplianceStatusOut])
+def get_regional_or_org_compliance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "regulator", "super_admin"]))
+):
+    """
+    🌍 Get compliance statuses based on user role:
+    - 🧩 Admin: only their own organization's compliance.
+    - 🧭 Regulator: all organizations in their regulated region/country/state.
+    - 🏛️ Super Admin: all organizations (global view).
+    """
+    query = db.query(ComplianceStatus)
+
+    # 🧩 Admin → only their org
+    if current_user.role == "admin":
+        query = query.filter(ComplianceStatus.organization_id == current_user.organization_id)
+
+    # 🧭 Regulator → all orgs under their jurisdiction
+    elif current_user.role == "regulator":
+        orgs = db.query(Organization).filter(
+            Organization.regulated_country == current_user.regulated_country,
+            Organization.regulated_state == current_user.regulated_state,
+            Organization.regulated_region == current_user.regulated_region
+        ).all()
+        org_ids = [o.id for o in orgs]
+        query = query.filter(ComplianceStatus.organization_id.in_(org_ids))
+
+    # 🏛️ Super Admin → full access
+    elif current_user.role == "super_admin":
+        pass  # full access
+
+    # 🚫 Others → denied
+    else:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    results = query.all()
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No compliance records found")
+
+    return results
+    
