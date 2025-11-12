@@ -437,8 +437,8 @@ class Incident(Base):
 class ComplianceStatus(Base):
     __tablename__ = "compliance_statuses"
 
-    id = Column(UUID(as_uuid=True), primary_key=True)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"),nullable=True)
     # Core certifications
     iso_27001_certified = Column(Boolean, default=False)
     nhs_dsp_toolkit_complete = Column(Boolean, default=False)
