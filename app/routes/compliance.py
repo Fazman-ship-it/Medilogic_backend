@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status,Query 
 from sqlalchemy.orm import Session
 from uuid import UUID
 from app.database import get_db
-from app.schemas import ComplianceStatusCreate, ComplianceStatusUpdate, ComplianceStatusOut
+from app.schemas import ComplianceStatusCreate, ComplianceStatusUpdate, ComplianceStatusOut,PaginatedComplianceStatus
 from app.crudy.compliance_crudy import (
     create_compliance_status,
     update_compliance_status,
@@ -13,7 +13,7 @@ from app.models import User
 from app.utilites.compliance_alert import generate_compliance_alerts
 from app.models import ComplianceStatus
 from app.utilites.logging import log_activity
-from app.models import Organization
+from app.models import Organization,User
 from typing import List
 from app import schemas,models
 from app.crud import create_compliance_status
@@ -69,6 +69,70 @@ def create_compliance(
 
     return created
     
+
+@router.get("/regional", response_model=PaginatedComplianceStatus)
+def get_regional_or_org_compliance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["admin", "regulator", "super_admin"])),
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of records to return"),
+):
+    """
+    🌍 Get compliance statuses based on user role, with pagination:
+    - 🧩 Admin: only their own organization's compliance.
+    - 🧭 Regulator: all organizations in their regulated region/country/state.
+    - 🏛️ Super Admin: all organizations (global view).
+    """
+    query = db.query(ComplianceStatus)
+
+    # 🧩 Admin → only their organization
+    if current_user.role == "admin":
+        query = query.filter(ComplianceStatus.organization_id == current_user.organization_id)
+
+    # 🧭 Regulator → organizations in their jurisdiction
+    elif current_user.role == "regulator":
+        org_query = db.query(Organization)
+        if current_user.regulated_country:
+            org_query = org_query.filter(Organization.country == current_user.regulated_country)
+        if current_user.regulated_state:
+            org_query = org_query.filter(Organization.state == current_user.regulated_state)
+        if current_user.regulated_region:
+            org_query = org_query.filter(Organization.region == current_user.regulated_region)
+
+        orgs = org_query.all()
+        org_ids = [o.id for o in orgs]
+        query = query.filter(ComplianceStatus.organization_id.in_(org_ids))
+
+    # 🏛️ Super Admin → full access
+    elif current_user.role == "super_admin":
+        pass
+
+    total_count = query.count()
+
+    # Apply pagination
+    results = query.offset(skip).limit(limit).all()
+
+    # ✅ Enrich with organization name
+    enriched_results = []
+    for compliance in results:
+        org = db.query(Organization).filter(Organization.id == compliance.organization_id).first()
+        enriched_results.append(
+            ComplianceStatusOut(
+                **compliance.__dict__,
+                organization_name=org.name if org else None
+            )
+        )
+
+    if not enriched_results:
+        raise HTTPException(status_code=404, detail="No compliance records found")
+
+    return {
+        "total": total_count,
+        "skip": skip,
+        "limit": limit,
+        "items": enriched_results
+    }
+        
 
 @router.get("/{org_id}", response_model=ComplianceStatusOut)
 def get_compliance_by_org(
@@ -189,45 +253,4 @@ def get_compliance_alerts(
         "alerts": alerts
     }
     
-@router.get("/regional", response_model=List[ComplianceStatusOut])
-def get_regional_or_org_compliance(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "regulator", "super_admin"]))
-):
-    """
-    🌍 Get compliance statuses based on user role:
-    - 🧩 Admin: only their own organization's compliance.
-    - 🧭 Regulator: all organizations in their regulated region/country/state.
-    - 🏛️ Super Admin: all organizations (global view).
-    """
-    query = db.query(ComplianceStatus)
-
-    # 🧩 Admin → only their org
-    if current_user.role == "admin":
-        query = query.filter(ComplianceStatus.organization_id == current_user.organization_id)
-
-    # 🧭 Regulator → all orgs under their jurisdiction
-    elif current_user.role == "regulator":
-        orgs = db.query(Organization).filter(
-            Organization.regulated_country == current_user.regulated_country,
-            Organization.regulated_state == current_user.regulated_state,
-            Organization.regulated_region == current_user.regulated_region
-        ).all()
-        org_ids = [o.id for o in orgs]
-        query = query.filter(ComplianceStatus.organization_id.in_(org_ids))
-
-    # 🏛️ Super Admin → full access
-    elif current_user.role == "super_admin":
-        pass  # full access
-
-    # 🚫 Others → denied
-    else:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
-    results = query.all()
-
-    if not results:
-        raise HTTPException(status_code=404, detail="No compliance records found")
-
-    return results
     
