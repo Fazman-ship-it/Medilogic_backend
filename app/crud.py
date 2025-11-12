@@ -1,6 +1,9 @@
 from sqlalchemy.orm import Session
 from . import models, schemas
 from app.utilites.logging import log_activity
+from sqlalchemy.orm import Session
+from pydantic import HttpUrl
+from app import models, schemas
 
 
 def create_trip(db: Session, trip: schemas.TripCreate, current_user: models.User):
