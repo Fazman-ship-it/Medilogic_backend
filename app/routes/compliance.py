@@ -22,16 +22,24 @@ router = APIRouter(
     tags=["Compliance"],
 )
 
+
 @router.post("/", response_model=schemas.ComplianceStatusOut, status_code=status.HTTP_201_CREATED)
 def create_compliance(
     compliance_data: schemas.ComplianceStatusCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin"]))
+    current_user: models.User = Depends(get_current_user)
 ):
     """
     ✅ Create a compliance status record for the admin's own organization.
     🔐 Only Admins can create compliance records.
     """
+
+    # 🔒 Check role manually
+    if str(current_user.role).lower() != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can create compliance records."
+        )
 
     # ✅ Force the organization_id to match the admin's organization
     compliance_data.organization_id = current_user.organization_id
