@@ -17,34 +17,42 @@ from app.models import Organization
 from typing import List
 from app import schemas,models
 from app.crud import create_compliance_status
+
 router = APIRouter(
     prefix="/compliance",
     tags=["Compliance"],
 )
 
+
 @router.post("/", response_model=schemas.ComplianceStatusOut, status_code=status.HTTP_201_CREATED)
 def create_compliance(
     compliance_data: schemas.ComplianceStatusCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ only admins
+    current_user: models.User = Depends(get_current_user)  # ✅ directly get current user
 ):
     """
-    ✅ Create a compliance status record for the admin's own organization.
-    🔐 Only Admins can access this endpoint.
+    Create a compliance status record for the admin's own organization.
+    Only accessible to Admins.
     """
 
-    # ✅ Ensure organization_id matches admin's organization (tenant isolation)
+    # 🔒 Ensure only admins can access
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can create compliance records."
+        )
+
+    # ✅ Tenant isolation: assign the admin's organization
     compliance_data.organization_id = current_user.organization_id
 
     # ✅ Check if a compliance record already exists for this organization
-    existing = (
-        db.query(models.ComplianceStatus)
-        .filter(models.ComplianceStatus.organization_id == current_user.organization_id)
-        .first()
-    )
+    existing = db.query(models.ComplianceStatus).filter(
+        models.ComplianceStatus.organization_id == current_user.organization_id
+    ).first()
+
     if existing:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="A compliance record already exists for this organization."
         )
 
@@ -60,7 +68,7 @@ def create_compliance(
     )
 
     return created
-
+    
 
 @router.get("/{org_id}", response_model=ComplianceStatusOut)
 def get_compliance_by_org(
