@@ -21,33 +21,30 @@ router = APIRouter(
     tags=["Compliance"],
 )
 
-@router.post("/", response_model=ComplianceStatusOut, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=schemas.ComplianceStatusOut, status_code=status.HTTP_201_CREATED)
 def create_compliance(
-    compliance_data: ComplianceStatusCreate,
+    compliance_data: schemas.ComplianceStatusCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["admin"]))
 ):
     """
-    ✅ Create compliance status for an organization.
-    🔐 Only Admins can create, and only for their own organization.
+    ✅ Create a compliance status record for the admin's own organization.
+    🔐 Only Admins can create compliance records.
     """
 
-    # ✅ Enforce multi-tenant: Admins can only create for their own org
-    if current_user.organization_id != compliance_data.organization_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Admins can only create compliance status for their own organization"
-        )
+    # ✅ Force the organization_id to match the admin's organization
+    compliance_data.organization_id = current_user.organization_id
 
+    # ✅ Create the compliance record
     created = create_compliance_status(db, compliance_data)
 
     # ✅ Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
-        org_id=created.organization_id,
+        org_id=current_user.organization_id,
         action="compliance_created",
-        details=f"Admin {current_user.name} created compliance record for Org ID {created.organization_id}"
+        details=f"Admin {current_user.name} created a compliance record for their organization."
     )
 
     return created
