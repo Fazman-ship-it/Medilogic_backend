@@ -9,7 +9,7 @@ from app.crudy.compliance_crudy import (
     get_compliance_by_org_id
 )
 from app.dependencies import get_current_user
-from app.dependencies import require_role
+from app.auth import require_role
 from app.models import User
 from app.utilites.compliance_alert import generate_compliance_alerts
 from app.models import ComplianceStatus
