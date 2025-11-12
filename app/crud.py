@@ -23,4 +23,17 @@ def create_trip(db: Session, trip: schemas.TripCreate, current_user: models.User
     )
 
     return db_trip
+    
+def create_compliance_status(db: Session, data: schemas.ComplianceStatusCreate):
+    db_data = data.dict()
+    # Convert HttpUrl fields to strings
+    for key, value in db_data.items():
+        if isinstance(value, HttpUrl):
+            db_data[key] = str(value)
+
+    new_status = models.ComplianceStatus(**db_data)
+    db.add(new_status)
+    db.commit()
+    db.refresh(new_status)
+    return new_status
 
