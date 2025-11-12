@@ -55,7 +55,6 @@ def create_compliance(
     log_activity(
         db=db,
         user_id=current_user.id,
-        org_id=current_user.organization_id,
         action="compliance_created",
         details=f"Admin {current_user.name} created a compliance record for their organization."
     )
@@ -106,7 +105,6 @@ def get_compliance_by_org(
     log_activity(
         db=db,
         user_id=current_user.id,
-        org_id=org_id,
         action="compliance_viewed",
         details=f"{current_user.role} {current_user.name} viewed compliance for Org ID {org_id}"
     )
@@ -141,7 +139,6 @@ def update_compliance(
     log_activity(
         db=db,
         user_id=current_user.id,
-        org_id=updated.organization_id,
         action="compliance_updated",
         details=f"{current_user.role} {current_user.name} updated compliance ID {status_id} for Org {updated.organization_id}"
     )
@@ -175,7 +172,6 @@ def get_compliance_alerts(
     log_activity(
         db=db,
         user_id=current_user.id,
-        org_id=org_id,
         action="compliance_alerts_generated",
         details=f"{current_user.role} {current_user.name} generated compliance alerts for Org ID {org_id}"
     )
