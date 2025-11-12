@@ -767,9 +767,20 @@ class ComplianceStatusOut(ComplianceStatusBase):
     organization_id: UUID
     created_at: datetime
     updated_at: datetime
+    organization_name:Optional[str]=None
     
     class Config:
         from_attributes = True
+        
+class PaginatedComplianceStatus(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[ComplianceStatusOut]
+    
+    class Config:
+        from_attributes = True
+           
         
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
