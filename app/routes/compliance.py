@@ -73,51 +73,58 @@ def create_compliance(
 @router.get("/regional", response_model=PaginatedComplianceStatus)
 def get_regional_or_org_compliance(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "regulator", "super_admin"])),
+    current_user: models.User = Depends(get_current_user),  # ✅ use get_current_user
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(20, ge=1, le=100, description="Number of records to return"),
 ):
     """
     🌍 Get compliance statuses based on user role, with pagination:
     - 🧩 Admin: only their own organization's compliance.
-    - 🧭 Regulator: all organizations in their regulated region/country/state.
-    - 🏛️ Super Admin: all organizations (global view).
+    - 🧭 Regulator: all organizations in their jurisdiction (country/state/region).
+    - 🏛️ Super Admin: all organizations globally.
     """
-    query = db.query(ComplianceStatus)
+
+    # 🔐 Allow only specific roles
+    allowed_roles = ["admin", "regulator", "super_admin"]
+    if current_user.role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only admins, regulators, or super admins can view compliance records."
+        )
+
+    query = db.query(models.ComplianceStatus)
 
     # 🧩 Admin → only their organization
     if current_user.role == "admin":
-        query = query.filter(ComplianceStatus.organization_id == current_user.organization_id)
+        query = query.filter(models.ComplianceStatus.organization_id == current_user.organization_id)
 
     # 🧭 Regulator → organizations in their jurisdiction
     elif current_user.role == "regulator":
-        org_query = db.query(Organization)
+        org_query = db.query(models.Organization)
         if current_user.regulated_country:
-            org_query = org_query.filter(Organization.country == current_user.regulated_country)
+            org_query = org_query.filter(models.Organization.country == current_user.regulated_country)
         if current_user.regulated_state:
-            org_query = org_query.filter(Organization.state == current_user.regulated_state)
+            org_query = org_query.filter(models.Organization.state == current_user.regulated_state)
         if current_user.regulated_region:
-            org_query = org_query.filter(Organization.region == current_user.regulated_region)
+            org_query = org_query.filter(models.Organization.region == current_user.regulated_region)
 
         orgs = org_query.all()
         org_ids = [o.id for o in orgs]
-        query = query.filter(ComplianceStatus.organization_id.in_(org_ids))
+        query = query.filter(models.ComplianceStatus.organization_id.in_(org_ids))
 
-    # 🏛️ Super Admin → full access
+    # 🏛️ Super Admin → all organizations (no filter)
     elif current_user.role == "super_admin":
         pass
 
     total_count = query.count()
-
-    # Apply pagination
     results = query.offset(skip).limit(limit).all()
 
-    # ✅ Enrich with organization name
+    # ✅ Enrich results with organization names
     enriched_results = []
     for compliance in results:
-        org = db.query(Organization).filter(Organization.id == compliance.organization_id).first()
+        org = db.query(models.Organization).filter(models.Organization.id == compliance.organization_id).first()
         enriched_results.append(
-            ComplianceStatusOut(
+            schemas.ComplianceStatusOut(
                 **compliance.__dict__,
                 organization_name=org.name if org else None
             )
