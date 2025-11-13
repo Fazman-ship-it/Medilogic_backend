@@ -190,31 +190,44 @@ def get_compliance_by_org(
 
     return compliance
 
-@router.patch("/{status_id}", response_model=ComplianceStatusOut)
+@router.patch("/{status_id}", response_model=schemas.ComplianceStatusOut)
 def update_compliance(
     status_id: UUID,
-    updates: ComplianceStatusUpdate,
+    updates: schemas.ComplianceStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "super_admin"]))
+    current_user: models.User = Depends(get_current_user)  # ✅ switched from require_role()
 ):
     """
     🛠 Update compliance status by status ID.
-    🔐 Admin: only their own organization. Super Admin: any.
+    🔐 Admin: only their own organization.
+    🏛 Super Admin: can update any compliance record.
     """
-    status = db.query(ComplianceStatus).filter(ComplianceStatus.id == status_id).first()
+
+    # ✅ Fetch record
+    status = db.query(models.ComplianceStatus).filter(models.ComplianceStatus.id == status_id).first()
     if not status:
         raise HTTPException(status_code=404, detail="Compliance status not found")
 
-    # 🛡️ Admin: restrict to own organization
-    if current_user.role == "admin" and current_user.organization_id != status.organization_id:
-        raise HTTPException(status_code=403, detail="Admins can only update their own organization")
+    # 🔐 Allow only admins or super admins
+    if current_user.role not in ["admin", "super_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only admins or super admins can update compliance records."
+        )
 
-    # ✅ Perform update
+    # 🧩 Admins can only update their own organization
+    if current_user.role == "admin" and current_user.organization_id != status.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins can only update compliance for their own organization."
+        )
+
+    # ✅ Perform the update
     updated = update_compliance_status(db, status_id, updates)
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update compliance status")
 
-    # 📝 Log activity
+    # 📝 Log the update activity
     log_activity(
         db=db,
         user_id=current_user.id,
@@ -228,26 +241,37 @@ def update_compliance(
 def get_compliance_alerts(
     org_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["admin", "super_admin"]))
+    current_user: models.User = Depends(get_current_user)  # ✅ switched from require_role()
 ):
     """
     🚨 Get compliance alerts for a specific organization.
-    🔐 Admins only see their own org. Super Admins can see all.
+    🔐 Admins: only their own org.
+    🏛 Super Admins: can view all.
     """
-    # 🔐 Enforce multi-tenancy
-    if current_user.role == "admin" and current_user.organization_id != org_id:
+
+    # 🔒 Allow only admins or super admins
+    if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
-            status_code=403,
-            detail="Admins can only view alerts for their own organization"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. Only admins or super admins can view compliance alerts."
         )
 
-    compliance = db.query(ComplianceStatus).filter_by(organization_id=org_id).first()
+    # 🧩 Admins restricted to their organization
+    if current_user.role == "admin" and current_user.organization_id != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admins can only view alerts for their own organization."
+        )
+
+    # ✅ Fetch compliance record
+    compliance = db.query(models.ComplianceStatus).filter_by(organization_id=org_id).first()
     if not compliance:
         raise HTTPException(status_code=404, detail="Compliance record not found")
 
+    # ⚙️ Generate alerts
     alerts = generate_compliance_alerts(compliance)
 
-    # ✅ Log activity
+    # 📝 Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
@@ -259,5 +283,4 @@ def get_compliance_alerts(
         "organization_id": str(org_id),
         "alerts": alerts
     }
-    
     
