@@ -39,4 +39,26 @@ def create_compliance_status(db: Session, data: schemas.ComplianceStatusCreate):
     db.commit()
     db.refresh(new_status)
     return new_status
+    
+from pydantic import HttpUrl
+from sqlalchemy.orm import Session
+from app import models, schemas
+from datetime import datetime, timezone
+
+def update_compliance_status(db: Session, status_id: str, updates: schemas.ComplianceStatusUpdate):
+    # Convert to dict and handle HttpUrl types
+    update_data = updates.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        if isinstance(value, HttpUrl):
+            update_data[key] = str(value)  # ✅ convert URL objects to plain strings
+
+    # Update timestamp
+    update_data["updated_at"] = datetime.now(timezone.utc)
+
+    # Perform the update
+    db.query(models.ComplianceStatus).filter(models.ComplianceStatus.id == status_id).update(update_data)
+    db.commit()
+
+    # Return the updated object
+    return db.query(models.ComplianceStatus).filter(models.ComplianceStatus.id == status_id).first()
 
