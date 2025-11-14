@@ -147,40 +147,40 @@ def get_compliance_by_org(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    📄 Get compliance status by organization ID.
-    🔐 Access control:
-    - regulator: can access orgs under their regulated country/state/region
-    - admin: can access only their own organization
-    - others: denied
-    """
-    # ❌ Clients and unrelated roles are denied
+    # ❌ Block irrelevant roles
     if current_user.role not in ["admin", "regulator"]:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # 🛡 Admin: restrict to own organization
-    if current_user.role == "admin" and current_user.organization_id != org_id:
-        raise HTTPException(status_code=403, detail="Admins can only access their own organization")
+    # 🛡 Admin can only access their own org
+    if current_user.role == "admin":
+        if current_user.organization_id != org_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Admins can only access their own organization"
+            )
 
-    # 🛡 Regulator: only access organizations under their jurisdiction
+    # 🛡 Regulator restrictions
     if current_user.role == "regulator":
         org = db.query(Organization).filter(Organization.id == org_id).first()
         if not org:
             raise HTTPException(status_code=404, detail="Organization not found")
 
         if (
-            org.regulated_country != current_user.regulated_country or
-            org.regulated_state != current_user.regulated_state or
-            org.regulated_region != current_user.regulated_region
+            (current_user.regulated_country and org.country != current_user.regulated_country) or
+            (current_user.regulated_state and org.state != current_user.regulated_state) or
+            (current_user.regulated_region and org.region != current_user.regulated_region)
         ):
-            raise HTTPException(status_code=403, detail="Access denied: Outside your regulated region")
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: Outside your regulated jurisdiction"
+            )
 
-    # ✅ Fetch compliance
+    # Fetch compliance
     compliance = get_compliance_by_org_id(db, org_id)
     if not compliance:
         raise HTTPException(status_code=404, detail="Compliance status not found")
 
-    # 📝 Log activity
+    # Log
     log_activity(
         db=db,
         user_id=current_user.id,
@@ -241,7 +241,7 @@ def update_compliance(
 def get_compliance_alerts(
     org_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)  # ✅ switched from require_role()
+    current_user: models.User = Depends(get_current_user)
 ):
     """
     🚨 Get compliance alerts for a specific organization.
@@ -249,29 +249,29 @@ def get_compliance_alerts(
     🏛 Super Admins: can view all.
     """
 
-    # 🔒 Allow only admins or super admins
+    # Only admins or super admins allowed
     if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Only admins or super admins can view compliance alerts."
         )
 
-    # 🧩 Admins restricted to their organization
-    if current_user.role == "admin" and current_user.organization_id != org_id:
+    # Admins restricted to their own organization
+    if current_user.role == "admin" and str(current_user.organization_id) != str(org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admins can only view alerts for their own organization."
         )
 
-    # ✅ Fetch compliance record
+    # Fetch compliance record
     compliance = db.query(models.ComplianceStatus).filter_by(organization_id=org_id).first()
     if not compliance:
         raise HTTPException(status_code=404, detail="Compliance record not found")
 
-    # ⚙️ Generate alerts
+    # Generate alerts
     alerts = generate_compliance_alerts(compliance)
 
-    # 📝 Log activity
+    # Log activity
     log_activity(
         db=db,
         user_id=current_user.id,
