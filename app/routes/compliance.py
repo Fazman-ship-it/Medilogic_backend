@@ -16,7 +16,7 @@ from app.utilites.logging import log_activity
 from app.models import Organization,User
 from typing import List
 from app import schemas,models
-from app.crud import create_compliance_status
+from app.crud import create_compliance_status,update_compliance_status
 
 router = APIRouter(
     prefix="/compliance",
