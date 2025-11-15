@@ -91,36 +91,60 @@ def list_all_tickets(
 def get_ticket(
     ticket_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ access org
+    current_user: models.User = Depends(get_current_user)  # ✅ removed require_role
 ):
-    ticket = db.query(models.SupportTicket).filter(
-        models.SupportTicket.id == ticket_id,
-        models.SupportTicket.organization_id == current_user.organization_id  # ✅ restrict to org
-    ).first()
+    query = db.query(models.SupportTicket).options(
+        joinedload(models.SupportTicket.user),                                   # ticket creator
+        joinedload(models.SupportTicket.organization),                           # organization info
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
+    ).filter(models.SupportTicket.id == ticket_id)
+
+    # Role-based access control
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # only admin tickets
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ticket = query.first()
 
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     return ticket
 
+
 @router.patch("/tickets/{ticket_id}/status", response_model=schemas.SupportTicketResponse)
 def update_ticket_status(
     ticket_id: UUID,
     status: schemas.TicketStatus,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ needed to access org
+    current_user: models.User = Depends(get_current_user)  # ✅ removed require_role
 ):
-    ticket = db.query(models.SupportTicket).filter(
-        models.SupportTicket.id == ticket_id,
-        models.SupportTicket.organization_id == current_user.organization_id  # ✅ org filter
-    ).first()
+    query = db.query(models.SupportTicket).options(
+        joinedload(models.SupportTicket.user),                                   # ticket creator
+        joinedload(models.SupportTicket.organization),                           # organization info
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
+    ).filter(models.SupportTicket.id == ticket_id)
 
+    # Role-based access
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # any admin ticket
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ticket = query.first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
+    # Update status
     ticket.status = status
     db.commit()
     db.refresh(ticket)
+
     return ticket
 
 
