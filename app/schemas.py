@@ -494,7 +494,7 @@ class SupportMessageCreate(BaseModel):
 class SupportReplyResponse(BaseModel):
     id: UUID
     ticket_id: UUID
-    admin_id: UserInfo
+    admin: UserInfo
     message: str
     created_at: datetime
 
@@ -504,7 +504,7 @@ class SupportReplyResponse(BaseModel):
 class SupportMessageResponse(BaseModel):
     id: UUID
     ticket_id: UUID
-    sender_id: Optional[UserInfo]
+    sender: Optional[UserInfo]
     message: str
     created_at: datetime
 
@@ -513,7 +513,7 @@ class SupportMessageResponse(BaseModel):
 
 class SupportTicketResponse(BaseModel):
     id: UUID
-    user_id: UserInfo
+    user: UserInfo
     organization: Optional[OrganizationInfo] 
     status: TicketStatus
     created_at: datetime
