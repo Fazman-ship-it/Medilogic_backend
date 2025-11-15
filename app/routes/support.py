@@ -226,3 +226,157 @@ def post_support_message(
     ).filter(models.SupportMessage.id == message.id).first()
 
     return message_with_info
+    
+@router.delete("/tickets/{ticket_id}")
+def delete_ticket(
+    ticket_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == ticket_id)
+
+    # Role-based access
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ticket = query.first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Soft delete
+    ticket.is_deleted = True
+    db.commit()
+
+    return {"detail": "Ticket deleted successfully"}
+    
+@router.get("/tickets/{ticket_id}/replies", response_model=List[schemas.SupportReplyResponse])
+def get_ticket_replies(
+    ticket_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == ticket_id)
+
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ticket = query.first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Load all replies with admin info
+    replies = db.query(models.SupportReply).options(
+        joinedload(models.SupportReply.admin)
+    ).filter(models.SupportReply.ticket_id == ticket_id).all()
+
+    return replies
+    
+@router.get("/tickets/{ticket_id}/messages", response_model=List[schemas.SupportMessageResponse])
+def get_ticket_messages(
+    ticket_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == ticket_id)
+
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    elif current_user.role in ["driver", "client"]:
+        query = query.filter(models.SupportTicket.user_id == current_user.id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ticket = query.first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # Load messages with sender info
+    messages = db.query(models.SupportMessage).options(
+        joinedload(models.SupportMessage.sender)
+    ).filter(models.SupportMessage.ticket_id == ticket_id).all()
+
+    return messages
+    
+@router.patch("/messages/{message_id}", response_model=schemas.SupportMessageResponse)
+def update_message(
+    message_id: UUID,
+    message_text: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    message = db.query(models.SupportMessage).options(
+        joinedload(models.SupportMessage.sender)
+    ).filter(models.SupportMessage.id == message_id).first()
+
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    # Access control
+    if current_user.role == "super_admin":
+        pass  # can edit any message
+    elif current_user.role == "admin":
+        if message.sender_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Cannot edit another admin's message")
+    elif current_user.role in ["client", "driver"]:
+        if message.sender_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Cannot edit another user's message")
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    message.message = message_text
+    db.commit()
+    db.refresh(message)
+
+    return message
+
+@router.get("/tickets/search", response_model=schemas.PaginatedSupportTickets)
+def search_tickets(
+    status: str = None,
+    organization_id: UUID = None,
+    user_name: str = None,
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    query = db.query(models.SupportTicket)
+
+    # Base role access
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Optional filters
+    if status:
+        query = query.filter(models.SupportTicket.status == status)
+    if organization_id and current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id == organization_id)
+    if user_name:
+        query = query.join(models.User).filter(models.User.name.ilike(f"%{user_name}%"))
+
+    total = query.count()
+    tickets = query.options(
+        joinedload(models.SupportTicket.user),
+        joinedload(models.SupportTicket.organization),
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
+    ).order_by(models.SupportTicket.created_at.desc()).offset(skip).limit(limit).all()
+
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": tickets
+    }
