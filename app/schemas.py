@@ -503,6 +503,16 @@ class SupportTicketResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        
+class PaginatedSupportTickets(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[SupportTicketResponse]
+    
+    class Config:
+        from_attributes = True        
+
 
 class ChatRequest(BaseModel):
     prompt: str
