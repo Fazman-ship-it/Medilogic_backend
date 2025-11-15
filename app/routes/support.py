@@ -7,6 +7,7 @@ from app.dependencies import get_current_user, require_role
 from typing import List
 from app.schemas import SupportTicketCreate
 from uuid import UUID
+from sqlalchemy.orm import joinedload
 
 router = APIRouter(prefix="/support", tags=["Support"])
 
@@ -52,40 +53,27 @@ def list_all_tickets(
 ):
     query = db.query(models.SupportTicket)
 
-    # 🟦 Super Admin → global tickets
     if current_user.role == "super_admin":
-        total = query.count()
-        tickets = query.order_by(
-            models.SupportTicket.created_at.desc()
-        ).offset(skip).limit(limit).all()
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
 
-        return {
-            "total": total,
-            "skip": skip,
-            "limit": limit,
-            "items": tickets
-        }
+    total = query.count()
+    tickets = query.options(
+        joinedload(models.SupportTicket.user),          # ticket creator
+        joinedload(models.SupportTicket.organization)  # org info
+    ).order_by(
+        models.SupportTicket.created_at.desc()
+    ).offset(skip).limit(limit).all()
 
-    # 🟩 Admin → only their organization
-    if current_user.role == "admin":
-        org_query = query.filter(
-            models.SupportTicket.organization_id == current_user.organization_id
-        )
-
-        total = org_query.count()
-        tickets = org_query.order_by(
-            models.SupportTicket.created_at.desc()
-        ).offset(skip).limit(limit).all()
-
-        return {
-            "total": total,
-            "skip": skip,
-            "limit": limit,
-            "items": tickets
-        }
-
-    # 🚫 Clients/Drivers cannot access
-    raise HTTPException(status_code=403, detail="Access denied")
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": tickets
+    }
     
 
 @router.get("/tickets/{ticket_id}", response_model=schemas.SupportTicketResponse)
