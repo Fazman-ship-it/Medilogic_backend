@@ -358,7 +358,7 @@ class SupportTicket(Base):
     __tablename__ = "support_tickets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), index=True)
     subject = Column(String, nullable=False)
     status = Column(Enum(TicketStatus), default=TicketStatus.open)
     created_at = Column(DateTime(timezone=True), default=now_utc)
@@ -366,36 +366,39 @@ class SupportTicket(Base):
     user = relationship("User", back_populates="support_tickets")
     replies = relationship("SupportReply", back_populates="ticket", cascade="all, delete-orphan")
     messages = relationship("SupportMessage", back_populates="ticket", cascade="all, delete-orphan")
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True)
     organization = relationship("Organization", back_populates="support_tickets")        
-
+    is_deleted= Column(Boolean, default=False)
 
 class SupportReply(Base):
     __tablename__ = "support_replies"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"))
+    ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"),index=True)
     admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     message = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), default=now_utc)
     ticket = relationship("SupportTicket", back_populates="replies")
     admin = relationship("User")
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True)
     organization = relationship("Organization", back_populates="support_replies")        
-    
+    updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
 class SupportMessage(Base):
     __tablename__ = "support_messages"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"))
+    ticket_id = Column(UUID(as_uuid=True), ForeignKey("support_tickets.id", ondelete="CASCADE"),index=True)
     sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
     message = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), default=now_utc)
     ticket = relationship("SupportTicket", back_populates="messages")
     sender = relationship("User")
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True, index=True)
     organization = relationship("Organization", back_populates="support_messages")
+    updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
+    is_deleted= Column(Boolean, default=False)
+    
     
 class Enquiry(Base):
     __tablename__ = "enquiries"
