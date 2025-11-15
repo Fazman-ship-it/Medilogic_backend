@@ -148,20 +148,28 @@ def update_ticket_status(
     return ticket
 
 
+
 @router.post("/replies", response_model=schemas.SupportReplyResponse)
 def create_reply(
     reply: schemas.SupportReplyCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ org access
+    current_user: models.User = Depends(get_current_user)  # ✅ removed require_role
 ):
-    ticket = db.query(models.SupportTicket).filter(
-        models.SupportTicket.id == reply.ticket_id,
-        models.SupportTicket.organization_id == current_user.organization_id  # ✅ secure!
-    ).first()
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == reply.ticket_id)
 
+    # Role-based access
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # any admin org ticket
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ticket = query.first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Support ticket not found")
 
+    # Create the reply
     new_reply = models.SupportReply(
         ticket_id=reply.ticket_id,
         admin_id=current_user.id,
@@ -170,8 +178,8 @@ def create_reply(
     db.add(new_reply)
     db.commit()
     db.refresh(new_reply)
-    return new_reply
 
+    return new_reply
 
 @router.post("/messages", response_model=schemas.SupportMessageResponse)
 def post_support_message(
