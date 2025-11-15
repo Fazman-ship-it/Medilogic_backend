@@ -17,18 +17,18 @@ def create_ticket(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # ✅ 1. Create the ticket with organization_id attached
+    # 1. Create the ticket with organization_id attached
     new_ticket = models.SupportTicket(
         user_id=current_user.id,
         subject=ticket.subject,
         status="open",
-        organization_id=current_user.organization_id  # ✅ enforce tenant ownership
+        organization_id=current_user.organization_id
     )
     db.add(new_ticket)
     db.commit()
     db.refresh(new_ticket)
 
-    # ✅ 2. Add the initial message
+    # 2. Add the initial message
     initial_message = models.SupportMessage(
         ticket_id=new_ticket.id,
         sender_id=current_user.id,
@@ -38,11 +38,18 @@ def create_ticket(
     db.commit()
     db.refresh(initial_message)
 
-    # ✅ 3. Manually attach messages for response
+    # 3. Manually attach messages for response
     new_ticket.messages = [initial_message]
     new_ticket.replies = []
 
-    return new_ticket
+    # 4. Reload ticket with full nested info for consistent response
+    ticket_with_info = db.query(models.SupportTicket).options(
+        joinedload(models.SupportTicket.user),                                   # ticket creator
+        joinedload(models.SupportTicket.organization),                           # organization info
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
+    ).filter(models.SupportTicket.id == new_ticket.id).first()
+
+    return ticket_with_info
 
 @router.get("/tickets", response_model=schemas.PaginatedSupportTickets)
 def list_all_tickets(
@@ -53,6 +60,7 @@ def list_all_tickets(
 ):
     query = db.query(models.SupportTicket)
 
+    # Role-based filtering
     if current_user.role == "super_admin":
         query = query.filter(models.SupportTicket.organization_id.isnot(None))
     elif current_user.role == "admin":
@@ -61,9 +69,12 @@ def list_all_tickets(
         raise HTTPException(status_code=403, detail="Access denied")
 
     total = query.count()
+
+    # Minimal update: include messages and message sender info
     tickets = query.options(
-        joinedload(models.SupportTicket.user),          # ticket creator
-        joinedload(models.SupportTicket.organization)  # org info
+        joinedload(models.SupportTicket.user),                                   # ticket creator
+        joinedload(models.SupportTicket.organization),                           # organization info
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
     ).order_by(
         models.SupportTicket.created_at.desc()
     ).offset(skip).limit(limit).all()
