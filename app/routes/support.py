@@ -148,18 +148,18 @@ def update_ticket_status(
     return ticket
 
 
+from sqlalchemy.orm import joinedload
 
 @router.post("/replies", response_model=schemas.SupportReplyResponse)
 def create_reply(
     reply: schemas.SupportReplyCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)  # ✅ removed require_role
+    current_user: models.User = Depends(get_current_user)
 ):
     query = db.query(models.SupportTicket).filter(models.SupportTicket.id == reply.ticket_id)
 
-    # Role-based access
     if current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # any admin org ticket
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
     elif current_user.role == "admin":
         query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
     else:
@@ -179,7 +179,13 @@ def create_reply(
     db.commit()
     db.refresh(new_reply)
 
-    return new_reply
+    # Reload reply with admin info for response
+    reply_with_info = db.query(models.SupportReply).options(
+        joinedload(models.SupportReply.admin)  # load admin user info
+    ).filter(models.SupportReply.id == new_reply.id).first()
+
+    return reply_with_info
+
 
 @router.post("/messages", response_model=schemas.SupportMessageResponse)
 def post_support_message(
