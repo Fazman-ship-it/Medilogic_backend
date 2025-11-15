@@ -191,20 +191,26 @@ def create_reply(
 def post_support_message(
     msg: schemas.SupportMessageCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)  # Admin or Client
+    current_user: models.User = Depends(get_current_user)
 ):
-    ticket = db.query(models.SupportTicket).filter(
-        models.SupportTicket.id == msg.ticket_id,
-        models.SupportTicket.organization_id == current_user.organization_id  # ✅ Tenant safe
-    ).first()
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == msg.ticket_id)
 
+    # Role-based access
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # any admin org ticket
+    elif current_user.role == "admin":
+        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+    elif current_user.role in ["driver", "client"]:
+        # Clients/Drivers can only reply to their own ticket
+        query = query.filter(models.SupportTicket.user_id == current_user.id)
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ticket = query.first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # ✅ If client, ensure they are replying only to their own ticket
-    if current_user.role in["driver", "client"] and ticket.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="You can only reply to your own ticket.")
-
+    # Create the message
     message = models.SupportMessage(
         ticket_id=msg.ticket_id,
         sender_id=current_user.id,
@@ -213,4 +219,10 @@ def post_support_message(
     db.add(message)
     db.commit()
     db.refresh(message)
-    return message
+
+    # Reload message with sender info for response
+    message_with_info = db.query(models.SupportMessage).options(
+        joinedload(models.SupportMessage.sender)  # load sender info
+    ).filter(models.SupportMessage.id == message.id).first()
+
+    return message_with_info
