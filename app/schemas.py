@@ -494,7 +494,7 @@ class SupportMessageCreate(BaseModel):
 class SupportReplyResponse(BaseModel):
     id: UUID
     ticket_id: UUID
-    admin_id: UUID
+    admin_id: UserInfo
     message: str
     created_at: datetime
 
