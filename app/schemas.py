@@ -445,8 +445,27 @@ class PasswordResetSubmit(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str 
     new_password: str
+    
+    class Config:
+        from_attributes = True
+    
 
 # Enum for status
+class UserInfo(BaseModel):
+    id: UUID
+    name: str
+    role: str
+
+    class Config:
+        from_attributes = True
+
+class OrganizationInfo(BaseModel):
+    id: UUID
+    name: str
+
+    class Config:
+        from_attributes = True
+        
 class TicketStatus(str, PyEnum):
     open = "open"
     in_progress = "in_progress"
@@ -485,7 +504,7 @@ class SupportReplyResponse(BaseModel):
 class SupportMessageResponse(BaseModel):
     id: UUID
     ticket_id: UUID
-    sender_id: Optional[UUID]
+    sender_id: Optional[UserInfo]
     message: str
     created_at: datetime
 
@@ -494,7 +513,8 @@ class SupportMessageResponse(BaseModel):
 
 class SupportTicketResponse(BaseModel):
     id: UUID
-    user_id: UUID
+    user_id: UserInfo
+    organization: Optional[OrganizationInfo] 
     status: TicketStatus
     created_at: datetime
     updated_at: datetime
