@@ -43,14 +43,50 @@ def create_ticket(
 
     return new_ticket
 
-@router.get("/tickets", response_model=List[schemas.SupportTicketResponse])
+@router.get("/tickets", response_model=schemas.PaginatedSupportTickets)
 def list_all_tickets(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ access org
+    current_user: models.User = Depends(get_current_user)
 ):
-    return db.query(models.SupportTicket).filter(
-        models.SupportTicket.organization_id == current_user.organization_id
-    ).order_by(models.SupportTicket.created_at.desc()).all()
+    query = db.query(models.SupportTicket)
+
+    # 🟦 Super Admin → global tickets
+    if current_user.role == "super_admin":
+        total = query.count()
+        tickets = query.order_by(
+            models.SupportTicket.created_at.desc()
+        ).offset(skip).limit(limit).all()
+
+        return {
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "items": tickets
+        }
+
+    # 🟩 Admin → only their organization
+    if current_user.role == "admin":
+        org_query = query.filter(
+            models.SupportTicket.organization_id == current_user.organization_id
+        )
+
+        total = org_query.count()
+        tickets = org_query.order_by(
+            models.SupportTicket.created_at.desc()
+        ).offset(skip).limit(limit).all()
+
+        return {
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+            "items": tickets
+        }
+
+    # 🚫 Clients/Drivers cannot access
+    raise HTTPException(status_code=403, detail="Access denied")
+    
 
 @router.get("/tickets/{ticket_id}", response_model=schemas.SupportTicketResponse)
 def get_ticket(
