@@ -39,6 +39,9 @@ def create_ticket(
     db.commit()
     db.refresh(initial_message)
 
+    # --- Notify users about the new ticket message ---
+    notify_ticket_users(db, new_ticket, current_user, initial_message.message)
+
     # 3. Manually attach messages for response
     new_ticket.messages = [initial_message]
     new_ticket.replies = []
@@ -51,7 +54,7 @@ def create_ticket(
     ).filter(models.SupportTicket.id == new_ticket.id).first()
 
     return ticket_with_info
-
+    
 @router.get("/tickets", response_model=schemas.PaginatedSupportTickets)
 def list_all_tickets(
     skip: int = Query(0, ge=0),
@@ -180,6 +183,9 @@ def create_reply(
     db.commit()
     db.refresh(new_reply)
 
+    # --- Notify users about the new reply ---
+    notify_ticket_users(db, ticket, current_user, new_reply.message)
+
     # Reload reply with admin info for response
     reply_with_info = db.query(models.SupportReply).options(
         joinedload(models.SupportReply.admin)  # load admin user info
@@ -220,6 +226,9 @@ def post_support_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+
+    # --- Notify users about the new message ---
+    notify_ticket_users(db, ticket, current_user, message.message)
 
     # Reload message with sender info for response
     message_with_info = db.query(models.SupportMessage).options(
