@@ -8,7 +8,7 @@ from typing import List
 from app.schemas import SupportTicketCreate
 from uuid import UUID
 from sqlalchemy.orm import joinedload
-from app.utilities.support_notification import  notify_ticket_users
+from app.utilites.support_notification import  notify_ticket_users
 
 router = APIRouter(prefix="/support", tags=["Support"])
 
