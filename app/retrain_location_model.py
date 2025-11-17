@@ -8,7 +8,6 @@ from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import r2_score
 from sqlalchemy.orm import Session
 from app import models
-from app.scheduler import retrain_all_org_models
 
 def train_org_model(db: Session, org_id: str):
     """

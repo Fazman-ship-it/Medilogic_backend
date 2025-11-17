@@ -23,7 +23,7 @@ from app.utilites.subscribe_email import send_subscription_email
 from app.utilites.daily_notify import send_daily_notification_to_all
 from app.utilites.optimizer_model import train_org_model
 from app.driver_notification import notify_upcoming_trips
-from app.retrain_location_model import retrain_location_model
+from app.retrain_location_model import train_org_model
 from app.models import PendingApplication,User
 
 logger = logging.getLogger(__name__)
@@ -221,12 +221,11 @@ def cleanup_old_location_logs():
 
 # === JOB 5: Retrain Location Model ===
 def scheduled_retrain_job():
-    print(f"🔁 Retraining check at {now_utc().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🔁 Retraining all org models at {now_utc().strftime('%Y-%m-%d %H:%M:%S')}")
     try:
-        retrain_location_model()
+        retrain_all_org_models()
     except Exception as e:
         print(f"❌ Error during scheduled retraining: {e}")
-
 
 # === JOB 6: Daily Compliance Audit ===
 def audit_compliance_job():
