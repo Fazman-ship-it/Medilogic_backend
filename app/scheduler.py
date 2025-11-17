@@ -113,29 +113,91 @@ def clone_recurring_trips():
 
 # === JOB 3: Update Overdue Invoices ===
 def update_overdue_invoices():
+    """
+    Automatically mark unpaid invoices as overdue
+    and notify the client + admins.
+    """
     db: Session = None
     try:
         db = SessionLocal()
         today = now_utc().date()
+
         overdue_invoices = db.query(models.Invoice).filter(
             models.Invoice.status == "unpaid",
             models.Invoice.due_date < today
         ).all()
 
+        if not overdue_invoices:
+            return  # nothing to update
+
         for invoice in overdue_invoices:
+            old_status = invoice.status
             invoice.status = "overdue"
 
-        if overdue_invoices:
-            print(f"[Scheduler] Updated {len(overdue_invoices)} overdue invoices.")
+            # Update updated_at timestamp if exists
+            if hasattr(invoice, "updated_at"):
+                invoice.updated_at = datetime.utcnow()
+
+            # --- Fetch related records ---
+            client = db.query(models.User).filter(models.User.id == invoice.client_id).first()
+            org_admins = db.query(models.User).filter(
+                models.User.organization_id == invoice.organization_id,
+                models.User.role == "admin"
+            ).all()
+
+            # --- Send email to client ---
+            if client and client.email:
+                send_email(
+                    client.email,
+                    subject="Invoice Overdue Reminder",
+                    body=f"""
+Your invoice {invoice.invoice_number} is now OVERDUE.
+
+Amount: £{invoice.amount}
+Due Date: {invoice.due_date}
+Status changed from {old_status} → overdue.
+
+Please pay as soon as possible.
+"""
+                )
+
+            # --- Notify admins ---
+            for admin in org_admins:
+                if admin.email:
+                    send_email(
+                        admin.email,
+                        subject="Client Invoice Overdue Alert",
+                        body=f"""
+An invoice has become overdue.
+
+Invoice: {invoice.invoice_number}
+Client: {client.name if client else 'Unknown'}
+Amount: £{invoice.amount}
+Due Date: {invoice.due_date}
+
+Please take action.
+"""
+                    )
+
+            # --- Activity Logging ---
+            log_activity(
+                db=db,
+                user_id=None,  # system-generated action
+                action="invoice_marked_overdue",
+                details=f"Auto-updated invoice {invoice.invoice_number} to overdue",
+            )
+
         db.commit()
-    except (OperationalError, PendingRollbackError) as e:
-        logger.error(f"Database issue in update_overdue_invoices: {e}")
+        print(f"[Scheduler] Marked {len(overdue_invoices)} invoices as OVERDUE.")
+
+    except Exception as e:
         if db:
             db.rollback()
+        logger.error(f"[Scheduler Error] update_overdue_invoices: {e}")
+
     finally:
         if db:
             db.close()
-
 
 # === JOB 4: Clean up old location logs ===
 def cleanup_old_location_logs():
