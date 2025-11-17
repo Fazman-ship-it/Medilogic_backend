@@ -268,7 +268,7 @@ async def activate_document(
         "is_active": document.is_active,
         "file_url": file_url
     }
-from app.utilites.time_utilities import now_utc    
+from app.utilites.time_utilities import now_utc, to_local, to_utc    
 from datetime import datetime, timedelta
 from app.schemas import DriverDocumentExpiryResponse
 @router.get("/drivers/{driver_id}/documents/expiry-status", response_model=DriverDocumentExpiryResponse)

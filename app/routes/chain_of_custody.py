@@ -20,7 +20,7 @@ from reportlab.lib import colors
 import plotly.graph_objs as go
 from uuid import UUID
 import uuid
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc, to_local, to_utc
 router = APIRouter(prefix="/custody", tags=["Chain of Custody"])
 
 # routes/chain_of_custody.py

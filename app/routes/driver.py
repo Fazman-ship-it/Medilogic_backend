@@ -17,7 +17,7 @@ router = APIRouter(
 )
 
 from app.models import DriverLocationHistory
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc, to_local, to_utc
 @router.patch("/location")
 def update_driver_location(
     location: LocationUpdate,

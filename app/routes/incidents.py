@@ -19,6 +19,7 @@ from app.dependencies import get_current_user
 from app.utilites.email_utilites import send_email
 from app.config import settings
 from app.utilites.time_utilities import now_utc
+from app.scheduler import auto_manage_incidents
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 

@@ -20,6 +20,7 @@ from app.utilites.logging import log_activity
 from uuid import UUID
 from app.models import TripStatus
 from app.utilites.time_utilities import to_utc, to_local, now_utc, now_local
+from app.scheduler import clone_recurring_trips
 # app/routes/trip.py
 router = APIRouter()
 

@@ -15,7 +15,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from io import BytesIO
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc, to_local,to_utc
 
 router = APIRouter(prefix="/compliance-analytics", tags=["Compliance Analytics"])
 

@@ -24,6 +24,7 @@ from app.utilites.daily_notify import send_daily_notification_to_all
 from app.utilites.optimizer_model import train_org_model
 from app.driver_notification import notify_upcoming_trips
 from app.retrain_location_model import retrain_location_model
+from app.models import PendingApplication,User
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +273,7 @@ def expire_badges():
                     to_email=user.email,
                     subject="Your Medilogic Verification Badge Has Expired",
                     body=(
-                        f"Hello {user.full_name or 'User'},\n\n"
+                        f"Hello {user.full.name or 'User'},\n\n"
                         "Your Medilogic verification badge subscription has expired. "
                         "To continue enjoying higher visibility and analytics, please renew.\n\n"
                         "Best regards,\nThe Medilogic Team"
@@ -329,47 +330,213 @@ def retrain_all_org_models():
                 print(f"[Scheduler] ✅ Retrained optimizer model for org {org.organization_name} ({org.id})")
             else:
                 print(f"[Scheduler] ⚠️ Skipped org {org.organization_name} ({org.id}) - insufficient data")
-    except (OperationalError, PendingRollbackError) as e:
-        logger.error(f"Database issue in retrain_all_org_models: {e}")
-        if db:
-            db.rollback()
     finally:
         if db:
             db.close()
 
+# === JOB 10: Auto-manage Incidents ===
 def auto_manage_incidents():
     """
-    Runs daily to:
-    1️⃣ Auto-close resolved incidents older than 7 days.
+    Daily incident management:
+    1️⃣ Auto-close resolved incidents > 7 days old.
+    2️⃣ Notify admins if pending > 5 days.
+    3️⃣ Notify regulators if critical unresolved > 3 days.
     """
     db: Session = SessionLocal()
+    today = datetime.utcnow()
+
     try:
-        today = datetime.utcnow()
-
-        # 1️⃣ Auto-close resolved incidents after 7 days
+        # 1️⃣ Auto-close resolved incidents older than 7 days
         seven_days_ago = today - timedelta(days=7)
-
-        to_close = (
-            db.query(models.Incident)
-            .filter(models.Incident.status == "resolved")
-            .filter(models.Incident.updated_at < seven_days_ago)
+        to_close = db.query(models.Incident)\
+            .filter(models.Incident.status == "resolved")\
+            .filter(models.Incident.updated_at < seven_days_ago)\
             .all()
-        )
 
         for incident in to_close:
             incident.status = "closed"
             db.commit()
-            print(f"✅ Auto-closed incident {incident.id}")
+            log_activity(db, user_id=None, action="incident_auto_closed",
+                         details=f"Incident {incident.id} auto-closed after 7 days")
+        
+        # 2️⃣ Notify admins for pending incidents older than 5 days
+        five_days_ago = today - timedelta(days=5)
+        pending_admin_notify = db.query(models.Incident)\
+            .filter(models.Incident.status == "pending")\
+            .filter(models.Incident.created_at < five_days_ago)\
+            .all()
 
-        db.commit()
+        for incident in pending_admin_notify:
+            admin_emails = [admin.email for admin in db.query(models.User)
+                            .filter(models.User.organization_id == incident.organization_id,
+                                    models.User.role == "admin",
+                                    models.User.is_active == True,
+                                    models.User.email.isnot(None)).all()]
+            if admin_emails:
+                subject = f"⏰ Incident Pending Alert: {incident.title}"
+                body = f"The incident '{incident.title}' has been pending for more than 5 days."
+                send_email(subject, body, admin_emails)
+                log_activity(db, user_id=None, action="incident_pending_notification",
+                             details=f"Admins notified for pending incident {incident.id}")
+
+        # 3️⃣ Notify regulators for critical unresolved incidents > 3 days
+        three_days_ago = today - timedelta(days=3)
+        critical_incidents = db.query(models.Incident)\
+            .filter(models.Incident.severity == "critical")\
+            .filter(models.Incident.status != "resolved")\
+            .filter(models.Incident.created_at < three_days_ago)\
+            .all()
+
+        for incident in critical_incidents:
+            regulators = db.query(models.User)\
+                .filter(models.User.role == "regulator",
+                        models.User.is_active == True,
+                        models.User.email.isnot(None))\
+                .all()
+            regulator_emails = [r.email for r in regulators if r.email]
+
+            if regulator_emails:
+                subject = f"🚨 Critical Unresolved Incident: {incident.title}"
+                body = f"The critical incident '{incident.title}' has not been resolved for more than 3 days."
+                send_email(subject, body, regulator_emails)
+                log_activity(db, user_id=None, action="critical_incident_notification",
+                             details=f"Regulators notified for incident {incident.id}")
 
     except Exception as e:
         print(f"⚠️ Error in auto_manage_incidents: {e}")
         db.rollback()
-
     finally:
         db.close()
 
+def send_upcoming_due_reminders():
+    """
+    Automatically sends email reminders 2 days before invoice due date.
+    Notifies:
+    - Client
+    - Organization admins
+    Logs activity for auditing.
+    """
+    db: Session = None
+    try:
+        db = SessionLocal()
+        reminder_date = now_utc().date() + timedelta(days=2)
+
+        upcoming_invoices = db.query(models.Invoice).filter(
+            models.Invoice.status == "unpaid",
+            models.Invoice.due_date == reminder_date
+        ).all()
+
+        if not upcoming_invoices:
+            return  # nothing to do
+
+        for invoice in upcoming_invoices:
+            client = db.query(models.User).filter(models.User.id == invoice.client_id).first()
+            org_admins = db.query(models.User).filter(
+                models.User.organization_id == invoice.organization_id,
+                models.User.role == "admin"
+            ).all()
+
+            # --- Email client ---
+            if client and client.email:
+                send_email(
+                    client.email,
+                    subject="Upcoming Invoice Due Reminder",
+                    body=f"""
+Dear {client.name},
+
+Your invoice {invoice.invoice_number} is due in 2 days.
+
+Amount: £{invoice.amount}
+Due Date: {invoice.due_date}
+
+Please ensure payment is made on time.
+"""
+                )
+
+            # --- Notify admins ---
+            for admin in org_admins:
+                if admin.email:
+                    send_email(
+                        admin.email,
+                        subject="Client Invoice Upcoming Due Reminder",
+                        body=f"""
+Invoice {invoice.invoice_number} for client {client.name if client else 'Unknown'} is due in 2 days.
+
+Amount: £{invoice.amount}
+Due Date: {invoice.due_date}
+"""
+                    )
+
+            # --- Activity Logging ---
+            log_activity(
+                db=db,
+                user_id=None,  # system-generated
+                action="invoice_upcoming_due_reminder",
+                details=f"Reminder sent for invoice {invoice.invoice_number}, due {invoice.due_date}",
+            )
+
+    except Exception as e:
+        if db:
+            db.rollback()
+        logger.error(f"[Scheduler Error] send_upcoming_due_reminders: {e}")
+    finally:
+        if db:
+            db.close()
+            
+
+def cleanup_pending_applications():
+    """
+    Deletes:
+    1. Applications that have been registered (exist in User table).
+    2. Pending applications older than 30 days.
+    """
+    db: Session = None
+    try:
+        db = SessionLocal()
+        now = datetime.utcnow()
+        cutoff_date = now - timedelta(days=30)
+
+        # 1️⃣ Delete applications already registered
+        registered_emails = [u.email for u in db.query(User.email).all()]
+        apps_to_delete_registered = db.query(PendingApplication).filter(
+            PendingApplication.email.in_(registered_emails)
+        ).all()
+
+        for app in apps_to_delete_registered:
+            db.delete(app)
+            log_activity(
+                db=db,
+                user_id=None,
+                action="pending_application_deleted",
+                details=f"Deleted application {app.email} because user already registered."
+            )
+
+        # 2️⃣ Delete applications older than 30 days still pending
+        old_pending_apps = db.query(PendingApplication).filter(
+            PendingApplication.status == "pending",
+            PendingApplication.submitted_at < cutoff_date
+        ).all()
+
+        for app in old_pending_apps:
+            db.delete(app)
+            log_activity(
+                db=db,
+                user_id=None,
+                action="pending_application_deleted",
+                details=f"Deleted old pending application {app.email} submitted on {app.submitted_at}."
+            )
+
+        db.commit()
+        print(f"[Scheduler] Deleted {len(apps_to_delete_registered) + len(old_pending_apps)} pending applications.")
+
+    except Exception as e:
+        if db:
+            db.rollback()
+        logger.error(f"[Scheduler Error] cleanup_pending_applications: {e}")
+
+    finally:
+        if db:
+            db.close()            
 
 # === Initialize Scheduler ===
 scheduler = BackgroundScheduler(timezone=timezone("Europe/London"))
@@ -388,9 +555,9 @@ scheduler.add_job(audit_compliance_job, trigger=IntervalTrigger(days=1), id="dai
 scheduler.add_job(expire_badges, trigger="cron", hour=0, minute=0, id="expire_badges")
 scheduler.add_job(pick_and_send_daily_notification, trigger="cron", hour=6, minute=0, id="daily_pick_notification")
 scheduler.add_job(retrain_all_org_models, trigger=IntervalTrigger(days=1), id="daily_optimizer_retrain", replace_existing=True)
-scheduler.add_job(auto_manage_incidents, "interval", hours=24)
-
-
+scheduler.add_job(auto_manage_incidents, trigger="cron", hour=2, minute=0, id="auto_manage_incidents", replace_existing=True)
+scheduler.add_job(send_upcoming_due_reminders, trigger="cron", hour=9, minute=0, id="send_upcoming_due_reminders")
+scheduler.add_job(cleanup_pending_applications, trigger="cron", hour=3, minute=0, id="cleanup_pending_applications")
 # === Start Scheduler ===
 def start_scheduler():
     scheduler.start()

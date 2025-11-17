@@ -9,7 +9,7 @@ from typing import List,Optional
 from fastapi import Query
 from app.utilites.logging import log_activity
 from uuid import UUID
-from app.utilites.time_utilities import to_utc, now_utc  # 🔹 Import time utilities
+from app.utilites.time_utilities import to_utc, now_utc, to_local  # 🔹 Import time utilities
 
 router = APIRouter(
     prefix="/client/trips",

@@ -20,7 +20,7 @@ from app.schemas import DocumentOut, DocumentDownloadOut, DocumentDeleteOut
 from typing import Optional
 from app.utilites.storage_utilites import upload_file_to_s3_async, generate_presigned_url_async, delete_file_from_s3
 from app.utilites.logging import log_activity
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc,to_local, to_utc
 router = APIRouter()
 
 ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".docx"}

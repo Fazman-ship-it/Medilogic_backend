@@ -321,6 +321,7 @@ class Invoice(Base):
     # Relationships
     client = relationship("User", back_populates="invoices")
     organization = relationship("Organization", back_populates="invoices")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(),onupdate=func.now())
 
 class VehicleType(Base):
     __tablename__ = "vehicle_types"

@@ -20,7 +20,7 @@ from app.config import settings
 import secrets
 from fastapi import Request  # ✅ Add this import at the top
 from uuid import uuid4  # ✅ Import uuid4 for generating session IDs
-from app.utilites.time_utilities import now_utc,to_utc
+from app.utilites.time_utilities import now_utc,to_utc,to_local
 # Set up FastAPI router
 router = APIRouter()
 
@@ -101,7 +101,7 @@ from fastapi import Request  # ✅ Make sure this is imported
 from uuid import uuid4
 from datetime import timedelta
 from app import models
-from app.utilites.time_utilities import now_utc,to_utc
+from app.utilites.time_utilities import now_utc,to_utc,to_local
 
 @router.post("/login-step-2")
 def login_step_2(
@@ -210,7 +210,7 @@ def refresh_token(refresh_token: str = Body(...), db: Session = Depends(get_db))
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
         
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc,to_local,to_utc
 from app.utilites.email_utilites import send_email  # 🔄 Import this
 from fastapi import Request  # ✅ import if not already
 @router.post("/request-password-reset")

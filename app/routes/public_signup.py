@@ -11,7 +11,7 @@ from app.utilites.email_utilites import send_email
 import secrets
 from datetime import datetime, timedelta
 from app.config import settings
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc,to_local,to_utc
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 from fastapi import Request  # ✅ required to capture IP/User-Agent
@@ -99,7 +99,7 @@ def public_signup(
     }
     
 from fastapi import Request  # ✅ To capture IP and User-Agent
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc,to_local,to_utc
 @router.get("/verify-email")
 def verify_email(
     token: str,
@@ -130,7 +130,7 @@ def verify_email(
     return {"message": "✅ Email verified successfully. You can now log in."}
 
 from fastapi import Request  # ✅ Needed to capture client info
-from app.utilites.time_utilities import now_utc
+from app.utilites.time_utilities import now_utc,to_local, to_utc
 @router.post("/resend-verification-email")
 def resend_verification_email(
     request: Request,  # ✅ Inject request to capture IP & headers
