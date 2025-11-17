@@ -274,14 +274,11 @@ def retrain_all_org_models():
     finally:
         if db:
             db.close()
-            
 
 def auto_manage_incidents():
     """
     Runs daily to:
     1️⃣ Auto-close resolved incidents older than 7 days.
-    2️⃣ Send reminders for 'under_review' incidents older than 3 days.
-    3️⃣ Notify regulators when escalated incidents stay unresolved for >5 days.
     """
     db: Session = SessionLocal()
     try:
@@ -289,95 +286,27 @@ def auto_manage_incidents():
 
         # 1️⃣ Auto-close resolved incidents after 7 days
         seven_days_ago = today - timedelta(days=7)
+
         to_close = (
             db.query(models.Incident)
             .filter(models.Incident.status == "resolved")
             .filter(models.Incident.updated_at < seven_days_ago)
             .all()
         )
+
         for incident in to_close:
             incident.status = "closed"
             db.commit()
             print(f"✅ Auto-closed incident {incident.id}")
 
-        # 2️⃣ Remind admins for 'under_review' incidents older than 3 days
-        three_days_ago = today - timedelta(days=3)
-        to_remind = (
-            db.query(models.Incident)
-            .filter(models.Incident.status == "under_review")
-            .filter(models.Incident.updated_at < three_days_ago)
-            .all()
-        )
-        for incident in to_remind:
-            admin = db.query(models.User).filter(models.User.id == incident.submitted_by_id).first()
-
-            if admin and admin.email:
-                subject = f"⏰ Reminder: Incident {incident.id} has been under review for over 3 days"
-                body = f"""
-Hello {admin.name},
-
-This is an automated reminder that the following incident has been under review for more than 3 days:
-
-🆔 Incident ID: {incident.id}
-📍 Location: {incident.location or 'N/A'}
-📋 Title: {incident.title}
-📆 Submitted: {incident.created_at.strftime('%Y-%m-%d')}
-⚠️ Current Status: {incident.status}
-
-Please review and take appropriate action to move this incident forward.
-
-Regards,  
-Medilogic System
-"""
-                send_email(admin.email, subject, body)
-                print(f"📧 Reminder email sent to admin {admin.email} for incident {incident.id}")
-
-        # 3️⃣ Notify regulators for escalated incidents older than 5 days
-        five_days_ago = today - timedelta(days=5)
-        escalated_incidents = (
-            db.query(models.Incident)
-            .filter(models.Incident.status == "escalated")
-            .filter(models.Incident.updated_at < five_days_ago)
-            .all()
-        )
-        for incident in escalated_incidents:
-            regulators = db.query(models.User).filter(
-                models.User.role == "regulator",
-                models.User.regulated_country == incident.organization.country,
-                models.User.regulated_state == incident.organization.state,
-                models.User.regulated_region == incident.organization.region,
-            ).all()
-
-            for reg in regulators:
-                if reg.email:
-                    subject = f"🚨 Escalated Incident Pending: {incident.title}"
-                    body = f"""
-Dear {reg.name},
-
-The following escalated incident has been pending for more than 5 days:
-
-🆔 Incident ID: {incident.id}
-🏢 Organization: {incident.organization.name}
-📍 Location: {incident.location or 'N/A'}
-⚠️ Severity: {incident.severity}
-📋 Title: {incident.title}
-🕒 Last Updated: {incident.updated_at.strftime('%Y-%m-%d')}
-📅 Submitted: {incident.created_at.strftime('%Y-%m-%d')}
-
-Please review this incident and coordinate with the responsible organization.
-
-Regards,  
-Medilogic Automated Monitoring
-"""
-                    send_email(reg.email, subject, body)
-                    print(f"📧 Notification sent to regulator {reg.email} for incident {incident.id}")
-
         db.commit()
 
     except Exception as e:
         print(f"⚠️ Error in auto_manage_incidents: {e}")
+        db.rollback()
+
     finally:
-        db.close()            
+        db.close()
 
 
 # === Initialize Scheduler ===
@@ -397,7 +326,7 @@ scheduler.add_job(audit_compliance_job, trigger=IntervalTrigger(days=1), id="dai
 scheduler.add_job(expire_badges, trigger="cron", hour=0, minute=0, id="expire_badges")
 scheduler.add_job(pick_and_send_daily_notification, trigger="cron", hour=6, minute=0, id="daily_pick_notification")
 scheduler.add_job(retrain_all_org_models, trigger=IntervalTrigger(days=1), id="daily_optimizer_retrain", replace_existing=True)
-scheduler.add_job(auto_manage_incidents, "interval", days=1)  # ✅ runs once daily
+scheduler.add_job(auto_manage_incidents, "interval", hours=24)
 
 
 # === Start Scheduler ===
