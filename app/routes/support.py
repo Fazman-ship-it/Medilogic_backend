@@ -200,18 +200,14 @@ def post_support_message(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
+    # --- Only CLIENT & DRIVER can create messages ---
+    if current_user.role not in ["driver", "client"]:
+        raise HTTPException(status_code=403, detail="Only clients and drivers can create messages")
+
     query = db.query(models.SupportTicket).filter(models.SupportTicket.id == msg.ticket_id)
 
-    # Role-based access
-    if current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # any admin org ticket
-    elif current_user.role == "admin":
-        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
-    elif current_user.role in ["driver", "client"]:
-        # Clients/Drivers can only reply to their own ticket
-        query = query.filter(models.SupportTicket.user_id == current_user.id)
-    else:
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Clients/Drivers can ONLY reply to their own ticket
+    query = query.filter(models.SupportTicket.user_id == current_user.id)
 
     ticket = query.first()
     if not ticket:
