@@ -500,7 +500,14 @@ class SupportReplyResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
+        
+class SupportReplyUpdate(BaseModel):
+    message: str
+    
+    class Config:
+        from_attributes = True
+    
+                
 class SupportMessageResponse(BaseModel):
     id: UUID
     ticket_id: UUID
