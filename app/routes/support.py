@@ -348,7 +348,7 @@ def update_message(
 
 @router.patch("/replies/{reply_id}", response_model=schemas.SupportReplyResponse)
 def update_reply(
-    reply_id: uuid.UUID,
+    reply_id: UUID,
     data: schemas.SupportReplyUpdate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
