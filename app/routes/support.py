@@ -344,7 +344,48 @@ def update_message(
     db.refresh(message)
 
     return message
+    
 
+@router.patch("/replies/{reply_id}", response_model=schemas.SupportReplyResponse)
+def update_reply(
+    reply_id: uuid.UUID,
+    data: schemas.SupportReplyUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    reply = db.query(models.SupportReply).filter(models.SupportReply.id == reply_id).first()
+    if not reply:
+        raise HTTPException(status_code=404, detail="Reply not found")
+
+    ticket = db.query(models.SupportTicket).filter(models.SupportTicket.id == reply.ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    # --- Role-based access rules (Option A) ---
+    if current_user.role == "admin":
+        # Admin can ONLY edit their own replies
+        if reply.admin_id != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only edit your own replies")
+
+    elif current_user.role == "super_admin":
+        # Super admin can edit anything
+        pass
+
+    else:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # --- Apply update ---
+    reply.message = data.message
+    db.commit()
+    db.refresh(reply)
+
+    # Reload with admin info
+    reply_with_info = db.query(models.SupportReply).options(
+        joinedload(models.SupportReply.admin)
+    ).filter(models.SupportReply.id == reply.id).first()
+
+    return reply_with_info
+    
 @router.get("/tickets/search", response_model=schemas.PaginatedSupportTickets)
 def search_tickets(
     status: str = None,
