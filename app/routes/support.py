@@ -57,6 +57,9 @@ def create_ticket(
     
 @router.get("/tickets", response_model=schemas.PaginatedSupportTickets)
 def list_all_tickets(
+    status: str = Query(None),
+    organization_id: UUID = Query(None),
+    user_name: str = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -64,21 +67,31 @@ def list_all_tickets(
 ):
     query = db.query(models.SupportTicket)
 
-    # Role-based filtering
+    # --- Role-based filtering ---
     if current_user.role == "super_admin":
         query = query.filter(models.SupportTicket.organization_id.isnot(None))
+        if organization_id:
+            query = query.filter(models.SupportTicket.organization_id == organization_id)
+
     elif current_user.role == "admin":
         query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
+    # --- Optional filters ---
+    if status:
+        query = query.filter(models.SupportTicket.status == status)
+
+    if user_name:
+        query = query.join(models.User).filter(models.User.name.ilike(f"%{user_name}%"))
+
     total = query.count()
 
-    # Minimal update: include messages and message sender info
     tickets = query.options(
-        joinedload(models.SupportTicket.user),                                   # ticket creator
-        joinedload(models.SupportTicket.organization),                           # organization info
-        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
+        joinedload(models.SupportTicket.user),
+        joinedload(models.SupportTicket.organization),
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
     ).order_by(
         models.SupportTicket.created_at.desc()
     ).offset(skip).limit(limit).all()
@@ -89,7 +102,6 @@ def list_all_tickets(
         "limit": limit,
         "items": tickets
     }
-    
 
 @router.get("/tickets/{ticket_id}", response_model=schemas.SupportTicketResponse)
 def get_ticket(
@@ -386,44 +398,3 @@ def update_reply(
 
     return reply_with_info
     
-@router.get("/tickets/search", response_model=schemas.PaginatedSupportTickets)
-def search_tickets(
-    status: str = None,
-    organization_id: UUID = None,
-    user_name: str = None,
-    skip: int = 0,
-    limit: int = 20,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    query = db.query(models.SupportTicket)
-
-    # Base role access
-    if current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id.isnot(None))
-    elif current_user.role == "admin":
-        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
-    else:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    # Optional filters
-    if status:
-        query = query.filter(models.SupportTicket.status == status)
-    if organization_id and current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id == organization_id)
-    if user_name:
-        query = query.join(models.User).filter(models.User.name.ilike(f"%{user_name}%"))
-
-    total = query.count()
-    tickets = query.options(
-        joinedload(models.SupportTicket.user),
-        joinedload(models.SupportTicket.organization),
-        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
-    ).order_by(models.SupportTicket.created_at.desc()).offset(skip).limit(limit).all()
-
-    return {
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-        "items": tickets
-    }
