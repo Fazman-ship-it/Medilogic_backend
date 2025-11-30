@@ -67,6 +67,9 @@ def list_all_tickets(
 ):
     query = db.query(models.SupportTicket)
 
+    # --- Hide deleted tickets ---
+    query = query.filter(models.SupportTicket.is_deleted == False)
+
     # --- Role-based filtering ---
     if current_user.role == "super_admin":
         query = query.filter(models.SupportTicket.organization_id.isnot(None))
