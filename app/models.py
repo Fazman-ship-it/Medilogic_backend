@@ -286,7 +286,7 @@ class Organization(Base):
     driver_views = relationship("DriverView", back_populates="organization", cascade="all, delete-orphan")
     daily_notifications = relationship("DailyNotification", back_populates="organization")
     ico_registration_number = Column(String, nullable=True)  # ICO registration ID if available
-        
+    timezone = Column(String, default="UTC",nullable=False,doc="IANA tz name, e.g. Europe/London")    
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
 

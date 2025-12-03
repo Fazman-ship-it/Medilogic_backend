@@ -1,14 +1,13 @@
 from datetime import datetime
 import pytz
 
-# ✅ Default fallback timezone (e.g., Africa/Lagos)
-DEFAULT_TZ = pytz.timezone("Africa/Lagos")
-
+# Default fallback timezone
+DEFAULT_TZ = pytz.timezone("Europe/London")  # you can switch to Africa/Lagos if you prefer
 
 def get_timezone(tz_name: str = None):
     """
     Safely get a timezone object by name.
-    Defaults to Africa/Lagos if not provided or invalid.
+    Defaults to DEFAULT_TZ if not provided or invalid.
     """
     try:
         if tz_name:
@@ -17,11 +16,9 @@ def get_timezone(tz_name: str = None):
         pass
     return DEFAULT_TZ
 
-
 def to_utc(dt: datetime, tz_name: str = None) -> datetime:
     """
-    Convert a datetime (naive or localized) to UTC safely.
-    If naive, assume the provided tz_name or DEFAULT_TZ.
+    Convert a datetime (naive or aware) to UTC.
     """
     if dt is None:
         return None
@@ -32,38 +29,32 @@ def to_utc(dt: datetime, tz_name: str = None) -> datetime:
         # Localize naive datetime to the local timezone
         dt = local_tz.localize(dt)
     else:
-        # Normalize tzinfo
         dt = dt.astimezone(local_tz)
 
     return dt.astimezone(pytz.UTC)
 
-
 def to_local(dt: datetime, tz_name: str = None) -> datetime:
     """
     Convert a UTC datetime to a specified local timezone.
-    Defaults to Africa/Lagos if tz_name not provided.
     """
     if dt is None:
         return None
 
     local_tz = get_timezone(tz_name)
+
     if dt.tzinfo is None:
-        # assume UTC if naive
         dt = pytz.UTC.localize(dt)
     return dt.astimezone(local_tz)
 
-
 def now_utc() -> datetime:
     """
-    Get current UTC datetime (aware).
+    Current UTC datetime (aware)
     """
     return datetime.utcnow().replace(tzinfo=pytz.UTC)
 
-
 def now_local(tz_name: str = None) -> datetime:
     """
-    Get current datetime in the given local timezone.
-    Defaults to Africa/Lagos.
+    Current datetime in the given local timezone.
     """
     local_tz = get_timezone(tz_name)
     return datetime.now(local_tz)
