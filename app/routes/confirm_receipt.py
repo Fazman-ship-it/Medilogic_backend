@@ -65,7 +65,7 @@ from app.database import get_db
 from app.models import Trip
 from app.config import settings
 
-@router.get("", response_class=RedirectResponse)
+@router.get("/pickup-form", response_class=RedirectResponse)
 def get_pickup_confirmation_form(token: str, db: Session = Depends(get_db)):
     """
     Redirects external users (via QR code) to the pickup confirmation page.
