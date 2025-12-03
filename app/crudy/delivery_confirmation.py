@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.models import DeliveryConfirmation, Trip
 from datetime import datetime
 from fastapi import HTTPException, status
+from app.utilites.time_utilities import now_utc
 
 def create_delivery_confirmation(
     db: Session,
@@ -16,7 +17,13 @@ def create_delivery_confirmation(
     ip_address: str = None,
     user_agent: str = None,
     latitude: float = None,
-    longitude: float = None
+    longitude: float = None,
+    pickup_at: datetime = None,
+    dropoff_at: datetime = None,
+    external_client_name: str = None,
+    external_client_email: str = None, 
+    extra_notes: str = None
+    
 
 ):
     trip = db.query(Trip).filter(Trip.id == uuid.UUID(trip_id)).first()
@@ -35,12 +42,18 @@ def create_delivery_confirmation(
         signature_image_path=signature_path,
         photo_path=photo_path,
         wtn_code=wtn_code,
-        confirmed_at=datetime.utcnow(),
+        confirmed_at=now_utc(),
         ip_address=ip_address,
         user_agent=user_agent,
         organization_id=trip.organization_id,
         latitude=latitude,
-        longitude=longitude
+        longitude=longitude,
+        pickup_at=pickup_at,
+        dropoff_at=dropoff_at,
+        external_client_name=external_client_name,
+        external_client_email=external_client_email,
+        extra_notes=extra_notes
+        
     )
 
     # Update Trip delivery info

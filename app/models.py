@@ -17,7 +17,7 @@ from sqlalchemy import Time
 from app.database import Base
 from sqlalchemy.dialects.postgresql import ENUM
 from enum import Enum as PyEnum
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID,JSON
 import uuid
 from app.utilites.time_utilities import now_utc
 
@@ -644,6 +644,8 @@ class DeliveryConfirmation(Base):
     photo_path = Column(String, nullable=True)
     wtn_code = Column(String, nullable=True)
     confirmed_at = Column(DateTime(timezone=True), default=now_utc)
+    pickup_at = Column(DateTime(timezone=True), nullable=True, default=now_utc)
+    dropoff_at = Column(DateTime(timezone=True), nullable=True, default=now_utc)
     ip_address = Column(String, nullable=True)
     user_agent = Column(String, nullable=True)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"))
@@ -651,7 +653,25 @@ class DeliveryConfirmation(Base):
     organization = relationship("Organization", back_populates="delivery")
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    pdf_receipt_path = Column(String, nullable=True)  # Path to generated PDF receipt 
+    pdf_receipt_path = Column(String, nullable=True)  # Path to generated PDF receipt
+    external_client_name = Column(String, nullable=True)
+    external_client_email = Column(String, nullable=True)
+    external_client_signature_path = Column(String, nullable=True)
+    driver_signature_path = Column(String, nullable=True)
+    disposal_facility_name = Column(String, nullable=True)
+    disposal_facility_address = Column(String, nullable=True)
+    disposal_facility_signature_path = Column(String, nullable=True)
+    pickup_photo_path = Column(String, nullable=True)    # When collected
+    dropoff_photo_path = Column(String, nullable=True)   # When delivered
+    attachments = Column(JSON, nullable=True)           # list of extra files
+    extra_notes = Column(Text, nullable=True)
+    # Access & audit
+    access_token = Column(String, nullable=True, unique=True, index=True)  # token for no-login signing
+    token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=now_utc)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(),default=func.now())
+    
+    
 class Notification(Base):
     __tablename__ = "notifications"
 
