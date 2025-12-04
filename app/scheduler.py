@@ -25,7 +25,7 @@ from app.utilites.optimizer_model import train_org_model
 from app.driver_notification import notify_upcoming_trips
 from app.retrain_location_model import train_org_model
 from app.models import PendingApplication,User
-from app.utilites.montly_report import generate_monthly_waste_statement
+from app.utilites.montly_report import generate_monthly_waste_statement,generate_monthly_waste_statement_for_org
 
 logger = logging.getLogger(__name__)
 
@@ -548,6 +548,18 @@ def monthly_waste_statement_job():
     import asyncio
     asyncio.run(generate_monthly_waste_statement(db, year, month))
     db.close()
+    
+
+def monthly_org_report_job():
+    db: Session = SessionLocal()
+    today = datetime.utcnow()
+    year = today.year
+    month = today.month - 1 if today.month > 1 else 12
+    year = year - 1 if month == 12 else year
+
+    import asyncio
+    asyncio.run(generate_monthly_waste_statement_for_org(db, year, month))
+    db.close()    
 
 # === Initialize Scheduler ===
 scheduler = BackgroundScheduler(timezone=timezone("Europe/London"))
@@ -570,6 +582,7 @@ scheduler.add_job(auto_manage_incidents, trigger="cron", hour=2, minute=0, id="a
 scheduler.add_job(send_upcoming_due_reminders, trigger="cron", hour=9, minute=0, id="send_upcoming_due_reminders")
 scheduler.add_job(cleanup_pending_applications, trigger="cron", hour=3, minute=0, id="cleanup_pending_applications")
 scheduler.add_job(monthly_waste_statement_job, trigger="cron",day=1,hour=8,minute=0,id="monthly_waste_statement",replace_existing=True)
+scheduler.add_job(monthly_waste_statement_job, trigger="cron", day=1, hour=8, minute=0, id="monthly_org_report", replace_existing=True)
 
 # === Start Scheduler ===
 def start_scheduler():

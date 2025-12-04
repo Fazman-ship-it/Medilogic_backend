@@ -189,3 +189,132 @@ async def generate_monthly_waste_statement(db: Session, year: int, month: int):
                 body=f"Please find attached your monthly waste statement for {organization_name}. Generated via Medilogic Platform.",
                 attachments=attachments
             )
+
+async def generate_monthly_waste_statement_for_org(db: Session, year: int, month: int):
+    """
+    Generate a consolidated monthly waste statement for each organization.
+    Sends the report to the organization's email for auditing.
+    """
+    from fpdf import FPDF  # ensure your PDF class is already defined
+    from app.models import Trip, DeliveryConfirmation, Organization
+    from app.utilites.storage_utilites import generate_presigned_url_async
+    from app.utilites.email_utilites import send_email
+
+    # Define month range
+    start_date = datetime(year, month, 1)
+    end_date = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+
+    # Fetch all organizations with a valid email
+    orgs = db.query(Organization).filter(Organization.email.isnot(None)).all()
+
+    for org in orgs:
+        # Fetch all trips for this organization within the month
+        trips = (
+            db.query(Trip)
+            .join(DeliveryConfirmation, DeliveryConfirmation.trip_id == Trip.id)
+            .filter(
+                Trip.organization_id == org.id,
+                DeliveryConfirmation.dropoff_at >= start_date,
+                DeliveryConfirmation.dropoff_at < end_date
+            )
+            .all()
+        )
+
+        if not trips:
+            continue  # Skip orgs with no trips
+
+        # Sort trips by dropoff
+        trips.sort(key=lambda t: t.delivery_confirmation.dropoff_at or t.delivery_confirmation.pickup_at)
+
+        # --- CSV ---
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
+        csv_writer.writerow([f"{org.name} - Monthly Waste Statement - {start_date.strftime('%B %Y')}"])
+        csv_writer.writerow(["Generated via Medilogic Platform"])
+        csv_writer.writerow([])  # empty row
+        csv_writer.writerow([
+            "Trip ID", "Driver Name", "Client Name", "Client Email", "Client Signature",
+            "Pickup Timestamp", "Pickup Photo", "Dropoff Timestamp",
+            "WTN Code", "Dropoff Facility Name", "Dropoff Facility Address",
+            "Dropoff Facility Signature", "Dropoff Photo", "Extra Notes", "Cost"
+        ])
+
+        # --- PDF ---
+        pdf = WasteStatementPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        try:
+            pdf.image("app/static/medilogic_logo.png", x=10, y=8, w=33)
+            pdf.ln(15)
+        except Exception:
+            pdf.ln(15)
+
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, f"{org.name} - Monthly Waste Statement - {start_date.strftime('%B %Y')}", ln=True, align="C")
+        pdf.set_font("Arial", "I", 10)
+        pdf.cell(0, 10, "Generated via Medilogic Platform", ln=True, align="C")
+        pdf.ln(5)
+        pdf.set_font("Arial", size=10)
+
+        for trip in trips:
+            conf = trip.delivery_confirmation
+            client_name = conf.external_client_name or trip.client_name
+            client_email = conf.external_client_email or trip.client_email
+            driver_name = trip.driver_name
+            trip_cost = trip.cost if trip.cost is not None else "N/A"
+
+            # Generate presigned URLs
+            pickup_photo_url = await generate_presigned_url_async(conf.pickup_photo_path) if conf.pickup_photo_path else ""
+            dropoff_photo_url = await generate_presigned_url_async(conf.dropoff_photo_path) if conf.dropoff_photo_path else ""
+            client_signature_url = await generate_presigned_url_async(conf.signature_image_path) if conf.signature_image_path else ""
+            facility_signature_url = await generate_presigned_url_async(conf.disposal_facility_signature_path) if conf.disposal_facility_signature_path else ""
+
+            # CSV row
+            csv_writer.writerow([
+                str(trip.id),
+                driver_name,
+                client_name,
+                client_email,
+                client_signature_url,
+                conf.pickup_at,
+                pickup_photo_url,
+                conf.dropoff_at,
+                conf.wtn_code,
+                conf.disposal_facility_name,
+                conf.disposal_facility_address,
+                facility_signature_url,
+                dropoff_photo_url,
+                conf.extra_notes,
+                trip_cost
+            ])
+
+            # PDF
+            pdf.multi_cell(0, 6, f"Trip ID: {trip.id} | Driver: {driver_name}")
+            pdf.multi_cell(0, 6, f"Client: {client_name} | Email: {client_email}")
+            pdf.multi_cell(0, 6, f"Pickup: {conf.pickup_at} | Dropoff: {conf.dropoff_at} | Cost: {trip_cost}")
+            pdf.ln(3)
+
+        # Convert to bytes
+        csv_bytes = csv_buffer.getvalue().encode()
+        pdf_buffer = io.BytesIO()
+        pdf.output(pdf_buffer)
+        pdf_buffer.seek(0)
+        pdf_bytes = pdf_buffer.read()
+
+        attachments = [
+            {"ContentType": "text/csv",
+             "Filename": f"medilogic_waste_statement_{year}_{month}.csv",
+             "Base64Content": csv_bytes.decode("utf-8")},
+            {"ContentType": "application/pdf",
+             "Filename": f"medilogic_waste_statement_{year}_{month}.pdf",
+             "Base64Content": pdf_bytes.decode("latin1")}
+        ]
+
+        # --- Send to org email ---
+        send_email(
+            to_email=org.email,
+            subject=f"{org.name} - Consolidated Monthly Waste Statement - {start_date.strftime('%B %Y')}",
+            body=f"Please find attached the consolidated monthly waste statement for {org.name} generated via Medilogic Platform.",
+            attachments=attachments
+        )
+        print(f"[Scheduler] Sent monthly statement to {org.name} ({org.email})")
