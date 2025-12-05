@@ -18,6 +18,7 @@ from enum import Enum
 from app.models import BadgeType, SubscriptionStatus, SubscriptionPlan, MedilogicDriverStatus
 from pydantic import model_validator
 from app.models import TripStatus
+from app.utilites.shortid import ShortIDMixin
 
 # --------------------------
 
@@ -59,6 +60,7 @@ class TripPatch(TripBase):
 
 class TripResponse(TripBase):
     id: UUID
+    short_id: Optional[str] = None
     created_at: datetime
     
 class PaginatedTripsResponse(BaseModel):
@@ -72,6 +74,7 @@ class PaginatedTripsResponse(BaseModel):
 
 class DriverTrip(BaseModel):
     trip_id: UUID
+    short_id: Optional[str] = None
     delivery_type: DeliveryType
     client_name: Optional[str]
     pickup_location: Optional[str]
@@ -90,6 +93,7 @@ class DriverTrip(BaseModel):
     
 class DriverDashboardResponse(BaseModel):
     driver_id: UUID
+    short_id: Optional[str] = None
     total_trips: int
     assigned_trips: list[DriverTrip]
 
@@ -99,6 +103,7 @@ class DriverDashboardResponse(BaseModel):
 
 class AssignedTrip(BaseModel):
     trip_id: UUID
+    short_id: Optional[str] = None
     trip_label: str
     driver_name: Optional[str]
     pickup_location: Optional[str]
@@ -122,6 +127,7 @@ class AssignedTrip(BaseModel):
 
 class ClientAssignedTripsResponse(BaseModel):
     client_id: UUID
+    short_id: Optional[str] = None
     total_trips: int
     assigned_trips: List[AssignedTrip]        
         
@@ -149,6 +155,7 @@ class UserLogin(BaseModel):
 
 class UserOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
     email: EmailStr
     role: RoleEnum
@@ -167,6 +174,7 @@ class UserUpdate(BaseModel):
     
 class UserAdminOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
     email: EmailStr
     role: RoleEnum
@@ -250,6 +258,7 @@ class TripAnalyticsResponse(BaseModel):
 # Shared base
 class PODBase(BaseModel):
     trip_id: UUID
+    short_id: Optional[str] = None
     signature: Optional[str] = None
     notes: Optional[str] = None
     delivered_to: Optional[str] = None
@@ -263,6 +272,7 @@ class PODCreate(PODBase):
 # Output schema for individual POD files
 class PODFileOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     s3_key: str
     file_type: Optional[str] = None
     url: Optional[str] = None
@@ -274,6 +284,7 @@ class PODFileOut(BaseModel):
 # DB-shaped response (mainly for internal queries, not frontend)
 class PODDB(PODBase):
     id: UUID
+    short_id: Optional[str] = None
     driver_id: Optional[UUID] = None
     created_at: datetime
 
@@ -284,6 +295,7 @@ class PODDB(PODBase):
 # API-friendly response (what frontend sees)
 class PODResponse(PODBase):
     id: UUID
+    short_id: Optional[str] = None
     driver_id: Optional[UUID] = None
     created_at: datetime
     files: Optional[List[PODFileOut]] = []  # ✅ clean: all files linked to this POD
@@ -309,6 +321,7 @@ class TripCreateClient(BaseModel):
 
 class TripClientResponse(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     delivery_type: DeliveryType
     custom_delivery_description: Optional[str] = None
     pickup_location: str
@@ -335,6 +348,7 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceResponse(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     invoice_number: str
     client_id: UUID
     organization_id: Optional[UUID] = None
@@ -395,6 +409,7 @@ class VehicleTypeCreate(VehicleTypeBase):
 
 class VehicleTypeResponse(VehicleTypeBase):
     id: UUID
+    short_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -407,6 +422,7 @@ class PriorityLevelCreate(PriorityLevelBase):
 
 class PriorityLevelResponse(PriorityLevelBase):
     id: UUID
+    short_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -419,6 +435,7 @@ class ShiftWindowCreate(ShiftWindowBase):
 
 class ShiftWindowResponse(ShiftWindowBase):
     id: UUID
+    short_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -431,6 +448,7 @@ class ZoneCreate(ZoneBase):
 
 class ZoneResponse(ZoneBase):
     id: UUID
+    short_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -453,6 +471,7 @@ class PasswordChange(BaseModel):
 # Enum for status
 class UserInfo(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
     role: str
 
@@ -461,6 +480,7 @@ class UserInfo(BaseModel):
 
 class OrganizationInfo(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
 
     class Config:
@@ -493,6 +513,7 @@ class SupportMessageCreate(BaseModel):
 
 class SupportReplyResponse(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     ticket_id: UUID
     admin: UserInfo
     message: str
@@ -510,6 +531,7 @@ class SupportReplyUpdate(BaseModel):
                 
 class SupportMessageResponse(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     ticket_id: UUID
     sender: Optional[UserInfo]
     message: str
@@ -520,6 +542,7 @@ class SupportMessageResponse(BaseModel):
 
 class SupportTicketResponse(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     user: UserInfo
     organization: Optional[OrganizationInfo] 
     status: TicketStatus
@@ -568,6 +591,7 @@ class OrganizationCreate(BaseModel):
     
 class OrganizationOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
     invite_code: Optional[str]
     ico_registered: Optional[bool]
@@ -654,6 +678,7 @@ class RegulatorUpdate(BaseModel):
     regulated_logistics_scope:Optional[List[str]] = []
 class RegulatorOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     email: EmailStr
     name: str
     role: str
@@ -681,6 +706,7 @@ class EnquiryCreate(BaseModel):
 
 class EnquiryOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
     email: EmailStr
     message: str
@@ -705,6 +731,7 @@ class IncidentCreate(BaseModel):
 # Output schema for files
 class IncidentFileOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     s3_key: str
     file_type: Optional[str]
 
@@ -715,6 +742,7 @@ class IncidentFileOut(BaseModel):
 # Schema for updating an incident
 class IncidentUpdate(BaseModel):
     id: Optional[UUID]
+    short_id: Optional[str] = None
     title: Optional[str]
     description: Optional[str]
     incident_type: Optional[str]
@@ -727,6 +755,7 @@ class IncidentUpdate(BaseModel):
 # API-friendly output schema for frontend
 class IncidentOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     title: str
     description: str
     status: str
@@ -801,6 +830,7 @@ class ComplianceStatusUpdate(ComplianceStatusBase):
 
 class ComplianceStatusOut(ComplianceStatusBase):
     id: UUID
+    short_id: Optional[str] = None
     organization_id: UUID
     created_at: datetime
     updated_at: datetime
@@ -857,6 +887,7 @@ class DriverAvailabilityCreate(BaseModel):
 # 🔹 Response model
 class DriverAvailabilityOut(DriverAvailabilityCreate):
     id: UUID
+    short_id: Optional[str] = None
     driver_id: UUID
     organization_id: UUID
 
@@ -887,6 +918,7 @@ class ShiftAssignRequest(BaseModel):
 
 class ShiftOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     driver_id: UUID
     shift_date: date
     start_time: time
@@ -902,6 +934,7 @@ class ShiftRequestCreate(BaseModel):
 
 class ShiftRequestOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     shift_id: UUID
     driver_id: UUID
     status: str
@@ -915,6 +948,7 @@ class ShiftRequestUpdate(BaseModel):
 
 class ChainOfCustodyCreate(BaseModel):
     trip_id: UUID
+    short_id: Optional[str] = None
     event_type: CustodyEventType
     location: Optional[str] = None
     notes: Optional[str] = None
@@ -925,6 +959,7 @@ class ChainOfCustodyCreate(BaseModel):
 
 class ChainOfCustodyOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     trip_id: UUID
     driver_id: Optional[UUID] = None
     event_type: CustodyEventType
@@ -979,6 +1014,7 @@ class DocumentBase(BaseModel):
 
 class DocumentOut(DocumentBase):
     id: UUID
+    short_id: Optional[str] = None
     upload_time: datetime
     organization_id: UUID
     user_id: Optional[UUID] = None
@@ -990,6 +1026,7 @@ class DocumentOut(DocumentBase):
 
 class DocumentUploadOut(DocumentBase):
     id: UUID
+    short_id: Optional[str] = None
     upload_time: datetime
     organization_id: Optional[UUID]
     user_id: Optional[UUID]
@@ -1020,6 +1057,7 @@ class TestimonialCreate(BaseModel):
 
 class TestimonialOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
     content: str
     is_approved: bool
@@ -1049,6 +1087,7 @@ class PendingApplicationCreate(BaseModel):
 
 class PendingApplicationOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     full_name: str
     email: EmailStr
     password: str
@@ -1075,6 +1114,7 @@ class PendingApplicationOut(BaseModel):
 # Input payload when confirming delivery
 class DeliveryConfirmationResquest(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     trip_id: UUID
     pin_entered: str
     signature_path: Optional[str] = None
@@ -1092,6 +1132,7 @@ class DeliveryConfirmationResquest(BaseModel):
 # Output/response model when delivery is confirmed
 class DeliveryConfirmationResponse(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     trip_id: UUID
     pin_entered: str
     signature_image_path: Optional[str] = None
@@ -1108,6 +1149,7 @@ class DeliveryConfirmationResponse(BaseModel):
         
 class NotificationOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     user_id: UUID
     title: str
     message: str
@@ -1231,6 +1273,7 @@ class DriverCredentialsBase(BaseModel):
 # --- Output schema for GET /driver_credentials ---
 class DriverCredentialsOut(DriverCredentialsBase):
     id: UUID
+    short_id: Optional[str] = None
     user_id: UUID
     organization_id: UUID
 
@@ -1279,6 +1322,7 @@ class DriverCredentialsUpdate(BaseModel):
 
 class DriverDocumentOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     filename: str
     doc_type: str
     uploaded_at: datetime
@@ -1373,6 +1417,7 @@ from app.models import BadgeType, SubscriptionStatus
 # ---------------------------
 class IntlApplicationOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     email: Optional[EmailStr] = None
     name: Optional[str] = None
     country: Optional[str] = None
@@ -1441,6 +1486,7 @@ class PaymentCreate(BaseModel):
 
 class PaymentOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     application_id: UUID
     medilogic_driver_id: Optional[UUID] = None
     amount: float
@@ -1518,6 +1564,7 @@ class RestoreUserRequest(BaseModel):
 # ✅ Response schema
 class RestoreUserResponse(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     email: EmailStr
     name: str
     role: str
@@ -1531,6 +1578,7 @@ class RestoreUserResponse(BaseModel):
     
 class DeletedUser(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     name: str
     email: EmailStr
     role:str
@@ -1616,6 +1664,7 @@ class MedilogicDriverUpdate(BaseModel):
 # --- OUT (response model) ---
 class MedilogicDriverOut(BaseModel):
     id: UUID
+    short_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     is_active: bool
@@ -1693,6 +1742,7 @@ class DailyNotificationCreate(DailyNotificationBase):
 
 class DailyNotificationResponse(DailyNotificationBase):
     id: UUID
+    short_id: Optional[str] = None
     is_ai_generated: bool
     created_at: datetime
     organization_id: Optional[UUID] = None  # ✅ None = global, UUID = org-specific
@@ -1732,18 +1782,60 @@ class UserProfileResponse(BaseModel):
         from_attributes = True
         
 
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from uuid import UUID
+
+
+# --- Chat request ---
 class ChatRequest(BaseModel):
     message: str
 
+
+# --- Generic item for trips, incidents, invoices ---
+class ChatItem(BaseModel):
+    id: str
+    short_id: str
+    status: Optional[str] = None
+    description: Optional[str] = None
+    amount: Optional[float] = None
+    scheduled_time: Optional[str] = None  # ISO format string
+    driver_name: Optional[str] = None
+    pickup_location: Optional[str] = None
+    dropoff_location: Optional[str] = None
+    priority: Optional[str] = None
+    pdf_url: Optional[str] = None
+
+
+# --- Delivery confirmation schema ---
+class DeliveryConfirmationData(BaseModel):
+    id: str
+    short_id: str
+    trip_id: str
+    confirmed_at: Optional[str] = None
+    pickup_at: Optional[str] = None
+    dropoff_at: Optional[str] = None
+    external_client_name: Optional[str] = None
+    external_client_email: Optional[str] = None
+    external_client_signature: Optional[str] = None
+    pdf_receipt_path: Optional[str] = None
+    attachments: Optional[List[str]] = []
+    extra_notes: Optional[str] = None
+    disposal_facility_name: Optional[str] = None
+    disposal_facility_address: Optional[str] = None
+    disposal_facility_signature: Optional[str] = None
+    pickup_photo_path: Optional[str] = None
+    dropoff_photo_path: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+
+
+# --- Chat response ---
 class ChatResponse(BaseModel):
     reply: str
-    # optional quick reply buttons for the frontend
     options: Optional[List[str]] = None
-    # optional structured payload (e.g. lists of trips/incidents/invoices)
-    data: Optional[dict] = None
-
-    class Config:
-        from_attributes = True
+    data: Optional[Dict[str, Any]] = None  # Can hold trips, incidents, invoices, or delivery confirmations
         
 
 # ✅ Summary section for analytics

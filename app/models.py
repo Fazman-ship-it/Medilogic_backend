@@ -20,7 +20,7 @@ from enum import Enum as PyEnum
 from sqlalchemy.dialects.postgresql import UUID,JSON
 import uuid
 from app.utilites.time_utilities import now_utc
-
+from app.utilites.shortid import ShortIDMixin
 Base = declarative_base()
 class UserRole(str, enum.Enum):
     super_admin = "super_admin"
@@ -110,7 +110,7 @@ class TripStatus(str, enum.Enum):
     cancelled = "cancelled"
     
     
-class Trip(Base):
+class Trip(Base, ShortIDMixin):
     __tablename__ = "trips"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -155,7 +155,7 @@ class Trip(Base):
     is_deleted = Column(Boolean, default=False)
     notes = Column(Text, nullable=True, doc="Special instruction or notes for this trip")
 
-class User(Base):
+class User(Base,ShortIDMixin):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -213,7 +213,7 @@ class User(Base):
     deletion_reason = Column(Text, nullable=True)
     medilogic_driver = relationship("Medilogic_Driver", back_populates="user", uselist=False)
     
-class POD(Base):
+class POD(Base,ShortIDMixin):
     __tablename__ = "pods"
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))  # Foreign key to User
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -229,7 +229,7 @@ class POD(Base):
     created_at = Column(DateTime(timezone=True), default=now_utc)
     files = relationship("PODFile", back_populates="pod", cascade="all, delete-orphan")       
 
-class Organization(Base):
+class Organization(Base,ShortIDMixin):
     __tablename__ = "organizations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -287,7 +287,7 @@ class Organization(Base):
     daily_notifications = relationship("DailyNotification", back_populates="organization")
     ico_registration_number = Column(String, nullable=True)  # ICO registration ID if available
     timezone = Column(String, default="UTC",nullable=False,doc="IANA tz name, e.g. Europe/London")    
-class ActivityLog(Base):
+class ActivityLog(Base, ShortIDMixin):
     __tablename__ = "activity_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -304,7 +304,7 @@ class ActivityLog(Base):
     user_agent = Column(String, nullable=True)  # Optional field for user agent string       
 
 
-class Invoice(Base):
+class Invoice(Base, ShortIDMixin):
     __tablename__ = "invoices"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -323,26 +323,26 @@ class Invoice(Base):
     organization = relationship("Organization", back_populates="invoices")
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),onupdate=func.now())
 
-class VehicleType(Base):
+class VehicleType(Base, ShortIDMixin):
     __tablename__ = "vehicle_types"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="vehicle_types")        
 
-class PriorityLevel(Base):
+class PriorityLevel(Base, ShortIDMixin):
     __tablename__ = "priority_levels"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
 
-class ShiftWindow(Base):
+class ShiftWindow(Base, ShortIDMixin):
     __tablename__ = "shift_windows"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization = relationship("Organization", back_populates="shift_windows")        
 
-class Zone(Base):
+class Zone(Base, ShortIDMixin):
     __tablename__ = "zones"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, nullable=False)
@@ -355,7 +355,7 @@ class TicketStatus(str, enum.Enum):
     in_progress = "in_progress"
     resolved = "resolved"
 
-class SupportTicket(Base):
+class SupportTicket(Base, ShortIDMixin):
     __tablename__ = "support_tickets"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -371,7 +371,7 @@ class SupportTicket(Base):
     organization = relationship("Organization", back_populates="support_tickets")        
     is_deleted= Column(Boolean, default=False)
 
-class SupportReply(Base):
+class SupportReply(Base, ShortIDMixin):
     __tablename__ = "support_replies"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -385,7 +385,7 @@ class SupportReply(Base):
     organization = relationship("Organization", back_populates="support_replies")        
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
 
-class SupportMessage(Base):
+class SupportMessage(Base, ShortIDMixin):
     __tablename__ = "support_messages"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -401,7 +401,7 @@ class SupportMessage(Base):
     is_deleted= Column(Boolean, default=False)
     
     
-class Enquiry(Base):
+class Enquiry(Base, ShortIDMixin):
     __tablename__ = "enquiries"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -417,7 +417,7 @@ class Enquiry(Base):
     organization = relationship("Organization", back_populates="enquiries")
     
     
-class Incident(Base):
+class Incident(Base, ShortIDMixin):
     __tablename__ = "incidents"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -438,7 +438,7 @@ class Incident(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(),default=func.now())
 
 
-class ComplianceStatus(Base):
+class ComplianceStatus(Base, ShortIDMixin):
     __tablename__ = "compliance_statuses"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -481,7 +481,7 @@ class ComplianceStatus(Base):
     organization = relationship("Organization", back_populates="compliance_status")
 
 
-class DriverAvailability(Base):
+class DriverAvailability(Base,ShortIDMixin):
     __tablename__ = "driver_availabilities"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -494,7 +494,7 @@ class DriverAvailability(Base):
     organization = relationship("Organization", back_populates="availabilities")
     
 
-class ShiftAssignment(Base):
+class ShiftAssignment(Base, ShortIDMixin):
     __tablename__ = "shift_assignments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -508,7 +508,7 @@ class ShiftAssignment(Base):
     driver = relationship("User", back_populates="shifts")
     organization = relationship("Organization", back_populates="shift_assignments")
     
-class ShiftRequest(Base):
+class ShiftRequest(Base, ShortIDMixin):
     __tablename__ = "shift_requests"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -521,7 +521,7 @@ class ShiftRequest(Base):
     shift = relationship("Shift", back_populates="shift_requests")
     organization = relationship("Organization")
     
-class Shift(Base):
+class Shift(Base, ShortIDMixin):
     __tablename__ = "shifts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -536,7 +536,7 @@ class Shift(Base):
     organization = relationship("Organization", back_populates="shifts")
     
 
-class ChainOfCustody(Base):
+class ChainOfCustody(Base, ShortIDMixin):
     __tablename__ = "chain_of_custody"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -558,7 +558,7 @@ class ChainOfCustody(Base):
     organization = relationship("Organization", back_populates="chain_of_custody_events")
     
 
-class DriverLocationHistory(Base):
+class DriverLocationHistory(Base, ShortIDMixin):
     __tablename__ = "driver_location_history"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -572,7 +572,7 @@ class DriverLocationHistory(Base):
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
     organization=relationship("Organization", back_populates="location_history")
 
-class Document(Base):
+class Document(Base, ShortIDMixin):
     __tablename__ = "documents"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -594,7 +594,7 @@ class Document(Base):
     file_size = Column(Integer, nullable=True)        # size in bytes
     mime_type = Column(String, nullable=True)
     
-class Testimonial(Base):
+class Testimonial(Base, ShortIDMixin):
     __tablename__ = "testimonials"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -606,10 +606,10 @@ class Testimonial(Base):
     user = relationship("User", back_populates="testimonials", lazy="joined")
     
 
-class PendingApplication(Base):
+class PendingApplication(Base,ShortIDMixin):
     __tablename__ = "pending_applications"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    id= Column(UUID(as_uuid=True),primary_key=True, default=uuid.uuid4, index=True)
     full_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     password = Column(String, nullable=False)  # Will be hashed before saving
@@ -634,7 +634,7 @@ class PendingApplication(Base):
     status = Column(String, default="pending")  # pending, approved, rejected
     submitted_at = Column(DateTime(timezone=True), default=now_utc)
 
-class DeliveryConfirmation(Base):
+class DeliveryConfirmation(Base,ShortIDMixin):
     __tablename__ = "delivery_confirmations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -672,7 +672,7 @@ class DeliveryConfirmation(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(),default=func.now())
     
     
-class Notification(Base):
+class Notification(Base, ShortIDMixin):
     __tablename__ = "notifications"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -685,7 +685,7 @@ class Notification(Base):
     user = relationship("User", back_populates="notifications")
     
 
-class DriverCredentials(Base):
+class DriverCredentials(Base,ShortIDMixin):
     __tablename__ = "driver_credentials"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -732,7 +732,7 @@ class DriverCredentials(Base):
     documents = relationship("Document", back_populates="credential", cascade="all, delete-orphan")
     
 
-class InternationalApplication(Base):
+class InternationalApplication(Base,ShortIDMixin):
     __tablename__ = "international_applications"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -786,7 +786,7 @@ class InternationalApplication(Base):
     cancel_at_period_end = Column(Boolean, default=False)
     
     
-class Payment(Base):
+class Payment(Base,ShortIDMixin):
     __tablename__ = "payments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -804,7 +804,7 @@ class Payment(Base):
     payment_type = Column(String, nullable=False)  # e.g., "application_fee", "subscription", "one_time"
     
 # models.py
-class ApplicationView(Base):
+class ApplicationView(Base,ShortIDMixin):
     __tablename__ = "application_views"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -819,7 +819,7 @@ class ApplicationView(Base):
 # -----------------------------------
 # Driver Model
 # -----------------------------------
-class Medilogic_Driver(Base):
+class Medilogic_Driver(Base,ShortIDMixin):
     __tablename__ ="medilogic_drivers"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -873,7 +873,7 @@ class Medilogic_Driver(Base):
     cancel_at_period_end = Column(Boolean, default=False)   # if subscription is set to cancel
     
     
-class DriverView(Base):
+class DriverView(Base, ShortIDMixin):
     __tablename__ ="driver_views"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -885,7 +885,7 @@ class DriverView(Base):
     
 
 
-class DailyNotification(Base):
+class DailyNotification(Base, ShortIDMixin):
     __tablename__ = "daily_notifications"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -900,7 +900,7 @@ class DailyNotification(Base):
     is_active_today = Column(Boolean, default=False)
     
 
-class PODFile(Base):
+class PODFile(Base,ShortIDMixin):
     __tablename__ = "pod_files"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
@@ -909,7 +909,7 @@ class PODFile(Base):
     file_type = Column(String, nullable=True)  # e.g. "raw", "pdf", "receipt"
     pod = relationship("POD", back_populates="files")
     
-class IncidentFile(Base):
+class IncidentFile(Base,ShortIDMixin):
     __tablename__ = "incident_files"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -918,7 +918,7 @@ class IncidentFile(Base):
     file_type = Column(String, nullable=True)  # e.g., "image", "pdf", "docx"
     incident = relationship("Incident", back_populates="files")
 
-class TripNotification(Base):
+class TripNotification(Base, ShortIDMixin):
     __tablename__ = "trip_notifications"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
