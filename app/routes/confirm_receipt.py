@@ -111,12 +111,9 @@ from uuid import UUID
 from fastapi import APIRouter, Form, File, UploadFile, HTTPException, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
-import jwt
-import aioredis
 import os
 from sqlalchemy.orm import Session
 import jwt
-import aioredis
 import os
 
 from app.models import Trip, DeliveryConfirmation, User
@@ -124,12 +121,13 @@ from app.dependencies import get_db, get_current_user_optional
 from app.utilites.email_utilites import send_email
 from app.utilites.logging import log_activity
 from app.config import SECRET_KEY, ALGORITHM, settings
+import redis.asyncio as redis
 
 # --------------------------
 # Rate limiting via Redis
 # --------------------------
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+REDIS_URL = "redis://localhost:6379/0"
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMIT_MAX_ATTEMPTS = 10
 
