@@ -151,10 +151,27 @@ def validate_email(email: str):
     return email.strip()
 
 
+import io
+import csv
+import uuid
+import time
+import base64
+from typing import Optional
+from datetime import datetime, timedelta
+
+# Module-level simple in-memory rate limiter (for production: use Redis)
+_RATE_LIMIT_WINDOW_SECONDS = 60
+_RATE_LIMIT_MAX_ATTEMPTS = 10
+_rate_limit_store: dict = {}  # ip -> {"count": int, "first_ts": float}
+
+# File limits
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
 @router.post("/confirm", response_model=dict)
 async def submit_delivery_confirmation(
     trip_id: UUID = Form(...),
-    pin: str = Form(...),
+    pin: Optional[str] = Form(None),  # now optional
     external_client_name: str = Form(...),
     external_client_email: str = Form(...),
     wtn_code: str = Form(None),
@@ -169,14 +186,28 @@ async def submit_delivery_confirmation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    ip_address = request.client.host
-    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request and request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+
+    # --------------------------
+    # Rate limiting (simple)
+    # --------------------------
+    now_ts = time.time()
+    rl = _rate_limit_store.get(ip_address)
+    if rl is None or now_ts - rl["first_ts"] > _RATE_LIMIT_WINDOW_SECONDS:
+        # reset window
+        _rate_limit_store[ip_address] = {"count": 1, "first_ts": now_ts}
+    else:
+        rl["count"] += 1
+        if rl["count"] > _RATE_LIMIT_MAX_ATTEMPTS:
+            # too many attempts
+            raise HTTPException(status_code=429, detail="Too many requests from this IP. Try again later.")
 
     # Validate email
     external_client_email = validate_email(external_client_email)
 
     # -----------------------------------
-    # 🚧 STRICT MULTITENANT TRIP CHECK
+    # 🚧 MULTITENANT TRIP CHECK (strict)
     # -----------------------------------
     trip = db.query(Trip).filter(
         Trip.id == trip_id,
@@ -186,28 +217,74 @@ async def submit_delivery_confirmation(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
 
-    if trip.is_delivered:
-        raise HTTPException(status_code=400, detail="Trip already delivered")
+    # Duplicate confirmation / already delivered
+    existing_confirmation = db.query(DeliveryConfirmation).filter(
+        DeliveryConfirmation.trip_id == trip.id
+    ).first()
 
-    # Validate inputs
-    if len(pin.strip()) < 4:
-        raise HTTPException(status_code=400, detail="PIN too short")
-    if latitude and not (-90 <= latitude <= 90):
+    if trip.is_delivered or (existing_confirmation and getattr(existing_confirmation, "is_confirmed", False)):
+        raise HTTPException(status_code=409, detail="Trip already confirmed/delivered")
+
+    # If trip (or org) requires PIN then validate; otherwise PIN optional
+    pin_required = bool(getattr(trip, "requires_pin", False) or getattr(trip, "pin_required", False))
+    if pin_required:
+        if not pin or len(pin.strip()) < 4:
+            raise HTTPException(status_code=400, detail="PIN required and must be at least 4 characters")
+    else:
+        # if provided, do some light validation
+        if pin and len(pin.strip()) > 0 and len(pin.strip()) < 4:
+            raise HTTPException(status_code=400, detail="PIN too short")
+
+    # Validate lat/lon
+    if latitude is not None and not (-90 <= latitude <= 90):
         raise HTTPException(status_code=400, detail="Invalid latitude")
-    if longitude and not (-180 <= longitude <= 180):
+    if longitude is not None and not (-180 <= longitude <= 180):
         raise HTTPException(status_code=400, detail="Invalid longitude")
+
+    # File validator helper
+    def _validate_upload_file(upload_file: UploadFile, field_name: str):
+        if not upload_file:
+            return
+        # MIME check
+        content_type = upload_file.content_type or ""
+        allowed = content_type.startswith("image/") or content_type == "application/pdf"
+        if not allowed:
+            raise HTTPException(status_code=400, detail=f"Invalid file type for {field_name}: {content_type}")
+
+        # Size check (seek to end)
+        try:
+            cur = upload_file.file.tell()
+            upload_file.file.seek(0, 2)  # seek to end
+            size = upload_file.file.tell()
+            upload_file.file.seek(cur)
+            if size > _MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=400, detail=f"{field_name} too large (max 10MB)")
+        except Exception:
+            # If detection fails, be conservative and reject
+            raise HTTPException(status_code=400, detail=f"Could not validate uploaded file size for {field_name}")
 
     uploaded_s3_keys = []
     confirmation = None
 
     try:
+        # Validate files before uploading
+        file_mapping = {
+            "signature_image_path": signature_image,
+            "pickup_photo_path": pickup_photo,
+            "disposal_facility_signature_path": facility_signature,
+            "dropoff_photo_path": dropoff_photo
+        }
+        for fname, upf in file_mapping.items():
+            if upf:
+                _validate_upload_file(upf, fname)
+
         # -----------------------------------
-        # 🚧 MULTITENANT-SAFE CONFIRMATION CREATION
+        # Create delivery confirmation (multi-tenant safe)
         # -----------------------------------
         confirmation = create_delivery_confirmation(
             db=db,
             trip_id=trip_id,
-            organization_id=current_user.organization_id,  # ✅ enforce org
+            organization_id=current_user.organization_id,  # enforce org
             pin_entered=pin,
             external_client_name=external_client_name,
             external_client_email=external_client_email,
@@ -217,20 +294,11 @@ async def submit_delivery_confirmation(
             latitude=latitude,
             longitude=longitude,
             extra_notes=extra_notes,
-            pickup_at=now_utc,
-            dropoff_at=now_utc
+            pickup_at=now_utc(),
+            dropoff_at=now_utc()
         )
 
-        # -----------------------------------
-        # 🚧 MULTITENANT-SAFE FILE UPLOADS
-        # -----------------------------------
-        file_mapping = {
-            "signature_image_path": signature_image,
-            "pickup_photo_path": pickup_photo,
-            "disposal_facility_signature_path": facility_signature,
-            "dropoff_photo_path": dropoff_photo
-        }
-
+        # Upload files (namespaced by org)
         for field_name, upload_file in file_mapping.items():
             if upload_file:
                 confirmation = await handle_file_upload(
@@ -244,7 +312,7 @@ async def submit_delivery_confirmation(
                 )
                 uploaded_s3_keys.append(getattr(confirmation, field_name))
 
-        # PDF receipt
+        # --- Generate PDF receipt and upload ---
         pdf_bytes = generate_confirmation_pdf(confirmation)
 
         class BytesUploadFile:
@@ -254,7 +322,6 @@ async def submit_delivery_confirmation(
                 self.content_type = "application/pdf"
 
         pdf_file = BytesUploadFile(pdf_bytes)
-
         confirmation = await handle_file_upload(
             app=confirmation,
             file=pdf_file,
@@ -266,10 +333,19 @@ async def submit_delivery_confirmation(
         )
         uploaded_s3_keys.append(getattr(confirmation, "pdf_receipt_path"))
 
+        # Mark trip delivered if your domain requires it here (create_delivery_confirmation might already do this)
+        # trip.is_delivered = True
+        # db.add(trip)
+
         db.commit()
 
+    except HTTPException:
+        # let HTTPExceptions bubble out unchanged
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
+        # cleanup any uploaded files
         from app.utilites.storage_utilites import delete_file_from_s3
         for key in uploaded_s3_keys:
             try:
@@ -295,7 +371,7 @@ async def submit_delivery_confirmation(
             presigned_urls[field] = await generate_presigned_url_async(path)
 
     # --------------------------
-    # EMAIL ATTACHMENT CREATION
+    # EMAIL ATTACHMENT CREATION (proper base64 encoding)
     # --------------------------
     csv_buffer = io.StringIO()
     csv_writer = csv.writer(csv_buffer)
@@ -324,21 +400,22 @@ async def submit_delivery_confirmation(
         confirmation.pickup_at,
         confirmation.dropoff_at
     ])
-    csv_bytes = csv_buffer.getvalue().encode()
+    csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
     attachments = [
         {
             "ContentType": "text/csv",
             "Filename": f"trip_{trip.id}_confirmation.csv",
-            "Base64Content": csv_bytes.decode('utf-8')
+            "Base64Content": base64.b64encode(csv_bytes).decode("utf-8")
         },
         {
             "ContentType": "application/pdf",
             "Filename": f"trip_{trip.id}_receipt.pdf",
-            "Base64Content": pdf_bytes.decode('latin1')
+            "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8")
         }
     ]
 
+    # Send email to external client if present
     if confirmation.external_client_email:
         send_email(
             to_email=confirmation.external_client_email,
