@@ -148,3 +148,6 @@ yarl==1.20.1
 yfinance==0.2.62
 zope.interface==7.2
 mailjet-rest==1.5.1
+aioredis==2.0.1
+async-timeout==5.0.1
+redis==7.1.0

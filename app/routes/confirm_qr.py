@@ -10,6 +10,9 @@ import uuid
 from app.utilites.qr import generate_qr_code_base64
 from uuid import UUID
 from app.dependencies import get_current_user
+from app.models import DeliveryConfirmation, User
+from datetime import datetime, timedelta
+from app.utilites.time_utilities import now_utc,to_local, to_utc
 router = APIRouter(prefix="/confirm", tags=["Delivery Confirmation"])
 
 # -----------------------------
@@ -44,7 +47,7 @@ def generate_confirmation_link(
             organization_id=trip.organization_id,
             pin_entered="N/A",
             access_token=generate_access_token(),
-            token_expires_at=datetime.utcnow() + timedelta(
+            token_expires_at=now_utc() + timedelta(
                 minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES
             )
         )
@@ -53,9 +56,9 @@ def generate_confirmation_link(
         db.refresh(confirmation)
     else:
         # Re-issue token if expired
-        if not confirmation.access_token or confirmation.token_expires_at < datetime.utcnow():
+        if not confirmation.access_token or confirmation.token_expires_at < now_utc():
             confirmation.access_token = generate_access_token()
-            confirmation.token_expires_at = datetime.utcnow() + timedelta(
+            confirmation.token_expires_at = now_utc() + timedelta(
                 minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES
             )
             db.add(confirmation)
@@ -96,7 +99,7 @@ def generate_qr_code_endpoint(
             organization_id=trip.organization_id,
             pin_entered="N/A",
             access_token=generate_access_token(),
-            token_expires_at=datetime.utcnow() + timedelta(
+            token_expires_at=now_utc() + timedelta(
                 minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES
             )
         )
@@ -105,9 +108,9 @@ def generate_qr_code_endpoint(
         db.refresh(confirmation)
     else:
         # Re-issue token if expired
-        if not confirmation.access_token or confirmation.token_expires_at < datetime.utcnow():
+        if not confirmation.access_token or confirmation.token_expires_at < now_utc():
             confirmation.access_token = generate_access_token()
-            confirmation.token_expires_at = datetime.utcnow() + timedelta(
+            confirmation.token_expires_at = now_utc() + timedelta(
                 minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES
             )
             db.add(confirmation)
