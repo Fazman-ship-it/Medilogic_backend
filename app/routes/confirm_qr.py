@@ -9,6 +9,7 @@ from app.config import settings
 import uuid
 from app.utilites.qr import generate_qr_code_base64
 from uuid import UUID
+from app.dependencies import get_current_user
 router = APIRouter(prefix="/confirm", tags=["Delivery Confirmation"])
 
 @router.post("/generate-confirmation-link")
