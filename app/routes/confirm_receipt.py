@@ -175,13 +175,17 @@ async def submit_delivery_confirmation(
     # Validate email
     external_client_email = validate_email(external_client_email)
 
-    # Fetch trip
+    # -----------------------------------
+    # 🚧 STRICT MULTITENANT TRIP CHECK
+    # -----------------------------------
     trip = db.query(Trip).filter(
         Trip.id == trip_id,
         Trip.organization_id == current_user.organization_id
     ).first()
+
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
+
     if trip.is_delivered:
         raise HTTPException(status_code=400, detail="Trip already delivered")
 
@@ -197,10 +201,13 @@ async def submit_delivery_confirmation(
     confirmation = None
 
     try:
-        # --- Create or fetch delivery confirmation ---
+        # -----------------------------------
+        # 🚧 MULTITENANT-SAFE CONFIRMATION CREATION
+        # -----------------------------------
         confirmation = create_delivery_confirmation(
             db=db,
             trip_id=trip_id,
+            organization_id=current_user.organization_id,  # ✅ enforce org
             pin_entered=pin,
             external_client_name=external_client_name,
             external_client_email=external_client_email,
@@ -210,11 +217,13 @@ async def submit_delivery_confirmation(
             latitude=latitude,
             longitude=longitude,
             extra_notes=extra_notes,
-            pickup_at=now_utc,   # pickup timestamp
-            dropoff_at=now_utc   # dropoff timestamp
+            pickup_at=now_utc,
+            dropoff_at=now_utc
         )
 
-        # --- Upload files ---
+        # -----------------------------------
+        # 🚧 MULTITENANT-SAFE FILE UPLOADS
+        # -----------------------------------
         file_mapping = {
             "signature_image_path": signature_image,
             "pickup_photo_path": pickup_photo,
@@ -227,15 +236,17 @@ async def submit_delivery_confirmation(
                 confirmation = await handle_file_upload(
                     app=confirmation,
                     file=upload_file,
-                    prefix=f"delivery/{field_name}",
+                    prefix=f"{current_user.organization_id}/delivery/{field_name}",
                     field_name=field_name,
                     db=db,
                     user_id=current_user.id,
                     action=f"upload_{field_name}"
                 )
                 uploaded_s3_keys.append(getattr(confirmation, field_name))
-                # --- Generate PDF receipt ---
+
+        # PDF receipt
         pdf_bytes = generate_confirmation_pdf(confirmation)
+
         class BytesUploadFile:
             def __init__(self, content: bytes):
                 self.file = io.BytesIO(content)
@@ -243,10 +254,11 @@ async def submit_delivery_confirmation(
                 self.content_type = "application/pdf"
 
         pdf_file = BytesUploadFile(pdf_bytes)
+
         confirmation = await handle_file_upload(
             app=confirmation,
             file=pdf_file,
-            prefix="delivery/receipts",
+            prefix=f"{current_user.organization_id}/delivery/receipts",
             field_name="pdf_receipt_path",
             db=db,
             user_id=current_user.id,
@@ -282,9 +294,12 @@ async def submit_delivery_confirmation(
         if path:
             presigned_urls[field] = await generate_presigned_url_async(path)
 
-    # --- Prepare CSV & PDF for email ---
+    # --------------------------
+    # EMAIL ATTACHMENT CREATION
+    # --------------------------
     csv_buffer = io.StringIO()
     csv_writer = csv.writer(csv_buffer)
+
     csv_writer.writerow([
         "Trip ID", "Client Name", "Client Email", "Driver Name",
         "External Client Signature", "Pickup Photo",
@@ -292,6 +307,7 @@ async def submit_delivery_confirmation(
         "Facility Signature", "Dropoff Photo", "WTN Code",
         "Extra Notes", "Pickup Timestamp", "Dropoff Timestamp"
     ])
+
     csv_writer.writerow([
         str(trip.id),
         confirmation.external_client_name,
@@ -311,12 +327,16 @@ async def submit_delivery_confirmation(
     csv_bytes = csv_buffer.getvalue().encode()
 
     attachments = [
-        {"ContentType": "text/csv",
-         "Filename": f"trip_{trip.id}_confirmation.csv",
-         "Base64Content": csv_bytes.decode('utf-8')},
-        {"ContentType": "application/pdf",
-         "Filename": f"trip_{trip.id}_receipt.pdf",
-         "Base64Content": pdf_bytes.decode('latin1')}
+        {
+            "ContentType": "text/csv",
+            "Filename": f"trip_{trip.id}_confirmation.csv",
+            "Base64Content": csv_bytes.decode('utf-8')
+        },
+        {
+            "ContentType": "application/pdf",
+            "Filename": f"trip_{trip.id}_receipt.pdf",
+            "Base64Content": pdf_bytes.decode('latin1')
+        }
     ]
 
     if confirmation.external_client_email:
