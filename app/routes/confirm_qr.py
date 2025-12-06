@@ -13,17 +13,28 @@ router = APIRouter(prefix="/confirm", tags=["Delivery Confirmation"])
 
 @router.post("/generate-confirmation-link")
 def generate_confirmation_link(
-    trip_id: UUID,  # ✅ FastAPI automatically validates UUID
-    db: Session = Depends(get_db)
+    trip_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)  # ✅ enforce tenant access
 ):
-    # Fetch trip by UUID
-    trip = db.query(Trip).filter(Trip.id == trip_id).first()
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+    # Fetch trip by UUID + enforce organization ownership
+    trip = db.query(Trip).filter(
+        Trip.id == trip_id,
+        Trip.organization_id == current_user.organization_id  # ✅ multitenant protection
+    ).first()
 
-    # Ensure multi-tenant / org context exists
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found or not accessible in this organization"
+        )
+
+    # Ensure organization context exists
     if not trip.organization_id:
-        raise HTTPException(status_code=400, detail="Trip is missing organization context")
+        raise HTTPException(
+            status_code=400,
+            detail="Trip is missing organization context"
+        )
 
     # Generate delivery token
     token = generate_delivery_token(str(trip.id), str(trip.organization_id))
@@ -35,27 +46,37 @@ def generate_confirmation_link(
         "confirmation_url": confirmation_url,
         "expires_in_minutes": settings.DELIVERY_CONFIRM_EXPIRY_MINUTES
     }
-    
 
 
 @router.post("/generate-qr-code")
 def generate_qr_code_endpoint(
-    trip_id: UUID,  # ✅ FastAPI automatically validates UUID
-    db: Session = Depends(get_db)
+    trip_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)  # ✅ enforce multitenancy
 ):
-    # Fetch trip
-    trip = db.query(Trip).filter(Trip.id == trip_id).first()
+    # Fetch trip with multitenant restriction
+    trip = db.query(Trip).filter(
+        Trip.id == trip_id,
+        Trip.organization_id == current_user.organization_id  # ✅ Only access your org's trip
+    ).first()
+
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found or not accessible in this organization"
+        )
 
     if not trip.organization_id:
-        raise HTTPException(status_code=400, detail="Trip is missing organization context")
+        raise HTTPException(
+            status_code=400,
+            detail="Trip is missing organization context"
+        )
 
-    # Generate token and confirmation URL
+    # Generate token & URL
     token = generate_delivery_token(str(trip.id), str(trip.organization_id))
     confirmation_url = f"{settings.DELIVERY_CONFIRMATION_URL}{token}"
 
-    # Generate QR code as base64
+    # Generate QR code
     qr_base64 = generate_qr_code_base64(confirmation_url)
 
     return {
