@@ -120,7 +120,7 @@ from app.models import Trip, DeliveryConfirmation, User
 from app.dependencies import get_db, get_current_user_optional
 from app.utilites.email_utilites import send_email
 from app.utilites.logging import log_activity
-from app.config import SECRET_KEY, ALGORITHM, settings
+from app.config import settings
 import redis.asyncio as redis
 
 # --------------------------
