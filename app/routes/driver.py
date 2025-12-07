@@ -265,3 +265,95 @@ def get_driver_trips(
 #         db=db,
 #         current_user=current_user
 #     )
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from uuid import UUID
+from datetime import timedelta
+import qrcode
+import base64
+from io import BytesIO
+from app.dependencies import get_db, get_current_user
+from app.models import Trip, DeliveryConfirmation, User
+from app.config import settings
+from app.auth import create_access_token
+
+from app.utilites.time_utilities import now_utc
+
+@router.get("/trips/{trip_id}/confirmation", response_model=dict)
+async def get_driver_trip_confirmation(
+    trip_id: UUID,
+    include_qr: bool = Query(True, description="Set false to skip QR generation"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # Only drivers
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="Only drivers can access this endpoint")
+
+    # Fetch trip (multi-tenant + driver check)
+    trip = db.query(Trip).filter(
+        Trip.id == trip_id,
+        Trip.driver_id == current_user.id,
+        Trip.organization_id == current_user.organization_id
+    ).first()
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found or not assigned to you")
+
+    # Fetch or create delivery confirmation
+    confirmation = db.query(DeliveryConfirmation).filter(
+        DeliveryConfirmation.trip_id == trip.id,
+        DeliveryConfirmation.organization_id == current_user.organization_id
+    ).first()
+
+    if not confirmation:
+        # Create new confirmation with token
+        from uuid import uuid4
+        confirmation = DeliveryConfirmation(
+            trip_id=trip.id,
+            organization_id=trip.organization_id,
+            pin_entered="N/A",
+            access_token=uuid4().hex,
+            token_expires_at=now_utc() + timedelta(minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES)
+        )
+        db.add(confirmation)
+        db.commit()
+        db.refresh(confirmation)
+    else:
+        # Re-issue token if expired
+        if not confirmation.access_token or confirmation.token_expires_at < now_utc():
+            from uuid import uuid4
+            confirmation.access_token = uuid4().hex
+            confirmation.token_expires_at = now_utc() + timedelta(minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES)
+            db.add(confirmation)
+            db.commit()
+            db.refresh(confirmation)
+
+    # Generate short-lived JWT for QR
+    jwt_token = create_access_token(
+        data={"trip_id": str(trip.id), "organization_id": str(trip.organization_id)},
+        expires_delta=timedelta(minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES)
+    )
+    confirmation_url = f"{settings.DELIVERY_CONFIRMATION_URL.rstrip('/')}/{jwt_token}"
+
+    # Optional QR generation
+    qr_base64 = None
+    if include_qr:
+        qr_img = qrcode.make(confirmation_url)
+        buffer = BytesIO()
+        qr_img.save(buffer, format="PNG")
+        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+
+    return {
+        "trip_id": str(trip.id),
+        "driver_name": trip.driver_name,
+        "client_name": getattr(trip, "client_name", None)
+        "delivery_type": trip.delivery_type,
+        "pickup_location": trip.pickup_location,
+        "dropoff_location": trip.dropoff_location,
+        "scheduled_time": trip.scheduled_time,
+        "confirmation_url": confirmation_url,
+        "qr_code_base64": qr_base64,
+        "token_expires_at": confirmation.token_expires_at,
+        "status": "pending" if confirmation.signature_image_path is None else "completed"
+    }
