@@ -347,7 +347,7 @@ async def get_driver_trip_confirmation(
     return {
         "trip_id": str(trip.id),
         "driver_name": trip.driver_name,
-        "client_name": getattr(trip, "client_name", None)
+        "client_name": getattr(trip, "client_name", None),
         "delivery_type": trip.delivery_type,
         "pickup_location": trip.pickup_location,
         "dropoff_location": trip.dropoff_location,
