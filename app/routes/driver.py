@@ -277,7 +277,7 @@ from app.dependencies import get_db, get_current_user
 from app.models import Trip, DeliveryConfirmation, User
 from app.config import settings
 from app.auth import create_access_token
-
+from app. utilites.qr import generate_qr_code_base64
 from app.utilites.time_utilities import now_utc
 
 @router.get("/trips/{trip_id}/confirmation", response_model=dict)
@@ -339,10 +339,7 @@ async def get_driver_trip_confirmation(
     # Optional QR generation
     qr_base64 = None
     if include_qr:
-        qr_img = qrcode.make(confirmation_url)
-        buffer = BytesIO()
-        qr_img.save(buffer, format="PNG")
-        qr_base64 = base64.b64encode(buffer.getvalue()).decode()
+        qr_base64 = generate_qr_code_base64(confirmation_url)
 
     return {
         "trip_id": str(trip.id),
