@@ -517,7 +517,7 @@ class SupportReplyResponse(BaseModel):
     ticket_id: UUID
     admin: UserInfo
     message: str
-    subject:str
+    subject: Optional[str]=None
     created_at: datetime
 
     class Config:
@@ -536,7 +536,7 @@ class SupportMessageResponse(BaseModel):
     ticket_id: UUID
     sender: Optional[UserInfo]
     message: str
-    subject:str
+    subject: Optional[str]=None
     created_at: datetime
 
     class Config:
@@ -550,7 +550,7 @@ class SupportTicketResponse(BaseModel):
     status: TicketStatus
     created_at: datetime
     updated_at: datetime
-    subject:str
+    subject: Optional[str]=None
     replies: Optional[List[SupportReplyResponse]] = []
     messages: List[SupportMessageResponse] = []
 
