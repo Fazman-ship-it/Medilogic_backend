@@ -70,7 +70,7 @@ app = FastAPI(
 # ✅ CORS middleware to allow Swagger to send token in headers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, set this to your frontend domain
+    allow_origins="https://medilogicglobal.vercel.app",  # In production, set this to your frontend domain
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
