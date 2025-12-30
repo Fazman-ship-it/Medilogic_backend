@@ -392,4 +392,4 @@ def top_off_route_drivers(
 
     # Sort and return top 5
     sorted_results = sorted(results, key=lambda x: x["distance_km"], reverse=True)
-    return sorted_results[:5]    
+    return sorted_results[:5]
