@@ -18,18 +18,21 @@ def create_ticket(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # 1. Create the ticket with organization_id attached
+    # ✅ Only admins create organization-level tickets
+    org_id = None
+    if current_user.role in ["admin", "super_admin"]:
+        org_id = current_user.organization_id
+
     new_ticket = models.SupportTicket(
         user_id=current_user.id,
         subject=ticket.subject,
         status="open",
-        organization_id=current_user.organization_id
+        organization_id=org_id
     )
     db.add(new_ticket)
     db.commit()
     db.refresh(new_ticket)
 
-    # 2. Add the initial message
     initial_message = models.SupportMessage(
         ticket_id=new_ticket.id,
         sender_id=current_user.id,
@@ -39,18 +42,12 @@ def create_ticket(
     db.commit()
     db.refresh(initial_message)
 
-    # --- Notify users about the new ticket message ---
     notify_ticket_users(db, new_ticket, current_user, initial_message.message)
 
-    # 3. Manually attach messages for response
-    new_ticket.messages = [initial_message]
-    new_ticket.replies = []
-
-    # 4. Reload ticket with full nested info for consistent response
     ticket_with_info = db.query(models.SupportTicket).options(
-        joinedload(models.SupportTicket.user),                                   # ticket creator
-        joinedload(models.SupportTicket.organization),                           # organization info
-        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
+        joinedload(models.SupportTicket.user),
+        joinedload(models.SupportTicket.organization),
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
     ).filter(models.SupportTicket.id == new_ticket.id).first()
 
     return ticket_with_info
