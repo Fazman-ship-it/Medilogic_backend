@@ -51,7 +51,6 @@ def create_ticket(
     ).filter(models.SupportTicket.id == new_ticket.id).first()
 
     return ticket_with_info
-    
 @router.get("/tickets", response_model=schemas.PaginatedSupportTickets)
 def list_all_tickets(
     status: str = Query(None),
@@ -69,12 +68,17 @@ def list_all_tickets(
 
     # --- Role-based filtering ---
     if current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+        query = query.filter(
+            models.SupportTicket.organization_id.isnot(None),
+            models.SupportTicket.user.has(models.User.role == "admin")  # ✅ ONLY admin-created tickets
+        )
         if organization_id:
             query = query.filter(models.SupportTicket.organization_id == organization_id)
 
     elif current_user.role == "admin":
-        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+        query = query.filter(
+            models.SupportTicket.organization_id == current_user.organization_id
+        )
 
     else:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -107,19 +111,26 @@ def list_all_tickets(
 def get_ticket(
     ticket_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)  # ✅ removed require_role
+    current_user: models.User = Depends(get_current_user)
 ):
     query = db.query(models.SupportTicket).options(
-        joinedload(models.SupportTicket.user),                                   # ticket creator
-        joinedload(models.SupportTicket.organization),                           # organization info
-        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
+        joinedload(models.SupportTicket.user),
+        joinedload(models.SupportTicket.organization),
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
     ).filter(models.SupportTicket.id == ticket_id)
 
-    # Role-based access control
+    # --- Role-based access control ---
     if current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # only admin tickets
+        query = query.filter(
+            models.SupportTicket.organization_id.isnot(None),
+            models.SupportTicket.user.has(models.User.role == "admin")  # ✅ ONLY admin-created tickets
+        )
+
     elif current_user.role == "admin":
-        query = query.filter(models.SupportTicket.organization_id == current_user.organization_id)
+        query = query.filter(
+            models.SupportTicket.organization_id == current_user.organization_id
+        )
+
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -129,7 +140,6 @@ def get_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     return ticket
-
 
 @router.patch("/tickets/{ticket_id}/status", response_model=schemas.SupportTicketResponse)
 def update_ticket_status(
