@@ -73,6 +73,12 @@ app.add_middleware(
     allow_origins=[
         "https://medilogicglobal.vercel.app",  # In production, set this to your frontend domain
         "https://medilogic.vercel.app",
+        app",
+        # ✅ ADD THESE FOR LOCAL DEVELOPMENT
+        "http://localhost:3000",   # React / Next.js
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",   # Vite
+        "http://127.0.0.1:5173",
     ],           
     allow_credentials=True,
     allow_methods=["*"],
