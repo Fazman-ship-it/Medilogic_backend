@@ -51,6 +51,7 @@ def create_ticket(
     ).filter(models.SupportTicket.id == new_ticket.id).first()
 
     return ticket_with_info
+    
 @router.get("/tickets", response_model=schemas.PaginatedSupportTickets)
 def list_all_tickets(
     status: str = Query(None),
@@ -68,16 +69,24 @@ def list_all_tickets(
 
     # --- Role-based filtering ---
     if current_user.role == "super_admin":
+        # ONLY admin-created organisation tickets
         query = query.filter(
             models.SupportTicket.organization_id.isnot(None),
-            models.SupportTicket.user.has(models.User.role == "admin")  # ✅ ONLY admin-created tickets
+            models.SupportTicket.user.has(models.User.role == "admin")
         )
         if organization_id:
             query = query.filter(models.SupportTicket.organization_id == organization_id)
 
     elif current_user.role == "admin":
+        # All tickets in admin organisation
         query = query.filter(
             models.SupportTicket.organization_id == current_user.organization_id
+        )
+
+    elif current_user.role in ["client", "driver"]:
+        # ONLY their own tickets
+        query = query.filter(
+            models.SupportTicket.user_id == current_user.id
         )
 
     else:
@@ -117,13 +126,16 @@ def get_ticket(
         joinedload(models.SupportTicket.user),
         joinedload(models.SupportTicket.organization),
         joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
-    ).filter(models.SupportTicket.id == ticket_id)
+    ).filter(
+        models.SupportTicket.id == ticket_id,
+        models.SupportTicket.is_deleted == False
+    )
 
-    # --- Role-based access control ---
+    # --- Role-based access ---
     if current_user.role == "super_admin":
         query = query.filter(
             models.SupportTicket.organization_id.isnot(None),
-            models.SupportTicket.user.has(models.User.role == "admin")  # ✅ ONLY admin-created tickets
+            models.SupportTicket.user.has(models.User.role == "admin")
         )
 
     elif current_user.role == "admin":
@@ -131,11 +143,15 @@ def get_ticket(
             models.SupportTicket.organization_id == current_user.organization_id
         )
 
+    elif current_user.role in ["client", "driver"]:
+        query = query.filter(
+            models.SupportTicket.user_id == current_user.id
+        )
+
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
     ticket = query.first()
-
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
