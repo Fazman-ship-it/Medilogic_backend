@@ -351,7 +351,7 @@ def get_ticket_replies(
 
     return replies
     
-@@router.get("/tickets/{ticket_id}/messages", response_model=List[schemas.SupportMessageResponse])
+@router.get("/tickets/{ticket_id}/messages", response_model=List[schemas.SupportMessageResponse])
 def get_ticket_messages(
     ticket_id: UUID,
     db: Session = Depends(get_db),
