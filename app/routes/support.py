@@ -139,22 +139,19 @@ def get_ticket(
         query = query.filter(
             models.SupportTicket.user.has(models.User.role == "admin")
         )
-
     elif current_user.role == "admin":
         query = query.filter(
             or_(
                 models.SupportTicket.organization_id == current_user.organization_id,
-                models.SuportTicket.user.has(
-                    models.SupportTicket.organization_id == current_user.organization_id
+                models.SupportTicket.user.has(
+                    models.User.organization_id == current_user.organization_id
                 )
             )
         )
-
     elif current_user.role in ["client", "driver"]:
         query = query.filter(
             models.SupportTicket.user_id == current_user.id
         )
-
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -164,30 +161,32 @@ def get_ticket(
 
     return ticket
 
+
 @router.patch("/tickets/{ticket_id}/status", response_model=schemas.SupportTicketResponse)
 def update_ticket_status(
     ticket_id: UUID,
     status: schemas.TicketStatus,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)  # ✅ removed require_role
+    current_user: models.User = Depends(get_current_user)
 ):
     query = db.query(models.SupportTicket).options(
-        joinedload(models.SupportTicket.user),                                   # ticket creator
-        joinedload(models.SupportTicket.organization),                           # organization info
-        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
-    ).filter(models.SupportTicket.id == ticket_id)
+        joinedload(models.SupportTicket.user),
+        joinedload(models.SupportTicket.organization),
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
+    ).filter(
+        models.SupportTicket.id == ticket_id
+    )
 
-    # Role-based access
     if current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # any admin ticket
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
     elif current_user.role == "admin":
         query = query.filter(
-           or_(
-              models.SupportTicket.organization_id == current_user.organization_id,
-              models.SuportTicket.user.has(
-                  models.SupportTicket.organization_id == current_user.organization_id)
-              )
-           )
+            or_(
+                models.SupportTicket.organization_id == current_user.organization_id,
+                models.SupportTicket.user.has(
+                    models.User.organization_id == current_user.organization_id
+                )
+            )
         )
     else:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -202,7 +201,6 @@ def update_ticket_status(
     db.refresh(ticket)
 
     return ticket
-
 
 from sqlalchemy.orm import joinedload
 
