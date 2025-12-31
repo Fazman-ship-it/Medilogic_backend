@@ -12,6 +12,7 @@ from app.utilites.support_notification import  notify_ticket_users
 
 router = APIRouter(prefix="/support", tags=["Support"])
 
+
 @router.post("/tickets", response_model=schemas.SupportTicketResponse)
 def create_ticket(
     ticket: schemas.SupportTicketCreate,
