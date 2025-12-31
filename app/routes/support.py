@@ -9,9 +9,9 @@ from app.schemas import SupportTicketCreate
 from uuid import UUID
 from sqlalchemy.orm import joinedload
 from app.utilites.support_notification import  notify_ticket_users
+from sqlalchemy import or_
 
 router = APIRouter(prefix="/support", tags=["Support"])
-
 
 @router.post("/tickets", response_model=schemas.SupportTicketResponse)
 def create_ticket(
@@ -77,7 +77,12 @@ def list_all_tickets(
     elif current_user.role == "admin":
         # ✅ ALL tickets in their organisation
         query = query.filter(
-            models.SupportTicket.organization_id == current_user.organization_id
+           or_(
+               models.SupportTicket.organization_id == current_user.organization_id,
+               models.SupportTicket.user.has(
+                   models.User.organization_id == current_user.organization_id
+               )
+            )
         )
 
     elif current_user.role in ["client", "driver"]:
@@ -137,7 +142,12 @@ def get_ticket(
 
     elif current_user.role == "admin":
         query = query.filter(
-            models.SupportTicket.organization_id == current_user.organization_id
+            or_(
+                models.SupportTicket.organization_id == current_user.organization_id,
+                models.SuportTicket.user.has(
+                    models.SupportTicket.organization_id == current_user.organization_id
+                )
+            )
         )
 
     elif current_user.role in ["client", "driver"]:
@@ -153,35 +163,32 @@ def get_ticket(
         raise HTTPException(status_code=404, detail="Ticket not found")
 
     return ticket
+
 @router.patch("/tickets/{ticket_id}/status", response_model=schemas.SupportTicketResponse)
 def update_ticket_status(
     ticket_id: UUID,
     status: schemas.TicketStatus,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user)  # ✅ removed require_role
 ):
     query = db.query(models.SupportTicket).options(
         joinedload(models.SupportTicket.user),                                   # ticket creator
         joinedload(models.SupportTicket.organization),                           # organization info
-        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)
-    ).filter(
-        models.SupportTicket.id == ticket_id,
-        models.SupportTicket.is_deleted == False
-    )
+        joinedload(models.SupportTicket.messages).joinedload(models.SupportMessage.sender)  # message sender
+    ).filter(models.SupportTicket.id == ticket_id)
 
-    # 🔒 Role-based access (FIXED)
-    if current_user.role == "admin":
-        # ✅ Admin can update ALL tickets in their organisation
+    # Role-based access
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))  # any admin ticket
+    elif current_user.role == "admin":
         query = query.filter(
-            models.SupportTicket.organization_id == current_user.organization_id
+           or_(
+              models.SupportTicket.organization_id == current_user.organization_id,
+              models.SuportTicket.user.has(
+                  models.SupportTicket.organization_id == current_user.organization_id)
+              )
+           )
         )
-
-    elif current_user.role == "super_admin":
-        # ✅ Super admin can update ONLY admin-created tickets
-        query = query.filter(
-            models.SupportTicket.user.has(models.User.role == "admin")
-        )
-
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -196,6 +203,7 @@ def update_ticket_status(
 
     return ticket
 
+
 from sqlalchemy.orm import joinedload
 
 @router.post("/replies", response_model=schemas.SupportReplyResponse)
@@ -204,23 +212,19 @@ def create_reply(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    query = db.query(models.SupportTicket).filter(
-        models.SupportTicket.id == reply.ticket_id
-    )
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == reply.ticket_id)
 
-    # 🔧 FIX 1: Correct role-based access
-    if current_user.role == "admin":
-        # ✅ Admin can reply to ANY ticket in their organisation
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
         query = query.filter(
-            models.SupportTicket.organization_id == current_user.organization_id
-        )
-
-    elif current_user.role == "super_admin":
-        # ✅ Super admin can ONLY reply to admin-created tickets
-        query = query.filter(
-            models.SupportTicket.user.has(models.User.role == "admin")
-        )
-
+            or_(
+               models.SupportTicket.organization_id == current_user.organization_id,
+               models.SupportTicket.user.has(
+                   models.User.organization_id == current_user.organization_id
+               )
+            )
+         )
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -243,10 +247,11 @@ def create_reply(
 
     # Reload reply with admin info for response
     reply_with_info = db.query(models.SupportReply).options(
-        joinedload(models.SupportReply.admin)
+        joinedload(models.SupportReply.admin)  # load admin user info
     ).filter(models.SupportReply.id == new_reply.id).first()
 
     return reply_with_info
+
 
 @router.post("/messages", response_model=schemas.SupportMessageResponse)
 def post_support_message(
@@ -319,22 +324,20 @@ def get_ticket_replies(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    query = db.query(models.SupportTicket).filter(
-        models.SupportTicket.id == ticket_id,
-        models.SupportTicket.is_deleted == False
-    )
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == ticket_id)
 
-    # --- Role-based access (FIXED) ---
-    if current_user.role == "admin":
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
         query = query.filter(
-            models.SupportTicket.organization_id == current_user.organization_id
+            or_(
+                models.SupportTicket.organization_id == current_user.organization_id,
+                models.SupportTicket.user.has(
+                    models.User.organization_id == current_user.organization_id
+                    
+                )
+            )
         )
-
-    elif current_user.role == "super_admin":
-        query = query.filter(
-            models.SupportTicket.user.has(models.User.role == "admin")
-        )
-
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -345,9 +348,7 @@ def get_ticket_replies(
     # Load all replies with admin info
     replies = db.query(models.SupportReply).options(
         joinedload(models.SupportReply.admin)
-    ).filter(
-        models.SupportReply.ticket_id == ticket_id
-    ).all()
+    ).filter(models.SupportReply.ticket_id == ticket_id).all()
 
     return replies
     
@@ -357,27 +358,21 @@ def get_ticket_messages(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    query = db.query(models.SupportTicket).filter(
-        models.SupportTicket.id == ticket_id,
-        models.SupportTicket.is_deleted == False
-    )
+    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == ticket_id)
 
-    # --- Role-based access (FIXED) ---
-    if current_user.role == "admin":
+    if current_user.role == "super_admin":
+        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+    elif current_user.role == "admin":
         query = query.filter(
-            models.SupportTicket.organization_id == current_user.organization_id
+            or_(
+               models.SupportTicket.organization_id == current_user.organization_id,
+               models.SupportTicket.user.has(
+                   models.User.organization_id == current_user.organization_id
+               )
+            )
         )
-
-    elif current_user.role == "super_admin":
-        query = query.filter(
-            models.SupportTicket.user.has(models.User.role == "admin")
-        )
-
-    elif current_user.role in ["client", "driver"]:
-        query = query.filter(
-            models.SupportTicket.user_id == current_user.id
-        )
-
+    elif current_user.role in ["driver", "client"]:
+        query = query.filter(models.SupportTicket.user_id == current_user.id)
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -388,9 +383,7 @@ def get_ticket_messages(
     # Load messages with sender info
     messages = db.query(models.SupportMessage).options(
         joinedload(models.SupportMessage.sender)
-    ).filter(
-        models.SupportMessage.ticket_id == ticket_id
-    ).all()
+    ).filter(models.SupportMessage.ticket_id == ticket_id).all()
 
     return messages
     
