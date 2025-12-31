@@ -18,17 +18,17 @@ def create_ticket(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # ✅ Only admins create organization-level tickets
-    org_id = None
-    if current_user.role in ["admin", "super_admin"]:
-        org_id = current_user.organization_id
+    # 🔒 Every ticket belongs to an organisation
+    if not current_user.organization_id:
+        raise HTTPException(status_code=400, detail="User is not attached to an organisation")
 
     new_ticket = models.SupportTicket(
         user_id=current_user.id,
         subject=ticket.subject,
         status="open",
-        organization_id=org_id
+        organization_id=current_user.organization_id  # ✅ ALWAYS set
     )
+
     db.add(new_ticket)
     db.commit()
     db.refresh(new_ticket)
@@ -62,29 +62,25 @@ def list_all_tickets(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    query = db.query(models.SupportTicket)
-
-    # --- Hide deleted tickets ---
-    query = query.filter(models.SupportTicket.is_deleted == False)
+    query = db.query(models.SupportTicket).filter(
+        models.SupportTicket.is_deleted == False
+    )
 
     # --- Role-based filtering ---
     if current_user.role == "super_admin":
-        # ONLY admin-created organisation tickets
+        # ✅ ONLY tickets CREATED BY ADMINS
         query = query.filter(
-            models.SupportTicket.organization_id.isnot(None),
             models.SupportTicket.user.has(models.User.role == "admin")
         )
-        if organization_id:
-            query = query.filter(models.SupportTicket.organization_id == organization_id)
 
     elif current_user.role == "admin":
-        # All tickets in admin organisation
+        # ✅ ALL tickets in their organisation
         query = query.filter(
             models.SupportTicket.organization_id == current_user.organization_id
         )
 
     elif current_user.role in ["client", "driver"]:
-        # ONLY their own tickets
+        # ✅ ONLY tickets THEY created
         query = query.filter(
             models.SupportTicket.user_id == current_user.id
         )
@@ -97,7 +93,9 @@ def list_all_tickets(
         query = query.filter(models.SupportTicket.status == status)
 
     if user_name:
-        query = query.join(models.User).filter(models.User.name.ilike(f"%{user_name}%"))
+        query = query.join(models.User).filter(
+            models.User.name.ilike(f"%{user_name}%")
+        )
 
     total = query.count()
 
@@ -131,10 +129,8 @@ def get_ticket(
         models.SupportTicket.is_deleted == False
     )
 
-    # --- Role-based access ---
     if current_user.role == "super_admin":
         query = query.filter(
-            models.SupportTicket.organization_id.isnot(None),
             models.SupportTicket.user.has(models.User.role == "admin")
         )
 
