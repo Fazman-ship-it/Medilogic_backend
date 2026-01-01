@@ -18,38 +18,41 @@ from app import scheduler  # Assuming you have a scheduler setup
 from app.utilites.time_utilities import to_utc, to_local, now_utc
 from app.models import TripNotification
 
-
 # ✅ Utility: Resolve delivery type (standard vs custom)
 def get_delivery_label(trip: Trip) -> str:
     if trip.delivery_type == "other" and trip.custom_delivery_description:
         return trip.custom_delivery_description
     return trip.delivery_type or "Unknown"
 
+
 def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
     """
     Sends an immediate email to a driver when a trip is assigned.
-    Also schedules follow-up reminders if the trip is happening soon.
     """
-    db = SessionLocal()
+    db: Session = SessionLocal()
     try:
-        # ✅ Fetch driver and trip from DB
+        # ✅ Fetch driver and trip
         driver = db.query(User).filter(User.id == driver_id).first()
         trip = db.query(Trip).filter(Trip.id == trip_id).first()
 
         if not driver:
             print(f"[notify_driver_trip_assigned] Driver {driver_id} not found")
             return
+
         if not trip:
             print(f"[notify_driver_trip_assigned] Trip {trip_id} not found")
             return
 
-        # ✅ Convert scheduled time to local for email
-        local_scheduled_time = to_local(trip.scheduled_time) if trip.scheduled_time else "N/A"
+        local_scheduled_time = (
+            to_local(trip.scheduled_time) if trip.scheduled_time else "N/A"
+        )
 
-        # ✅ Prepare notes section if exists
-        notes_section = f"\n📝 Admin Notes: {trip.notes}" if getattr(trip, "notes", None) else ""
+        notes_section = (
+            f"\n📝 Admin Notes: {trip.notes}"
+            if getattr(trip, "notes", None)
+            else ""
+        )
 
-        # ✅ Immediate email to driver
         subject = "🛻 New Trip Assigned"
         body = f"""
 Hello {driver.name},
@@ -66,49 +69,17 @@ Please check your dashboard for details.
 
 - Medilogic Team
 """
+
         send_email(to_email=driver.email, subject=subject, body=body)
-        print(f"[notify_driver_trip_assigned] Immediate email sent to {driver.email}")
-
-        # ✅ Schedule reminder if trip is within the next 5 minutes (optional)
-        if trip.scheduled_time and trip.scheduled_time <= now_utc() + timedelta(minutes=5):
-            reminder_subject = "⚡ Reminder: Trip just started"
-            reminder_body = f"""
-Hello {driver.name},
-
-This is a follow-up reminder that your trip scheduled for {local_scheduled_time} has started.
-
-🚛 Delivery Type: {get_delivery_label(trip)}
-📍 Pickup: {trip.pickup_location}
-🎯 Dropoff: {trip.dropoff_location}
-🕒 Schedule: {local_scheduled_time}
-🏷️ Priority: {trip.priority}{notes_section}
-
-Stay prepared and confirm your status in the dashboard.
-
-- Medilogic Team
-"""
-            scheduler.add_job(
-                lambda: send_email(
-                    to_email=driver.email,
-                    subject=reminder_subject,
-                    body=reminder_body
-                ),
-                trigger="date",
-                run_date=now_utc() + timedelta(minutes=10),
-                id=f"instant_trip_reminder_{trip.id}",
-                replace_existing=True
-            )
-            print(f"[notify_driver_trip_assigned] Reminder scheduled for trip {trip.id}")
+        print(f"[notify_driver_trip_assigned] Email sent to {driver.email}")
 
     except Exception as e:
         db.rollback()
         print(f"[notify_driver_trip_assigned] Error: {e}")
+
     finally:
         db.close()
-        
-from sqlalchemy.exc import SQLAlchemyError
-from app.models import TripNotification
-from sqlalchemy.exc import SQLAlchemyError
+
 
 def notify_upcoming_trips():
     """
@@ -119,12 +90,15 @@ def notify_upcoming_trips():
       - 3.5–4.5 hours → "4 hours left"
       - 23–25 hours → "1 day left"
     """
-    db = SessionLocal()
+    db: Session = SessionLocal()
     try:
         now = now_utc()
         trips = db.query(Trip).filter(Trip.scheduled_time > now).all()
 
         for trip in trips:
+            if not trip.driver_id:
+                continue
+
             driver = db.query(User).filter(User.id == trip.driver_id).first()
             if not driver:
                 continue
@@ -136,67 +110,58 @@ def notify_upcoming_trips():
             if getattr(trip, "notes", None):
                 notes_section = f"\n📝 Admin Notes: {trip.notes}\n"
 
-            # === Reminder logic ===
+            # 🗓️ 1 DAY LEFT
             if timedelta(hours=23) <= time_diff <= timedelta(hours=25):
                 notif_type = "1_day_left"
-                existing = db.query(TripNotification).filter_by(trip_id=trip.id, notification_type=notif_type).first()
-                if existing:
-                    continue
-
-                subject = "🗓️ Trip Reminder - Tomorrow"
-                body = f"""
-                Hello {driver.name},
-
-                Reminder: You have a trip scheduled for tomorrow.
-
-                🚛 Delivery Type: {get_delivery_label(trip)}
-                📍 Pickup: {trip.pickup_location}
-                🎯 Dropoff: {trip.dropoff_location}
-                🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
-                🏷️ Priority: {trip.priority}{notes_section}
-
-                Please review your dashboard and plan accordingly.
-
-                - Medilogic Team
-                """
-                send_email(to_email=driver.email, subject=subject, body=body)
-
-                # ✅ Log notification
-                db.add(TripNotification(trip_id=trip.id, notification_type=notif_type))
-                db.commit()
-
+            # ⏰ 4 HOURS LEFT
             elif timedelta(hours=3.5) <= time_diff <= timedelta(hours=4.5):
                 notif_type = "4_hours_left"
-                existing = db.query(TripNotification).filter_by(trip_id=trip.id, notification_type=notif_type).first()
-                if existing:
-                    continue
+            else:
+                continue
 
-                subject = "⏰ Trip Reminder - 4 Hours Left"
-                body = f"""
-                Hello {driver.name},
+            existing = db.query(TripNotification).filter_by(
+                trip_id=trip.id,
+                notification_type=notif_type
+            ).first()
 
-                You have a trip starting in about 4 hours.
+            if existing:
+                continue
 
-                🚛 Delivery Type: {get_delivery_label(trip)}
-                📍 Pickup: {trip.pickup_location}
-                🎯 Dropoff: {trip.dropoff_location}
-                🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
-                🏷️ Priority: {trip.priority}{notes_section}
+            subject_map = {
+                "1_day_left": "🗓️ Trip Reminder - Tomorrow",
+                "4_hours_left": "⏰ Trip Reminder - 4 Hours Left",
+            }
 
-                Ensure your vehicle and documents are ready.
+            subject = subject_map[notif_type]
+            body = f"""
+Hello {driver.name},
 
-                - Medilogic Team
-                """
-                send_email(to_email=driver.email, subject=subject, body=body)
+This is a reminder for your upcoming trip.
 
-                # ✅ Log notification
-                db.add(TripNotification(trip_id=trip.id, notification_type=notif_type))
-                db.commit()
+🚛 Delivery Type: {get_delivery_label(trip)}
+📍 Pickup: {trip.pickup_location}
+🎯 Dropoff: {trip.dropoff_location}
+🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
+🏷️ Priority: {trip.priority}{notes_section}
 
-            # (Repeat similar structure for "1_hour_left", "15_min_left", and "starting_now")
+Please ensure everything is prepared.
+
+- Medilogic Team
+"""
+
+            send_email(to_email=driver.email, subject=subject, body=body)
+
+            db.add(
+                TripNotification(
+                    trip_id=trip.id,
+                    notification_type=notif_type
+                )
+            )
+            db.commit()
 
     except SQLAlchemyError as e:
         db.rollback()
-        print(f"Database error in notify_upcoming_trips: {e}")
+        print(f"[notify_upcoming_trips] Database error: {e}")
+
     finally:
         db.close()
