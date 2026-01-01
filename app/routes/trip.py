@@ -89,6 +89,10 @@ def create_trip(
         details=f"Admin {current_user.name} created trip ID {db_trip.id} for client {trip_data.get('client_id')}"
     )
 
+    # 🔔 NOTIFY DRIVER IF ASSIGNED (added line)
+    if db_trip.driver_id:
+        notify_driver_trip_assigned(driver_id=db_trip.driver_id, trip_id=db_trip.id)
+
     # ✅ Convert scheduled_time back to local before returning
     if db_trip.scheduled_time:
         db_trip.scheduled_time = to_local(db_trip.scheduled_time)
@@ -331,7 +335,7 @@ def delete_trip(
 
 
 
-@router.patch("/trips/{trip_id}", response_model=schemas.TripResponse)
+router.patch("/trips/{trip_id}", response_model=schemas.TripResponse)
 def partial_update_trip(
     trip_id: UUID,
     trip_data: schemas.TripPatch,
@@ -364,6 +368,10 @@ def partial_update_trip(
 
     db.commit()
     db.refresh(trip)
+
+    # 🔔 NOTIFY DRIVER IF ASSIGNED (added line)
+    if "driver_id" in patch_data and trip.driver_id:
+        notify_driver_trip_assigned(driver_id=trip.driver_id, trip_id=trip.id)
 
     # 🔹 Convert schedule_time back to local before returning
     trip.scheduled_time = to_local(trip.scheduled_time)
