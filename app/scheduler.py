@@ -583,7 +583,7 @@ scheduler.add_job(send_upcoming_due_reminders, trigger="cron", hour=9, minute=0,
 scheduler.add_job(cleanup_pending_applications, trigger="cron", hour=3, minute=0, id="cleanup_pending_applications")
 scheduler.add_job(monthly_waste_statement_job, trigger="cron",day=1,hour=8,minute=0,id="monthly_waste_statement",replace_existing=True)
 scheduler.add_job(monthly_waste_statement_job, trigger="cron", day=1, hour=8, minute=0, id="monthly_org_report", replace_existing=True)
-
+scheduler.add_job(notify_upcoming_trips,trigger="interval",minutes=5,id="notify_upcoming_trips",replace_existing=True)
 # === Start Scheduler ===
 def start_scheduler():
     scheduler.start()
