@@ -109,7 +109,8 @@ def send_client_notifications():
 
             # Only send if subject/body was set
             if subject and body:
-                send_email(to=client_user.email, subject=subject, body=body)
+                # ✅ Using positional arguments
+                 send_email(client_user.email, subject, body)
 
     finally:
         db.close()
