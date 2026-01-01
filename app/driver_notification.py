@@ -25,73 +25,84 @@ def get_delivery_label(trip: Trip) -> str:
         return trip.custom_delivery_description
     return trip.delivery_type or "Unknown"
 
-# ✅ Instant trip assignment
 def notify_driver_trip_assigned(driver_id: UUID, trip_id: UUID):
     """
-    Sends an email notification when a driver is assigned a new trip.
-    Handles instant trip follow-up reminders automatically.
+    Sends an immediate email to a driver when a trip is assigned.
+    Also schedules follow-up reminders if the trip is happening soon.
     """
-    from sqlalchemy.exc import SQLAlchemyError
     db = SessionLocal()
     try:
+        # ✅ Fetch driver and trip from DB
         driver = db.query(User).filter(User.id == driver_id).first()
         trip = db.query(Trip).filter(Trip.id == trip_id).first()
 
-        if not driver or not trip:
+        if not driver:
+            print(f"[notify_driver_trip_assigned] Driver {driver_id} not found")
+            return
+        if not trip:
+            print(f"[notify_driver_trip_assigned] Trip {trip_id} not found")
             return
 
-        local_scheduled_time = to_local(trip.scheduled_time)
+        # ✅ Convert scheduled time to local for email
+        local_scheduled_time = to_local(trip.scheduled_time) if trip.scheduled_time else "N/A"
 
-        notes_section = ""
-        if getattr(trip, "notes", None):
-            notes_section = f"\n📝 **Admin Notes:** {trip.notes}\n"
+        # ✅ Prepare notes section if exists
+        notes_section = f"\n📝 Admin Notes: {trip.notes}" if getattr(trip, "notes", None) else ""
 
+        # ✅ Immediate email to driver
         subject = "🛻 New Trip Assigned"
         body = f"""
-        Hello {driver.name},
+Hello {driver.name},
 
-        A new trip has been assigned to you.
-
-        🚛 Delivery Type: {get_delivery_label(trip)}
-        📍 Pickup: {trip.pickup_location}
-        🎯 Dropoff: {trip.dropoff_location}
-        🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
-        🏷️ Priority: {trip.priority}{notes_section}
-
-        Please check your dashboard for details.
-
-        - Medilogic Team
-        """
-        send_email(to_email=driver.email, subject=subject, body=body)
-
-        # ✅ Extra: If trip is "instant" (now or within 5 min), schedule a reminder in 10 min
-        if trip.scheduled_time <= now_utc() + timedelta(minutes=5):
-            scheduler.add_job(
-                lambda: send_email(
-                    to_email=driver.email,
-                    subject="⚡ Reminder: Trip just started",
-                    body=f"""Hello {driver.name},
-
-This is a follow-up reminder that your trip scheduled for {local_scheduled_time.strftime('%Y-%m-%d %H:%M')} has already started.
+A new trip has been assigned to you.
 
 🚛 Delivery Type: {get_delivery_label(trip)}
 📍 Pickup: {trip.pickup_location}
 🎯 Dropoff: {trip.dropoff_location}
-🕒 Schedule: {local_scheduled_time.strftime('%Y-%m-%d %H:%M')}
+🕒 Schedule: {local_scheduled_time}
+🏷️ Priority: {trip.priority}{notes_section}
+
+Please check your dashboard for details.
+
+- Medilogic Team
+"""
+        send_email(to_email=driver.email, subject=subject, body=body)
+        print(f"[notify_driver_trip_assigned] Immediate email sent to {driver.email}")
+
+        # ✅ Schedule reminder if trip is within the next 5 minutes (optional)
+        if trip.scheduled_time and trip.scheduled_time <= now_utc() + timedelta(minutes=5):
+            reminder_subject = "⚡ Reminder: Trip just started"
+            reminder_body = f"""
+Hello {driver.name},
+
+This is a follow-up reminder that your trip scheduled for {local_scheduled_time} has started.
+
+🚛 Delivery Type: {get_delivery_label(trip)}
+📍 Pickup: {trip.pickup_location}
+🎯 Dropoff: {trip.dropoff_location}
+🕒 Schedule: {local_scheduled_time}
 🏷️ Priority: {trip.priority}{notes_section}
 
 Stay prepared and confirm your status in the dashboard.
 
-- Medilogic Team"""
+- Medilogic Team
+"""
+            scheduler.add_job(
+                lambda: send_email(
+                    to_email=driver.email,
+                    subject=reminder_subject,
+                    body=reminder_body
                 ),
                 trigger="date",
                 run_date=now_utc() + timedelta(minutes=10),
                 id=f"instant_trip_reminder_{trip.id}",
                 replace_existing=True
             )
-    except SQLAlchemyError as e:
+            print(f"[notify_driver_trip_assigned] Reminder scheduled for trip {trip.id}")
+
+    except Exception as e:
         db.rollback()
-        print(f"Database error in notify_driver_trip_assigned: {e}")
+        print(f"[notify_driver_trip_assigned] Error: {e}")
     finally:
         db.close()
         
