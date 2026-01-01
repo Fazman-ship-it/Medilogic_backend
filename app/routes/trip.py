@@ -237,7 +237,7 @@ def update_trip(
     trip_id: UUID,
     updated_trip: schemas.TripUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))  # ✅ Admin-only access
+    current_user: models.User = Depends(require_role("admin"))
 ):
     # ✅ Ensure the trip belongs to the current user's organization
     trip = db.query(models.Trip).filter(
@@ -248,18 +248,21 @@ def update_trip(
     if not trip:
         raise HTTPException(status_code=404, detail=f"Trip with ID {trip_id} not found")
 
-    update_data = updated_trip.model_dump()
+    update_data = updated_trip.model_dump(exclude_unset=True)
 
-    # 🔹 Convert schedule_time to UTC if it's being updated
+    # 🔹 Track old driver BEFORE update
+    old_driver_id = trip.driver_id
+
+    # 🔹 Convert scheduled_time to UTC if updating
     if "scheduled_time" in update_data and update_data["scheduled_time"] is not None:
         update_data["scheduled_time"] = to_utc(update_data["scheduled_time"])
 
     # ✅ Validate status if provided
-    if "status" in update_data and update_data["status"] is not None:
+    if "status" in update_data:
         if update_data["status"] not in [s.value for s in TripStatus]:
             raise HTTPException(status_code=400, detail="Invalid trip status")
 
-    # ✅ Validate driver_id if it's in the update payload
+    # ✅ Validate driver_id if provided
     if "driver_id" in update_data:
         driver_id = update_data["driver_id"]
         if driver_id is not None:
@@ -269,28 +272,27 @@ def update_trip(
                 models.User.organization_id == current_user.organization_id
             ).first()
             if not driver:
-                raise HTTPException(status_code=400, detail=f"Driver with ID {driver_id} not found or not a valid driver")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Driver with ID {driver_id} not found or not valid"
+                )
 
-    # ✅ Validate client_id if provided
-    if "client_id" in update_data:
-        client_id = update_data["client_id"]
-        if client_id is not None:
-            client = db.query(models.User).filter(
-                models.User.id == client_id,
-                models.User.role == "client",
-                models.User.organization_id == current_user.organization_id
-            ).first()
-            if not client:
-                raise HTTPException(status_code=400, detail=f"Client with ID {client_id} not found or not a valid client")
-
-    # ✅ Apply updates safely
+    # ✅ Apply updates
     for field, value in update_data.items():
         setattr(trip, field, value)
 
+    # ✅ Save changes
     db.commit()
     db.refresh(trip)
 
-    # 🔹 Convert schedule_time back to local before returning
+    # 🔔 NOTIFY DRIVER IF ASSIGNED OR CHANGED
+    if "driver_id" in update_data and trip.driver_id and trip.driver_id != old_driver_id:
+        notify_driver_trip_assigned(
+            driver_id=trip.driver_id,
+            trip_id=trip.id
+        )
+
+    # 🔹 Convert scheduled_time back to local before returning
     if trip.scheduled_time:
         trip.scheduled_time = to_local(trip.scheduled_time)
 
