@@ -26,7 +26,7 @@ from app.driver_notification import notify_upcoming_trips
 from app.retrain_location_model import train_org_model
 from app.models import PendingApplication,User
 from app.utilites.montly_report import generate_monthly_waste_statement,generate_monthly_waste_statement_for_org
-
+from app.driver_notification import notify_upcoming_trips
 logger = logging.getLogger(__name__)
 
 # === JOB 1: Delete Unverified Accounts ===
