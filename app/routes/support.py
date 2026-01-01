@@ -322,20 +322,31 @@ def get_ticket_replies(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    query = db.query(models.SupportTicket).filter(models.SupportTicket.id == ticket_id)
+    query = db.query(models.SupportTicket).filter(
+        models.SupportTicket.id == ticket_id
+    )
 
     if current_user.role == "super_admin":
-        query = query.filter(models.SupportTicket.organization_id.isnot(None))
+        query = query.filter(
+            models.SupportTicket.organization_id.isnot(None)
+        )
+
     elif current_user.role == "admin":
         query = query.filter(
             or_(
                 models.SupportTicket.organization_id == current_user.organization_id,
                 models.SupportTicket.user.has(
                     models.User.organization_id == current_user.organization_id
-                    
                 )
             )
         )
+
+    elif current_user.role in ["driver", "client"]:
+        # ✅ Ticket owner can read admin replies
+        query = query.filter(
+            models.SupportTicket.user_id == current_user.id
+        )
+
     else:
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -343,10 +354,11 @@ def get_ticket_replies(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    # Load all replies with admin info
     replies = db.query(models.SupportReply).options(
         joinedload(models.SupportReply.admin)
-    ).filter(models.SupportReply.ticket_id == ticket_id).all()
+    ).filter(
+        models.SupportReply.ticket_id == ticket_id
+    ).all()
 
     return replies
     
