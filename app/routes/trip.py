@@ -336,7 +336,7 @@ def delete_trip(
 
 
 
-router.patch("/trips/{trip_id}", response_model=schemas.TripResponse)
+@router.patch("/trips/{trip_id}", response_model=schemas.TripResponse)
 def partial_update_trip(
     trip_id: UUID,
     trip_data: schemas.TripPatch,
