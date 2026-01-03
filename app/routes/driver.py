@@ -354,3 +354,79 @@ async def get_driver_trip_confirmation(
         "token_expires_at": confirmation.token_expires_at,
         "status": "pending" if confirmation.signature_image_path is None else "completed"
     }
+    
+@router.get(
+    "/driver/{driver_id}/trips/{trip_id}",
+    summary="Get a single trip assigned to a driver"
+)
+def get_driver_single_trip(
+    driver_id: UUID,
+    trip_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Retrieve a single trip assigned to a specific driver.
+    - Drivers can view only their own trips
+    - Admins/managers can view any driver trip in their organisation
+    """
+
+    # 🚫 Clients cannot access driver trips
+    if current_user.role == "client":
+        raise HTTPException(status_code=403, detail="Clients cannot view driver trips.")
+
+    # 🚫 Drivers can only view their own trips
+    if current_user.role == "driver" and current_user.id != driver_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only view your own assigned trips."
+        )
+
+    # ✅ Fetch trip (multi-tenant + driver check)
+    trip = db.query(models.Trip).filter(
+        models.Trip.id == trip_id,
+        models.Trip.driver_id == driver_id,
+        models.Trip.organization_id == current_user.organization_id
+    ).first()
+
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    # 🕒 Convert timestamps to local time
+    if trip.scheduled_time:
+        trip.scheduled_time = to_local(trip.scheduled_time)
+    if trip.created_at:
+        trip.created_at = to_local(trip.created_at)
+
+    # ✅ Build response (same shape as list item)
+    return {
+        "trip_id": trip.id,
+
+        "trip_label": f"{trip.client_name} — {(
+            trip.custom_delivery_description
+            if trip.delivery_type and str(trip.delivery_type).lower() == 'others'
+            else (trip.delivery_type or 'Unspecified')
+        )}",
+
+        "delivery_type": (
+            trip.custom_delivery_description
+            if trip.delivery_type and str(trip.delivery_type).lower() == "others"
+            else (trip.delivery_type if trip.delivery_type else None)
+        ),
+
+        "client_name": trip.client_name,
+        "pickup_location": trip.pickup_location,
+        "dropoff_location": trip.dropoff_location,
+        "scheduled_time": trip.scheduled_time,
+        "created_at": trip.created_at,
+        "status": trip.status,
+        "priority": trip.priority,
+        "vehicle_type": trip.vehicle_type,
+        "distance_km": trip.distance_km,
+        "cost": trip.cost,
+        "compliance_flag": trip.compliance_flag,
+        "shift_window": trip.shift_window,
+        "recurrence_rule": trip.recurrence_rule,
+        "notes": trip.notes,
+        "custom_delivery_description": trip.custom_delivery_description,
+    }
