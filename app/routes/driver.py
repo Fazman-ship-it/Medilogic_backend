@@ -334,7 +334,7 @@ async def get_driver_trip_confirmation(
         data={"trip_id": str(trip.id), "organization_id": str(trip.organization_id)},
         expires_delta=timedelta(minutes=settings.DELIVERY_CONFIRM_EXPIRY_MINUTES)
     )
-    confirmation_url = f"{settings.DELIVERY_CONFIRMATION_URL.rstrip('/')}/{jwt_token}"
+    confirmation_url = f"{settings.DELIVERY_CONFIRMATION_URL}{jwt_token}"
 
     # Optional QR generation
     qr_base64 = None
