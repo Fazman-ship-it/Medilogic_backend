@@ -65,7 +65,7 @@ def get_pickup_confirmation_form(token: str, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Pickup already confirmed")
 
         # Redirect to frontend pickup confirmation page
-        frontend_url = f"{settings.DELIVERY_CONFIRMATION_URL}?token={token}"
+        frontend_url = f"{settings.DELIVERY_CONFIRMATION_URL}{token}"
         return RedirectResponse(url=frontend_url, status_code=302)
 
     except jwt.ExpiredSignatureError:
