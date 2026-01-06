@@ -122,7 +122,8 @@ from app.utilites.email_utilites import send_email
 from app.utilites.logging import log_activity
 from app.config import settings
 from redis.asyncio import Redis
-
+import logging
+logger = logging.getLogger(__name__)
 # --------------------------
 # Rate limiting via Redis
 # --------------------------
@@ -348,6 +349,7 @@ async def submit_delivery_confirmation(
         raise
     except Exception as e:
         db.rollback()
+        logger.exception("Error during delivery confirmation")
         from app.utilites.storage_utilites import delete_file_from_s3
         for key in uploaded_s3_keys:
             try:
