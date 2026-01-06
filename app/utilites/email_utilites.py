@@ -9,7 +9,7 @@ load_dotenv()
 MAILJET_API_KEY = os.getenv("MAILJET_API_KEY")
 MAILJET_SECRET_KEY = os.getenv("MAILJET_SECRET_KEY")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "notifications@medilogicglobal.co.uk")
-EMAIL_FROM_NAME = "Medilogic"
+EMAIL_FROM_NAME =  "MedilogicGlobal"
 
 # ✅ Simple regex for email validation
 EMAIL_REGEX = re.compile(r"^[^@]+@[^@]+\.[^@]+$")
