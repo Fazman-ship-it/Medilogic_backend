@@ -148,6 +148,8 @@ _RATE_LIMIT_MAX_ATTEMPTS = 10
 # File limits
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
+from jwt import ExpiredSignatureError, InvalidTokenError
+
 
 @router.post("/confirm", response_model=dict)
 async def submit_delivery_confirmation(
@@ -164,10 +166,9 @@ async def submit_delivery_confirmation(
     facility_signature: UploadFile = File(None),
     dropoff_photo: UploadFile = File(None),
     extra_notes: Optional[str] = Form(None),
-
     request: Request = None,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     ip_address = request.client.host if request and request.client else "unknown"
     user_agent = request.headers.get("user-agent", "")
@@ -200,61 +201,65 @@ async def submit_delivery_confirmation(
         logger.exception(f"[CONFIRM] Redis failed (ignored): {e}")
         print("[CONFIRM] Redis failed (ignored):", repr(e))
 
-from jwt import ExpiredSignatureError, InvalidTokenError
+    # --------------------------
+    # Identify user type & fetch trip
+    # --------------------------
+    try:
+        if current_user:
+            if not trip_id:
+                raise HTTPException(status_code=400, detail="trip_id is required for internal users")
 
-# Identify user type & fetch trip
-# --------------------------
-try:
-    if current_user:
-        if not trip_id:
-            raise HTTPException(status_code=400, detail="trip_id is required for internal users")
+            org_id = current_user.organization_id
+            trip = db.query(Trip).filter(
+                Trip.id == trip_id,
+                Trip.organization_id == org_id
+            ).first()
 
-        org_id = current_user.organization_id
-        trip = db.query(Trip).filter(
-            Trip.id == trip_id,
-            Trip.organization_id == org_id
-        ).first()
+        else:
+            if not token:
+                raise HTTPException(status_code=400, detail="Token is required for external users")
 
-    else:
-        if not token:
-            raise HTTPException(status_code=400, detail="Token is required for external users")
+            try:
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            except ExpiredSignatureError:
+                logger.warning("[CONFIRM] Token expired")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Token has expired. Please request a new confirmation link."
+                )
+            except InvalidTokenError:
+                logger.warning("[CONFIRM] Invalid token")
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid token. Please request a new confirmation link."
+                )
 
-        # ✅ FIX: handle token expiry + invalid token properly
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        except ExpiredSignatureError:
-            logger.warning("[CONFIRM] Token expired")
-            raise HTTPException(status_code=401, detail="Token has expired. Please request a new confirmation link.")
-        except InvalidTokenError:
-            logger.warning("[CONFIRM] Invalid token")
-            raise HTTPException(status_code=401, detail="Invalid token. Please request a new confirmation link.")
+            trip_id_str = payload.get("trip_id")
+            org_id_str = payload.get("organization_id")
 
-        trip_id_str = payload.get("trip_id")
-        org_id_str = payload.get("organization_id")
+            if not trip_id_str or not org_id_str:
+                raise HTTPException(status_code=400, detail="Invalid token payload")
 
-        if not trip_id_str or not org_id_str:
-            raise HTTPException(status_code=400, detail="Invalid token payload")
+            trip_id = UUID(trip_id_str)
+            org_id = UUID(org_id_str)
 
-        trip_id = UUID(trip_id_str)
-        org_id = UUID(org_id_str)
+            trip = db.query(Trip).filter(
+                Trip.id == trip_id,
+                Trip.organization_id == org_id
+            ).first()
 
-        trip = db.query(Trip).filter(
-            Trip.id == trip_id,
-            Trip.organization_id == org_id
-        ).first()
+        if not trip:
+            raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
 
-    if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
+        logger.info(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
+        print(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
 
-    logger.info(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
-    print(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
-
-except HTTPException:
-    raise
-except Exception as e:
-    logger.exception(f"[CONFIRM] Trip lookup failed: {e}")
-    print("[CONFIRM] Trip lookup failed:", repr(e))
-    raise HTTPException(status_code=500, detail="Internal error while fetching trip")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[CONFIRM] Trip lookup failed: {e}")
+        print("[CONFIRM] Trip lookup failed:", repr(e))
+        raise HTTPException(status_code=500, detail="Internal error while fetching trip")
 
     # --------------------------
     # Duplicate confirmation check
@@ -323,7 +328,7 @@ except Exception as e:
             "signature_image": signature_image,
             "pickup_photo": pickup_photo,
             "disposal_facility_signature": facility_signature,
-            "dropoff_photo": dropoff_photo
+            "dropoff_photo": dropoff_photo,
         }
 
         for fname, upf in file_mapping.items():
@@ -347,7 +352,7 @@ except Exception as e:
             longitude=longitude,
             extra_notes=extra_notes,
             pickup_at=now_utc(),
-            dropoff_at=now_utc()
+            dropoff_at=now_utc(),
         )
 
         logger.info(f"[CONFIRM] Confirmation created (pre-upload) | id={confirmation.id}")
@@ -366,7 +371,7 @@ except Exception as e:
                     field_name=field_name,                    # ✅ utility will set <field_name>_path
                     db=db,
                     user_id=current_user.id if current_user else None,
-                    action=f"upload_{field_name}"
+                    action=f"upload_{field_name}",
                 )
 
                 # ✅ store the actual *_path attribute
@@ -410,7 +415,7 @@ except Exception as e:
                 field_name="pdf_receipt",  # ✅ IMPORTANT: not pdf_receipt_path
                 db=db,
                 user_id=current_user.id if current_user else None,
-                action="upload_pdf_receipt"
+                action="upload_pdf_receipt",
             )
 
             uploaded_s3_keys.append(getattr(confirmation, "pdf_receipt_path", None))
@@ -451,7 +456,7 @@ except Exception as e:
             db=db,
             user_id=current_user.id if current_user else None,
             action="delivery_confirmed",
-            details=f"Trip {trip.id} confirmed | IP: {ip_address} | UA: {user_agent}"
+            details=f"Trip {trip.id} confirmed | IP: {ip_address} | UA: {user_agent}",
         )
     except Exception as e:
         logger.exception(f"[CONFIRM] log_activity failed (ignored): {e}")
@@ -491,21 +496,21 @@ except Exception as e:
                 confirmation.external_client_name,
                 confirmation.external_client_email,
                 getattr(trip, "driver_name", None),
-                confirmation.wtn_code
+                confirmation.wtn_code,
             ])
             csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
             attachments.append({
                 "ContentType": "text/csv",
                 "Filename": f"trip_{trip.id}_confirmation.csv",
-                "Base64Content": base64.b64encode(csv_bytes).decode("utf-8")
+                "Base64Content": base64.b64encode(csv_bytes).decode("utf-8"),
             })
 
             if pdf_bytes:
                 attachments.append({
                     "ContentType": "application/pdf",
                     "Filename": f"trip_{trip.id}_receipt.pdf",
-                    "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8")
+                    "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8"),
                 })
 
             logger.info(f"[CONFIRM] Sending email to {confirmation.external_client_email}")
@@ -515,7 +520,7 @@ except Exception as e:
                 to_email=confirmation.external_client_email,
                 subject=f"Trip {trip.id} Delivered - Medilogic",
                 body="Your trip has been successfully delivered. Please find attached documents.",
-                attachments=attachments
+                attachments=attachments,
             )
 
             logger.info("[CONFIRM] Email sent OK")
@@ -527,5 +532,5 @@ except Exception as e:
 
     return {
         "message": "Delivery confirmed",
-        "presigned_urls": presigned_urls
+        "presigned_urls": presigned_urls,
     }
