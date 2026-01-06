@@ -308,7 +308,6 @@ async def submit_delivery_confirmation(
     # Main confirm flow
     # --------------------------
     try:
-        # Validate files
         file_mapping = {
             "signature_image_path": signature_image,
             "pickup_photo_path": pickup_photo,
@@ -323,7 +322,6 @@ async def submit_delivery_confirmation(
         logger.info("[CONFIRM] File validation passed")
         print("[CONFIRM] File validation passed")
 
-        # Create confirmation (CRUD)
         confirmation = create_delivery_confirmation(
             db=db,
             trip_id=trip.id,
@@ -359,7 +357,9 @@ async def submit_delivery_confirmation(
                     user_id=current_user.id if current_user else None,
                     action=f"upload_{field_name}"
                 )
-                uploaded_s3_keys.append(getattr(confirmation, field_name))
+
+                # ✅ minimal: store whatever key was set in that exact field
+                uploaded_s3_keys.append(getattr(confirmation, field_name, None))
 
         logger.info("[CONFIRM] File uploads done")
         print("[CONFIRM] File uploads done")
@@ -372,15 +372,20 @@ async def submit_delivery_confirmation(
         except Exception as e:
             logger.exception(f"[CONFIRM] PDF generation failed: {e}")
             print("[CONFIRM] PDF generation failed:", repr(e))
-            pdf_bytes = None  # continue
+            pdf_bytes = None
 
         # Upload PDF if generated
         if pdf_bytes:
+            # ✅ FIX: make it compatible with await file.read()
             class BytesUploadFile:
                 def __init__(self, content: bytes):
+                    self._content = content
                     self.file = io.BytesIO(content)
                     self.filename = f"trip_receipt_{uuid.uuid4().hex}.pdf"
                     self.content_type = "application/pdf"
+
+                async def read(self):
+                    return self._content
 
             pdf_file = BytesUploadFile(pdf_bytes)
 
@@ -396,9 +401,10 @@ async def submit_delivery_confirmation(
                 user_id=current_user.id if current_user else None,
                 action="upload_pdf_receipt"
             )
-            uploaded_s3_keys.append(getattr(confirmation, "pdf_receipt_path"))
 
-        # Commit
+            # ✅ store pdf key
+            uploaded_s3_keys.append(getattr(confirmation, "pdf_receipt_path", None))
+
         logger.info("[CONFIRM] Committing DB...")
         print("[CONFIRM] Committing DB...")
 
@@ -416,8 +422,9 @@ async def submit_delivery_confirmation(
         logger.exception(f"[CONFIRM] HARD FAIL 500: {e}")
         print("[CONFIRM] HARD FAIL 500:", repr(e))
 
-        # Cleanup S3
         for key in uploaded_s3_keys:
+            if not key:
+                continue
             try:
                 await delete_file_from_s3(key)
             except Exception as cleanup_err:
@@ -459,10 +466,8 @@ async def submit_delivery_confirmation(
     # --------------------------
     try:
         if confirmation.external_client_email:
-            # Build attachments safely
             attachments = []
 
-            # CSV
             csv_buffer = io.StringIO()
             csv_writer = csv.writer(csv_buffer)
             csv_writer.writerow(["Trip ID", "Client Name", "Client Email", "Driver Name", "WTN Code"])
@@ -481,7 +486,6 @@ async def submit_delivery_confirmation(
                 "Base64Content": base64.b64encode(csv_bytes).decode("utf-8")
             })
 
-            # PDF only if generated
             if pdf_bytes:
                 attachments.append({
                     "ContentType": "application/pdf",
