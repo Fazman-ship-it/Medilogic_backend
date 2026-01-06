@@ -83,7 +83,7 @@ from app.models import Trip, User
 from app.schemas import DeliveryConfirmationResponse
 from app.dependencies import get_current_user
 from app.utilites.logging import log_activity
-from app.utilites.storage_utilites import handle_file_upload, generate_presigned_url_async, upload_file_to_s3_async
+from app.utilites.storage_utilites import handle_file_upload, generate_presigned_url_async, upload_file_to_s3_async,delete_file_from_s3
 import uuid
 import io,re, csv
 from app.utilites.storage_utilites import handle_file_upload, generate_presigned_url_async
@@ -308,11 +308,12 @@ async def submit_delivery_confirmation(
     # Main confirm flow
     # --------------------------
     try:
+        # ✅ FIX: keys must NOT end with _path because your utility adds _path itself
         file_mapping = {
-            "signature_image_path": signature_image,
-            "pickup_photo_path": pickup_photo,
-            "disposal_facility_signature_path": facility_signature,
-            "dropoff_photo_path": dropoff_photo
+            "signature_image": signature_image,
+            "pickup_photo": pickup_photo,
+            "disposal_facility_signature": facility_signature,
+            "dropoff_photo": dropoff_photo
         }
 
         for fname, upf in file_mapping.items():
@@ -351,15 +352,15 @@ async def submit_delivery_confirmation(
                 confirmation = await handle_file_upload(
                     app=confirmation,
                     file=upload_file,
-                    prefix=f"{org_id}/delivery/{field_name}",
-                    field_name=field_name,
+                    prefix=f"{org_id}/delivery/{field_name}",  # ✅ now matches field_name
+                    field_name=field_name,                    # ✅ utility will set <field_name>_path
                     db=db,
                     user_id=current_user.id if current_user else None,
                     action=f"upload_{field_name}"
                 )
 
-                # ✅ minimal: store whatever key was set in that exact field
-                uploaded_s3_keys.append(getattr(confirmation, field_name, None))
+                # ✅ store the actual *_path attribute
+                uploaded_s3_keys.append(getattr(confirmation, f"{field_name}_path", None))
 
         logger.info("[CONFIRM] File uploads done")
         print("[CONFIRM] File uploads done")
@@ -376,7 +377,7 @@ async def submit_delivery_confirmation(
 
         # Upload PDF if generated
         if pdf_bytes:
-            # ✅ FIX: make it compatible with await file.read()
+            # ✅ FIX: compatible with await file.read()
             class BytesUploadFile:
                 def __init__(self, content: bytes):
                     self._content = content
@@ -396,13 +397,12 @@ async def submit_delivery_confirmation(
                 app=confirmation,
                 file=pdf_file,
                 prefix=f"{org_id}/delivery/receipts",
-                field_name="pdf_receipt_path",
+                field_name="pdf_receipt",  # ✅ IMPORTANT: not pdf_receipt_path
                 db=db,
                 user_id=current_user.id if current_user else None,
                 action="upload_pdf_receipt"
             )
 
-            # ✅ store pdf key
             uploaded_s3_keys.append(getattr(confirmation, "pdf_receipt_path", None))
 
         logger.info("[CONFIRM] Committing DB...")
@@ -452,8 +452,13 @@ async def submit_delivery_confirmation(
     # --------------------------
     presigned_urls = {}
     try:
-        for field in ["pdf_receipt_path", "signature_image_path", "pickup_photo_path",
-                      "disposal_facility_signature_path", "dropoff_photo_path"]:
+        for field in [
+            "pdf_receipt_path",
+            "signature_image_path",
+            "pickup_photo_path",
+            "disposal_facility_signature_path",
+            "dropoff_photo_path",
+        ]:
             path = getattr(confirmation, field, None)
             if path:
                 presigned_urls[field] = await generate_presigned_url_async(path)
