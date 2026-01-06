@@ -639,7 +639,7 @@ class DeliveryConfirmation(Base,ShortIDMixin):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id"))
-    pin_entered = Column(String, nullable=False)
+    pin_entered = Column(String, nullable=True)
     signature_image_path = Column(String, nullable=True)
     photo_path = Column(String, nullable=True)
     wtn_code = Column(String, nullable=True)
