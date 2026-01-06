@@ -121,13 +121,13 @@ from app.dependencies import get_db, get_current_user_optional
 from app.utilites.email_utilites import send_email
 from app.utilites.logging import log_activity
 from app.config import settings
-import redis.asyncio as redis
+from redis.asyncio import Redis
 
 # --------------------------
 # Rate limiting via Redis
 # --------------------------
-REDIS_URL = "redis://localhost:6379/0"
-redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
 _RATE_LIMIT_WINDOW_SECONDS = 60
 _RATE_LIMIT_MAX_ATTEMPTS = 10
 
@@ -171,14 +171,15 @@ async def submit_delivery_confirmation(
     # Rate limiting with Redis
     # --------------------------
     redis_key = f"rate_limit:{ip_address}"
-    count = await redis.get(redis_key)
-    if count is None:
-        await redis.set(redis_key, 1, ex=_RATE_LIMIT_WINDOW_SECONDS)
-    else:
-        count = int(count) + 1
-        if count > _RATE_LIMIT_MAX_ATTEMPTS:
-            raise HTTPException(status_code=429, detail="Too many requests from this IP")
-        await redis.set(redis_key, count, ex=_RATE_LIMIT_WINDOW_SECONDS)
+
+count = await redis_client.get(redis_key)
+if count is None:
+    await redis_client.set(redis_key, 1, ex=_RATE_LIMIT_WINDOW_SECONDS)
+else:
+    count = int(count) + 1
+    if count > _RATE_LIMIT_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many requests from this IP")
+    await redis_client.set(redis_key, count, ex=_RATE_LIMIT_WINDOW_SECONDS)
 
     # --------------------------
     # Identify user type & fetch trip
