@@ -343,6 +343,7 @@ async def submit_delivery_confirmation(
         uploaded_s3_keys.append(getattr(confirmation, "pdf_receipt_path"))
 
         db.commit()
+        db.refresh(confirmation)
 
     except HTTPException:
         db.rollback()
@@ -424,12 +425,17 @@ async def submit_delivery_confirmation(
     ]
 
     if confirmation.external_client_email:
-        send_email(
-            to_email=confirmation.external_client_email,
-            subject=f"Trip {trip.id} Delivered - Medilogic",
-            body="Your trip has been successfully delivered. Please find attached CSV and PDF.",
-            attachments=attachments
-        )
+       try:
+          send_email(
+              to_email=confirmation.external_client_email,
+              subject=f"Trip {trip.id} Delivered - Medilogic",
+              body="Your trip has been successfully delivered. Please find attached CSV and PDF.",
+              attachments=attachments
+          )
+       except Exception:
+           logger.exception("Email sending failed (non-blocking)")
+        # Don’t crash the confirmation if email fails
+          pass
 
     return {
         "message": "Delivery confirmed",
