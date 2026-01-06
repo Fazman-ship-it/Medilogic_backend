@@ -76,5 +76,4 @@ def create_delivery_confirmation(
 
     db.add(confirmation)
     db.flush()          # ✅ don't commit here (endpoint commits)
-    db.refresh(confirmation)
     return confirmation

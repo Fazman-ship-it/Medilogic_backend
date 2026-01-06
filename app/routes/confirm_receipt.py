@@ -425,17 +425,17 @@ async def submit_delivery_confirmation(
     ]
 
     if confirmation.external_client_email:
-       try:
-          send_email(
-              to_email=confirmation.external_client_email,
-              subject=f"Trip {trip.id} Delivered - Medilogic",
-              body="Your trip has been successfully delivered. Please find attached CSV and PDF.",
-              attachments=attachments
-          )
-       except Exception:
-           logger.exception("Email sending failed (non-blocking)")
+        try:
+            send_email(
+                to_email=confirmation.external_client_email,
+                subject=f"Trip {trip.id} Delivered - Medilogic",
+                body="Your trip has been successfully delivered. Please find attached CSV and PDF.",
+                attachments=attachments
+        )
+        except Exception:
+            logger.exception("Email sending failed (non-blocking)")
         #  Don’t crash the confirmation if email fails
-           pass
+        pass
 
     return {
         "message": "Delivery confirmed",
