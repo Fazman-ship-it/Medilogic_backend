@@ -166,21 +166,26 @@ async def submit_delivery_confirmation(
 
     ip_address = request.client.host if request and request.client else "unknown"
     user_agent = request.headers.get("user-agent", "")
-
-    # --------------------------
+        # --------------------------
     # Rate limiting with Redis
     # --------------------------
-    redis_key = f"rate_limit:{ip_address}"
+    try:
+        redis_key = f"rate_limit:confirm:{ip_address}"
 
-count = await redis_client.get(redis_key)
-if count is None:
-    await redis_client.set(redis_key, 1, ex=_RATE_LIMIT_WINDOW_SECONDS)
-else:
-    count = int(count) + 1
-    if count > _RATE_LIMIT_MAX_ATTEMPTS:
-        raise HTTPException(status_code=429, detail="Too many requests from this IP")
-    await redis_client.set(redis_key, count, ex=_RATE_LIMIT_WINDOW_SECONDS)
+        count = await redis_client.get(redis_key)
+        if count is None:
+            await redis_client.set(redis_key, 1, ex=_RATE_LIMIT_WINDOW_SECONDS)
+        else:
+            count = int(count) + 1
+            if count > _RATE_LIMIT_MAX_ATTEMPTS:
+                raise HTTPException(status_code=429, detail="Too many requests from this IP")
+            await redis_client.set(redis_key, count, ex=_RATE_LIMIT_WINDOW_SECONDS)
 
+    except Exception:
+        # Redis not available? Don't block confirmations
+        pass
+
+   
     # --------------------------
     # Identify user type & fetch trip
     # --------------------------
