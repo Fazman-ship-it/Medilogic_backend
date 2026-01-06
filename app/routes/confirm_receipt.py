@@ -200,51 +200,61 @@ async def submit_delivery_confirmation(
         logger.exception(f"[CONFIRM] Redis failed (ignored): {e}")
         print("[CONFIRM] Redis failed (ignored):", repr(e))
 
-    # --------------------------
-    # Identify user type & fetch trip
-    # --------------------------
-    try:
-        if current_user:
-            if not trip_id:
-                raise HTTPException(status_code=400, detail="trip_id is required for internal users")
+from jwt import ExpiredSignatureError, InvalidTokenError
 
-            org_id = current_user.organization_id
-            trip = db.query(Trip).filter(
-                Trip.id == trip_id,
-                Trip.organization_id == org_id
-            ).first()
+# Identify user type & fetch trip
+# --------------------------
+try:
+    if current_user:
+        if not trip_id:
+            raise HTTPException(status_code=400, detail="trip_id is required for internal users")
 
-        else:
-            if not token:
-                raise HTTPException(status_code=400, detail="Token is required for external users")
+        org_id = current_user.organization_id
+        trip = db.query(Trip).filter(
+            Trip.id == trip_id,
+            Trip.organization_id == org_id
+        ).first()
 
+    else:
+        if not token:
+            raise HTTPException(status_code=400, detail="Token is required for external users")
+
+        # ✅ FIX: handle token expiry + invalid token properly
+        try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            trip_id_str = payload.get("trip_id")
-            org_id_str = payload.get("organization_id")
+        except ExpiredSignatureError:
+            logger.warning("[CONFIRM] Token expired")
+            raise HTTPException(status_code=401, detail="Token has expired. Please request a new confirmation link.")
+        except InvalidTokenError:
+            logger.warning("[CONFIRM] Invalid token")
+            raise HTTPException(status_code=401, detail="Invalid token. Please request a new confirmation link.")
 
-            if not trip_id_str or not org_id_str:
-                raise HTTPException(status_code=400, detail="Invalid token payload")
+        trip_id_str = payload.get("trip_id")
+        org_id_str = payload.get("organization_id")
 
-            trip_id = UUID(trip_id_str)
-            org_id = UUID(org_id_str)
+        if not trip_id_str or not org_id_str:
+            raise HTTPException(status_code=400, detail="Invalid token payload")
 
-            trip = db.query(Trip).filter(
-                Trip.id == trip_id,
-                Trip.organization_id == org_id
-            ).first()
+        trip_id = UUID(trip_id_str)
+        org_id = UUID(org_id_str)
 
-        if not trip:
-            raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
+        trip = db.query(Trip).filter(
+            Trip.id == trip_id,
+            Trip.organization_id == org_id
+        ).first()
 
-        logger.info(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
-        print(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"[CONFIRM] Trip lookup failed: {e}")
-        print("[CONFIRM] Trip lookup failed:", repr(e))
-        raise HTTPException(status_code=500, detail="Internal error while fetching trip")
+    logger.info(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
+    print(f"[CONFIRM] Trip fetched | trip_id={trip.id} org_id={org_id}")
+
+except HTTPException:
+    raise
+except Exception as e:
+    logger.exception(f"[CONFIRM] Trip lookup failed: {e}")
+    print("[CONFIRM] Trip lookup failed:", repr(e))
+    raise HTTPException(status_code=500, detail="Internal error while fetching trip")
 
     # --------------------------
     # Duplicate confirmation check
