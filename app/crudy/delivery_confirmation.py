@@ -6,7 +6,7 @@ from app.models import DeliveryConfirmation, Trip
 from datetime import datetime
 from fastapi import HTTPException, status
 from app.utilites.time_utilities import now_utc
-
+from typing import Optional
 
 def create_delivery_confirmation(
     db: Session,
