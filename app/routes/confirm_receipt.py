@@ -434,8 +434,8 @@ async def submit_delivery_confirmation(
           )
        except Exception:
            logger.exception("Email sending failed (non-blocking)")
-        # Don’t crash the confirmation if email fails
-          pass
+        #  Don’t crash the confirmation if email fails
+           pass
 
     return {
         "message": "Delivery confirmed",
