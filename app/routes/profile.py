@@ -18,6 +18,7 @@ def get_profile(
     # Base org info for all roles
     org_data = {
         "id": organization.id if organization else None,
+        "short_id": organization.short_id if organization else None,
         "name": organization.name if organization else None,
         "address": organization.address_line if organization else None,
         "phone_number": organization.phone_number if organization else None,
@@ -36,6 +37,7 @@ def get_profile(
 
     return {
         "user_id": current_user.id,
+         "user_short_id": current_user.short_id,
         "name": current_user.name,
         "email": current_user.email,
         "role": current_user.role,
