@@ -401,6 +401,9 @@ def get_driver_single_trip(
     # ✅ Build response (same shape as list item)
     return {
         "trip_id": trip.id,
+        "trip_short_id": trip.short_id,
+        "driver_id": driver_id,
+        "driver_short_id": driver.short_id,
 
         "trip_label": f"{trip.client_name} — {(
             trip.custom_delivery_description
