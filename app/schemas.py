@@ -63,6 +63,10 @@ class TripResponse(TripBase):
     short_id: Optional[str] = None
     created_at: datetime
     
+    class Config:
+        from_attributes = True
+      
+    
 class PaginatedTripsResponse(BaseModel):
     total : int
     skip : int
