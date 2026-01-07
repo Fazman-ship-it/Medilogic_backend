@@ -565,6 +565,7 @@ async def get_incident_detail(
     # ✅ Return detailed info
     return schemas.IncidentOut(
         id=incident.id,
+        short_id=incident.short_id,
         title=incident.title,
         description=incident.description,
         incident_type=incident.incident_type,
@@ -574,6 +575,7 @@ async def get_incident_detail(
         organization_id=incident.organization_id,
         organization_name=organization_name,  # ✅ Added
         submitted_by_id=incident.submitted_by_id,
+        submitted_by_short_id=incident.submitted_by_short_id,
         submitted_by_name=submitted_by_name,  # ✅ Added
         status=incident.status,
         created_at=incident.created_at,
