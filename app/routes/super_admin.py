@@ -245,6 +245,7 @@ def get_organization_details(
     return {
         "organization": {
             "id": org.id,
+            "short_id":org.short_id,
             "name": org.name,
             "invite_code": org.invite_code,
             "is_active": org.is_active,
