@@ -97,8 +97,11 @@ async def get_pod_by_id(
     # ✅ Return schema-compliant structure
     return schemas.PODResponse(
         id=pod.id,
+        short_id=pod.short_id,
         trip_id=pod.trip_id,
+        trip_short_id=pod.trip.short_id if pod.trip else None,
         driver_id=pod.driver_id,
+        driver_short_id=pod.driver.short_id if pod.driver else None,
         signature=pod.signature,
         notes=pod.notes,
         delivered_to=pod.delivered_to,
