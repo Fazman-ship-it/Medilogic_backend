@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from app.utilites.time_utilities import now_utc
 from typing import Optional
 
+
 def create_delivery_confirmation(
     db: Session,
     trip_id,  # accepts UUID or str
@@ -23,6 +24,9 @@ def create_delivery_confirmation(
     extra_notes: Optional[str] = None,
     pickup_at: Optional[datetime] = None,
     dropoff_at: Optional[datetime] = None,
+    # ✅ NEW (optional) – disposal facility info
+    disposal_facility_name: Optional[str] = None,
+    disposal_facility_address: Optional[str] = None,
 ):
     # --- Normalize trip_id to UUID ---
     try:
@@ -43,7 +47,6 @@ def create_delivery_confirmation(
     if pin_required:
         if not pin_entered:
             raise HTTPException(status_code=400, detail="PIN is required")
-        # Use your field name (you had trip.confirmation_pin)
         if getattr(trip, "confirmation_pin", None) and trip.confirmation_pin != pin_entered:
             raise HTTPException(status_code=401, detail="Invalid PIN")
 
@@ -66,9 +69,12 @@ def create_delivery_confirmation(
         external_client_name=external_client_name,
         external_client_email=external_client_email,
         extra_notes=extra_notes,
+        # ✅ NEW: store facility info
+        disposal_facility_name=disposal_facility_name,
+        disposal_facility_address=disposal_facility_address,
     )
 
-    # Mark trip delivered (you already do this)
+    # Mark trip delivered
     trip.is_delivered = True
     trip.delivery_confirmed_at = confirmation.confirmed_at
     trip.delivery_ip = ip_address
