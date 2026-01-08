@@ -124,7 +124,6 @@ from app.config import settings
 from redis.asyncio import Redis
 import logging
 
-# --------------------------
 # Logging (Render-friendly)
 # --------------------------
 logger = logging.getLogger("confirm_receipt")
@@ -323,7 +322,7 @@ async def submit_delivery_confirmation(
     # Main confirm flow
     # --------------------------
     try:
-        # ✅ FIX: keys must NOT end with _path because your utility adds _path itself
+        # keys must NOT end with _path because your utility adds _path itself
         file_mapping = {
             "signature_image": signature_image,
             "pickup_photo": pickup_photo,
@@ -367,14 +366,13 @@ async def submit_delivery_confirmation(
                 confirmation = await handle_file_upload(
                     app=confirmation,
                     file=upload_file,
-                    prefix=f"{org_id}/delivery/{field_name}",  # ✅ now matches field_name
-                    field_name=field_name,                    # ✅ utility will set <field_name>_path
+                    prefix=f"{org_id}/delivery/{field_name}",
+                    field_name=field_name,
                     db=db,
                     user_id=current_user.id if current_user else None,
                     action=f"upload_{field_name}",
                 )
 
-                # ✅ store the actual *_path attribute
                 uploaded_s3_keys.append(getattr(confirmation, f"{field_name}_path", None))
 
         logger.info("[CONFIRM] File uploads done")
@@ -392,7 +390,6 @@ async def submit_delivery_confirmation(
 
         # Upload PDF if generated
         if pdf_bytes:
-            # ✅ FIX: compatible with await file.read()
             class BytesUploadFile:
                 def __init__(self, content: bytes):
                     self._content = content
@@ -412,7 +409,7 @@ async def submit_delivery_confirmation(
                 app=confirmation,
                 file=pdf_file,
                 prefix=f"{org_id}/delivery/receipts",
-                field_name="pdf_receipt",  # ✅ IMPORTANT: not pdf_receipt_path
+                field_name="pdf_receipt",
                 db=db,
                 user_id=current_user.id if current_user else None,
                 action="upload_pdf_receipt",
@@ -446,7 +443,7 @@ async def submit_delivery_confirmation(
                 logger.exception(f"[CONFIRM] Cleanup S3 failed: {cleanup_err}")
                 print("[CONFIRM] Cleanup S3 failed:", repr(cleanup_err))
 
-        raise HTTPException(status_code=500, detail=f"Delivery confirmation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Delivery confirmation failed: {str(e)}")
 
     # --------------------------
     # Log activity (non-blocking)
@@ -488,28 +485,65 @@ async def submit_delivery_confirmation(
         if confirmation.external_client_email:
             attachments = []
 
+            # Short human-friendly reference from UUID
+            short_ref = str(trip.id)[:8]
+
+            # ✅ CSV now includes facility + notes + lat/long + links
             csv_buffer = io.StringIO()
             csv_writer = csv.writer(csv_buffer)
-            csv_writer.writerow(["Trip ID", "Client Name", "Client Email", "Driver Name", "WTN Code"])
+
+            csv_writer.writerow([
+                "Trip ID",
+                "Short Ref",
+                "Client Name",
+                "Client Email",
+                "Driver Name",
+                "WTN Code",
+                "Pickup Timestamp",
+                "Dropoff Timestamp",
+                "Signature URL",
+                "Pickup Photo URL",
+                "Dropoff Photo URL",
+                "Facility Name",
+                "Facility Address",
+                "Facility Signature URL",
+                "Notes",
+                "Latitude",
+                "Longitude",
+            ])
+
             csv_writer.writerow([
                 str(trip.id),
+                short_ref,
                 confirmation.external_client_name,
                 confirmation.external_client_email,
                 getattr(trip, "driver_name", None),
                 confirmation.wtn_code,
+                confirmation.pickup_at,
+                confirmation.dropoff_at,
+                presigned_urls.get("signature_image_path"),
+                presigned_urls.get("pickup_photo_path"),
+                presigned_urls.get("dropoff_photo_path"),
+                confirmation.disposal_facility_name,
+                confirmation.disposal_facility_address,
+                presigned_urls.get("disposal_facility_signature_path"),
+                confirmation.extra_notes,
+                confirmation.latitude,
+                confirmation.longitude,
             ])
+
             csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
             attachments.append({
                 "ContentType": "text/csv",
-                "Filename": f"trip_{trip.id}_confirmation.csv",
+                "Filename": f"trip_{short_ref}_confirmation.csv",
                 "Base64Content": base64.b64encode(csv_bytes).decode("utf-8"),
             })
 
             if pdf_bytes:
                 attachments.append({
                     "ContentType": "application/pdf",
-                    "Filename": f"trip_{trip.id}_receipt.pdf",
+                    "Filename": f"trip_{short_ref}_receipt.pdf",
                     "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8"),
                 })
 
@@ -518,8 +552,12 @@ async def submit_delivery_confirmation(
 
             send_email(
                 to_email=confirmation.external_client_email,
-                subject=f"Trip {trip.id} Delivered - Medilogic",
-                body="Your trip has been successfully delivered. Please find attached documents.",
+                subject=f"Trip {short_ref} Delivered - Medilogic",
+                body=(
+                    f"Your trip ({short_ref}) has been successfully delivered.\n\n"
+                    "Please find attached your delivery documents. "
+                    "The CSV contains links to the signature and photos, plus facility details."
+                ),
                 attachments=attachments,
             )
 
