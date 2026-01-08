@@ -403,7 +403,7 @@ def get_driver_single_trip(
         "trip_id": trip.id,
         "trip_short_id": trip.short_id,
         "driver_id": driver_id,
-        "driver_short_id": driver.short_id,
+        "driver_short_id": str(driver_id).split("-")[0],  # ✅ FIXED (driver was not defined)
 
         "trip_label": f"{trip.client_name} — {(
             trip.custom_delivery_description
