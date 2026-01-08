@@ -352,6 +352,8 @@ async def submit_delivery_confirmation(
             extra_notes=extra_notes,
             pickup_at=now_utc(),
             dropoff_at=now_utc(),
+            disposal_facility_name=disposal_facility_name,      # if you add these to the Form
+            disposal_facility_address=disposal_facility_address,
         )
 
         logger.info(f"[CONFIRM] Confirmation created (pre-upload) | id={confirmation.id}")
