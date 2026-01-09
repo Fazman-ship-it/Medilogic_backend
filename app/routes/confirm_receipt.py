@@ -162,6 +162,8 @@ async def submit_delivery_confirmation(
     longitude: Optional[float] = Form(None),
     signature_image: UploadFile = File(None),
     pickup_photo: UploadFile = File(None),
+    disposal_facility_name: Optional[str] = Form(None),
+    disposal_facility_address: Optional[str] = Form(None),
     facility_signature: UploadFile = File(None),
     dropoff_photo: UploadFile = File(None),
     extra_notes: Optional[str] = Form(None),
