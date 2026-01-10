@@ -321,21 +321,23 @@ class ClientRegister(BaseModel):
 class TripCreateClient(BaseModel):
     delivery_type: DeliveryType
     custom_delivery_description: Optional[str] = None
-    pickup_location: str
-    dropoff_location: str
-    distance_km: float
+    pickup_location: Optional[str] = None
+    dropoff_location: Optional[str] = None
+    distance_km: Optional[float]= None
     scheduled_time: datetime
-    priority: str
+    priority: Optional[str]= None
+    requires_pin: Optional[bool] = False
 
 class TripClientResponse(BaseModel):
     id: UUID
     short_id: Optional[str] = None
     delivery_type: DeliveryType
     custom_delivery_description: Optional[str] = None
-    pickup_location: str
-    dropoff_location: str
-    distance_km: float
-    priority: str
+    pickup_location: Optional[str] = None
+    dropoff_location: Optional[str] = None
+    distance_km: Optional [float]= None
+    priority: Optional[str]= None
+    requires_pin: Optional[bool] = False
     scheduled_time: datetime
     created_at: datetime
 

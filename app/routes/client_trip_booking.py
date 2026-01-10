@@ -47,7 +47,8 @@ def create_trip_as_client(
         cost=None,
         created_at=now_utc(),  # 🔹 UTC-aware creation time
         organization_id=current_user.organization_id,
-        client_id=current_user.id
+        client_id=current_user.id,
+        requires_pin=bool(trip_data.requires_pin),
     )
 
     db.add(trip)
