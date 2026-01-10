@@ -22,6 +22,9 @@ from app.models import TripStatus
 from app.utilites.time_utilities import to_utc, to_local, now_utc, now_local
 from app.scheduler import clone_recurring_trips
 from app.driver_notification import notify_driver_trip_assigned, notify_upcoming_trips
+import random
+from app.utilites.Client_pin import generate_delivery_pin
+from app.utilites.email_utilites import send_email
 # app/routes/trip.py
 router = APIRouter()
 
@@ -44,14 +47,15 @@ def create_trip(
     trip_data["organization_id"] = current_user.organization_id
 
     # ✅ Validate and assign client if provided
+    client_user = None
     if trip_data.get("client_id"):
-        client = db.query(models.User).filter(
+        client_user = db.query(models.User).filter(
             models.User.id == trip_data["client_id"],
             models.User.organization_id == current_user.organization_id,
             models.User.role == "client"
         ).first()
 
-        if not client:
+        if not client_user:
             raise HTTPException(status_code=404, detail="Client not found or not in your organization.")
     else:
         trip_data["client_id"] = None  # optional client
@@ -75,6 +79,16 @@ def create_trip(
     trip_data.setdefault("priority", "normal")
     trip_data.setdefault("recurrence_rule", "none")
 
+    # 🔐 PIN / WTN flags (from schema, default False)
+    requires_pin = bool(trip_data.get("requires_pin", False))
+    requires_wtn = bool(trip_data.get("requires_wtn", False))
+    trip_data["requires_pin"] = requires_pin
+    trip_data["requires_wtn"] = requires_wtn
+
+    # 🔐 Generate PIN if required and not already set
+    if requires_pin and not trip_data.get("confirmation_pin"):
+        trip_data["confirmation_pin"] = generate_delivery_pin(6)
+
     # ✅ Create trip
     db_trip = models.Trip(**trip_data)
     db.add(db_trip)
@@ -90,9 +104,42 @@ def create_trip(
         details=f"Admin {current_user.name} created trip ID {db_trip.id} for client {trip_data.get('client_id')}"
     )
 
-    # 🔔 NOTIFY DRIVER IF ASSIGNED (added line)
+    # 🔔 NOTIFY DRIVER IF ASSIGNED
     if db_trip.driver_id:
         notify_driver_trip_assigned(driver_id=db_trip.driver_id, trip_id=db_trip.id)
+
+    # 🔐 EMAIL DELIVERY PIN TO CLIENT (if required and we know their email)
+    try:
+        if db_trip.requires_pin:
+            client_email = None
+            client_name = db_trip.client_name
+
+            if client_user is None and db_trip.client_id:
+                client_user = db.query(models.User).filter(
+                    models.User.id == db_trip.client_id
+                ).first()
+
+            if client_user and getattr(client_user, "email", None):
+                client_email = client_user.email
+                if not client_name:
+                    client_name = getattr(client_user, "name", None)
+
+            if client_email and db_trip.confirmation_pin:
+                send_email(
+                    to_email=client_email,
+                    subject=f"Your Medilogic pickup PIN for trip {db_trip.short_id}",
+                    body=(
+                        f"Dear {client_name or 'Client'},\n\n"
+                        f"Your Medilogic pickup PIN for trip {db_trip.short_id} is: "
+                        f"{db_trip.confirmation_pin}.\n\n"
+                        "Please give this code to the driver when they arrive so we can "
+                        "securely confirm your collection.\n\n"
+                        "Best regards,\nMedilogic"
+                    ),
+                )
+    except Exception as e:
+        # Don’t break trip creation if email fails
+        print("[TRIP] Failed to send PIN email (ignored):", repr(e))
 
     # ✅ Convert scheduled_time back to local before returning
     if db_trip.scheduled_time:

@@ -149,24 +149,32 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 from jwt import ExpiredSignatureError, InvalidTokenError
 
-
 @router.post("/confirm", response_model=dict)
 async def submit_delivery_confirmation(
     trip_id: Optional[UUID] = Form(None),
     token: Optional[str] = Form(None),
     pin: Optional[str] = Form(None),
+
+    # client fields (auto-filled if trip has a client and these are empty)
     external_client_name: Optional[str] = Form(None),
     external_client_email: Optional[str] = Form(None),
+
+    # WTN (auto-filled from trip.wtn_serial if admin already set it)
     wtn_code: Optional[str] = Form(None),
+
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
+
     signature_image: UploadFile = File(None),
     pickup_photo: UploadFile = File(None),
+
     disposal_facility_name: Optional[str] = Form(None),
     disposal_facility_address: Optional[str] = Form(None),
+
     facility_signature: UploadFile = File(None),
     dropoff_photo: UploadFile = File(None),
     extra_notes: Optional[str] = Form(None),
+
     request: Request = None,
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
@@ -245,8 +253,7 @@ async def submit_delivery_confirmation(
             org_id = UUID(org_id_str)
 
             trip = db.query(Trip).filter(
-                Trip.id == trip_id,
-                Trip.organization_id == org_id
+                Trip.id == trip_id,Trip.organization_id == org_id
             ).first()
 
         if not trip:
@@ -261,6 +268,45 @@ async def submit_delivery_confirmation(
         logger.exception(f"[CONFIRM] Trip lookup failed: {e}")
         print("[CONFIRM] Trip lookup failed:", repr(e))
         raise HTTPException(status_code=500, detail="Internal error while fetching trip")
+
+    # --------------------------
+    # ✅ AUTO-FILL CLIENT NAME/EMAIL (if trip has client)
+    # --------------------------
+    try:
+        client_user = None
+        if getattr(trip, "client_id", None):
+            client_user = db.query(User).filter(User.id == trip.client_id).first()
+
+        # Only fill if frontend didn’t send anything
+        if not external_client_name:
+            external_client_name = (
+                getattr(client_user, "name", None)
+                or getattr(trip, "client_name", None)
+                or None
+            )
+
+        if not external_client_email:
+            external_client_email = (
+                getattr(client_user, "email", None)
+                or getattr(trip, "client_email", None)  # only if you have this field
+                or None
+            )
+    except Exception as e:
+        logger.exception(f"[CONFIRM] Auto-fill client failed (ignored): {e}")
+        print("[CONFIRM] Auto-fill client failed (ignored):", repr(e))
+
+    # --------------------------
+    # ✅ AUTO-FILL WTN FROM TRIP
+    # --------------------------
+    trip_requires_wtn = bool(getattr(trip, "requires_wtn", False))
+    trip_wtn_serial = getattr(trip, "wtn_serial", None)
+
+    # Final WTN: prefer form value, else trip value
+    final_wtn_code = (wtn_code or trip_wtn_serial or None)
+
+    # Enforce WTN if required
+    if trip_requires_wtn and not final_wtn_code:
+        raise HTTPException(status_code=400, detail="WTN code is required for this trip")
 
     # --------------------------
     # Duplicate confirmation check
@@ -283,13 +329,21 @@ async def submit_delivery_confirmation(
         raise HTTPException(status_code=500, detail="Internal error during duplicate check")
 
     # --------------------------
-    # PIN validation
+    # PIN validation (presence only here; strict match happens in create_delivery_confirmation)
     # --------------------------
     try:
-        pin_required = getattr(trip, "requires_pin", False) or getattr(trip, "pin_required", False)
+        pin_required = bool(getattr(trip, "requires_pin", False) or getattr(trip, "pin_required", False))
         if pin_required:
-            if not pin or len(pin.strip()) < 4:
-                raise HTTPException(status_code=400, detail="PIN required and must be at least 4 characters")
+            expected_len = 6  # must match generate_delivery_pin()
+            if not pin:
+                raise HTTPException(status_code=400, detail="PIN is required")
+
+            pin_clean = pin.strip()
+            if len(pin_clean) != expected_len or not pin_clean.isdigit():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"PIN must be exactly {expected_len} digits"
+                )
     except HTTPException:
         raise
     except Exception as e:
@@ -324,7 +378,6 @@ async def submit_delivery_confirmation(
     # Main confirm flow
     # --------------------------
     try:
-        # keys must NOT end with _path because your utility adds _path itself
         file_mapping = {
             "signature_image": signature_image,
             "pickup_photo": pickup_photo,
@@ -346,7 +399,10 @@ async def submit_delivery_confirmation(
             pin_entered=pin,
             external_client_name=external_client_name,
             external_client_email=external_client_email,
-            wtn_code=wtn_code,
+
+            # ✅ use final_wtn_code (auto-filled)
+            wtn_code=final_wtn_code,
+
             ip_address=ip_address,
             user_agent=user_agent,
             latitude=latitude,
@@ -354,7 +410,8 @@ async def submit_delivery_confirmation(
             extra_notes=extra_notes,
             pickup_at=now_utc(),
             dropoff_at=now_utc(),
-            disposal_facility_name=disposal_facility_name,      # if you add these to the Form
+
+            disposal_facility_name=disposal_facility_name,
             disposal_facility_address=disposal_facility_address,
         )
 
@@ -408,7 +465,7 @@ async def submit_delivery_confirmation(
 
             logger.info("[CONFIRM] Uploading PDF...")
             print("[CONFIRM] Uploading PDF...")
-
+            
             confirmation = await handle_file_upload(
                 app=confirmation,
                 file=pdf_file,
@@ -447,7 +504,7 @@ async def submit_delivery_confirmation(
                 logger.exception(f"[CONFIRM] Cleanup S3 failed: {cleanup_err}")
                 print("[CONFIRM] Cleanup S3 failed:", repr(cleanup_err))
 
-        raise HTTPException(status_code=500, detail="Delivery confirmation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Delivery confirmation failed: {str(e)}")
 
     # --------------------------
     # Log activity (non-blocking)
@@ -486,76 +543,89 @@ async def submit_delivery_confirmation(
     # Email (non-blocking)
     # --------------------------
     try:
-        if confirmation.external_client_email:
-            attachments = []
+        # ✅ send to BOTH internal client + external client (avoid duplicates)
+        attachments = []
+        short_ref = str(trip.id)[:8]
 
-            # Short human-friendly reference from UUID
-            short_ref = str(trip.id)[:8]
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
 
-            # ✅ CSV now includes facility + notes + lat/long + links
-            csv_buffer = io.StringIO()
-            csv_writer = csv.writer(csv_buffer)
+        csv_writer.writerow([
+            "Trip ID",
+            "Short Ref",
+            "Client Name",
+            "Client Email",
+            "Driver Name",
+            "WTN Code",
+            "Pickup Timestamp",
+            "Dropoff Timestamp",
+            "Signature URL",
+            "Pickup Photo URL",
+            "Dropoff Photo URL",
+            "Facility Name",
+            "Facility Address",
+            "Facility Signature URL",
+            "Notes",
+            "Latitude",
+            "Longitude",
+        ])
 
-            csv_writer.writerow([
-                "Trip ID",
-                "Short Ref",
-                "Client Name",
-                "Client Email",
-                "Driver Name",
-                "WTN Code",
-                "Pickup Timestamp",
-                "Dropoff Timestamp",
-                "Signature URL",
-                "Pickup Photo URL",
-                "Dropoff Photo URL",
-                "Facility Name",
-                "Facility Address",
-                "Facility Signature URL",
-                "Notes",
-                "Latitude",
-                "Longitude",
-            ])
+        csv_writer.writerow([
+            str(trip.id),
+            short_ref,
+            confirmation.external_client_name,
+            confirmation.external_client_email,
+            getattr(trip, "driver_name", None),
+            confirmation.wtn_code,
+            confirmation.pickup_at,
+            confirmation.dropoff_at,
+            presigned_urls.get("signature_image_path"),
+            presigned_urls.get("pickup_photo_path"),
+            presigned_urls.get("dropoff_photo_path"),
+            confirmation.disposal_facility_name,
+            confirmation.disposal_facility_address,
+            presigned_urls.get("disposal_facility_signature_path"),
+            confirmation.extra_notes,
+            confirmation.latitude,
+            confirmation.longitude,
+        ])
 
-            csv_writer.writerow([
-                str(trip.id),
-                short_ref,
-                confirmation.external_client_name,
-                confirmation.external_client_email,
-                getattr(trip, "driver_name", None),
-                confirmation.wtn_code,
-                confirmation.pickup_at,
-                confirmation.dropoff_at,
-                presigned_urls.get("signature_image_path"),
-                presigned_urls.get("pickup_photo_path"),
-                presigned_urls.get("dropoff_photo_path"),
-                confirmation.disposal_facility_name,
-                confirmation.disposal_facility_address,
-                presigned_urls.get("disposal_facility_signature_path"),
-                confirmation.extra_notes,
-                confirmation.latitude,
-                confirmation.longitude,
-            ])
+        csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
-            csv_bytes = csv_buffer.getvalue().encode("utf-8")
+        attachments.append({
+            "ContentType": "text/csv",
+            "Filename": f"trip_{short_ref}_confirmation.csv",
+            "Base64Content": base64.b64encode(csv_bytes).decode("utf-8"),
+        })
 
+        if pdf_bytes:
             attachments.append({
-                "ContentType": "text/csv",
-                "Filename": f"trip_{short_ref}_confirmation.csv",
-                "Base64Content": base64.b64encode(csv_bytes).decode("utf-8"),
+                "ContentType": "application/pdf",
+                "Filename": f"trip_{short_ref}_receipt.pdf",
+                "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8"),
             })
 
-            if pdf_bytes:
-                attachments.append({
-                    "ContentType": "application/pdf",
-                    "Filename": f"trip_{short_ref}_receipt.pdf",
-                    "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8"),
-                })
+        # ✅ Collect recipients (external + internal), avoid duplicates
+        recipients = set()
 
-            logger.info(f"[CONFIRM] Sending email to {confirmation.external_client_email}")
-            print(f"[CONFIRM] Sending email to {confirmation.external_client_email}")
+        if confirmation.external_client_email:
+            recipients.add(confirmation.external_client_email.strip().lower())
+
+        try:
+            if getattr(trip, "client_id", None):
+                client_user = db.query(User).filter(User.id == trip.client_id).first()
+                if client_user and getattr(client_user, "email", None):
+                    recipients.add(client_user.email.strip().lower())
+        except Exception:
+            pass
+
+        # ✅ Send to everyone we found
+        for email in recipients:
+            logger.info(f"[CONFIRM] Sending email to {email}")
+            print(f"[CONFIRM] Sending email to {email}")
 
             send_email(
-                to_email=confirmation.external_client_email,
+                to_email=email,
                 subject=f"Trip {short_ref} Delivered - Medilogic",
                 body=(
                     f"Your trip ({short_ref}) has been successfully delivered.\n\n"
@@ -565,8 +635,8 @@ async def submit_delivery_confirmation(
                 attachments=attachments,
             )
 
-            logger.info("[CONFIRM] Email sent OK")
-            print("[CONFIRM] Email sent OK")
+        logger.info("[CONFIRM] Email sent OK")
+        print("[CONFIRM] Email sent OK")
 
     except Exception as e:
         logger.exception(f"[CONFIRM] Email failed (ignored): {e}")

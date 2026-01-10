@@ -11,8 +11,8 @@ from typing import Optional
 
 def create_delivery_confirmation(
     db: Session,
-    trip_id,  # accepts UUID or str
-    organization_id,  # ✅ REQUIRED (multi-tenant)
+    trip_id,
+    organization_id,
     pin_entered: Optional[str] = None,
     external_client_name: Optional[str] = None,
     external_client_email: Optional[str] = None,
@@ -24,7 +24,6 @@ def create_delivery_confirmation(
     extra_notes: Optional[str] = None,
     pickup_at: Optional[datetime] = None,
     dropoff_at: Optional[datetime] = None,
-    # ✅ NEW (optional) – disposal facility info
     disposal_facility_name: Optional[str] = None,
     disposal_facility_address: Optional[str] = None,
 ):
@@ -42,12 +41,17 @@ def create_delivery_confirmation(
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
 
-    # --- Optional PIN check (ONLY if trip requires it) ---
-    pin_required = getattr(trip, "requires_pin", False) or getattr(trip, "pin_required", False)
+    # --- Optional PIN check (STRICT) ---
+    pin_required = bool(getattr(trip, "requires_pin", False) or getattr(trip, "pin_required", False))
     if pin_required:
         if not pin_entered:
             raise HTTPException(status_code=400, detail="PIN is required")
-        if getattr(trip, "confirmation_pin", None) and trip.confirmation_pin != pin_entered:
+
+        # ✅ if requires_pin is enabled, the trip MUST have a confirmation_pin
+        if not getattr(trip, "confirmation_pin", None):
+            raise HTTPException(status_code=400, detail="This trip requires a PIN but no PIN is set. Contact admin.")
+
+        if trip.confirmation_pin != pin_entered:
             raise HTTPException(status_code=401, detail="Invalid PIN")
 
     # --- Stop duplicates ---
@@ -56,9 +60,12 @@ def create_delivery_confirmation(
 
     confirmation = DeliveryConfirmation(
         trip_id=trip.id,
-        organization_id=organization_id,  # ✅ store org_id
+        organization_id=organization_id,
         pin_entered=pin_entered,
+
+        # ✅ keep what endpoint decided (auto-filled)
         wtn_code=wtn_code,
+
         confirmed_at=now_utc(),
         ip_address=ip_address,
         user_agent=user_agent,
@@ -69,7 +76,6 @@ def create_delivery_confirmation(
         external_client_name=external_client_name,
         external_client_email=external_client_email,
         extra_notes=extra_notes,
-        # ✅ NEW: store facility info
         disposal_facility_name=disposal_facility_name,
         disposal_facility_address=disposal_facility_address,
     )
@@ -78,8 +84,11 @@ def create_delivery_confirmation(
     trip.is_delivered = True
     trip.delivery_confirmed_at = confirmation.confirmed_at
     trip.delivery_ip = ip_address
-    trip.wtn_serial = wtn_code
+
+    # ✅ IMPORTANT: only set wtn_serial if we actually have a value
+    if wtn_code:
+        trip.wtn_serial = wtn_code
 
     db.add(confirmation)
-    db.flush()          # ✅ don't commit here (endpoint commits)
+    db.flush()
     return confirmation

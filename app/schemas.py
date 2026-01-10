@@ -46,8 +46,12 @@ class TripBase(BaseModel):
     custom_delivery_description: Optional[str] = None
     notes: Optional[str] = None
     client_id: Optional[UUID] = None
-    
-    
+    requires_pin: Optional[bool] = False
+    requires_wtn: Optional[bool] = False
+    wtn_serial : Optional[str] = None
+    class Config:
+        from_attributes = True
+
 
 class TripCreate(TripBase):
     pass

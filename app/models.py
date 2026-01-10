@@ -145,6 +145,8 @@ class Trip(Base, ShortIDMixin):
     custody_events = relationship("ChainOfCustody", back_populates="trip",cascade="all, delete")
     location_history = relationship("DriverLocationHistory", back_populates="trip")
     delivery_confirmations = relationship("DeliveryConfirmation", back_populates="trip", cascade="all, delete-orphan")
+    requires_pin = Column(Boolean, default=False)
+    requires_wtn = Column(Boolean, default=False)
     confirmation_pin = Column(String, nullable=True)
     is_delivered = Column(Boolean, default=False)
     delivery_signature_path = Column(String, nullable=True)  # store image/signature
