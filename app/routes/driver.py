@@ -413,7 +413,7 @@ def get_driver_single_trip(
         "trip_id": trip.id,
         "trip_short_id": trip.short_id,
         "driver_id": driver_id,
-        "driver_short_id": str(driver_id).split("-")[0],  # ✅ FIXED (driver was not defined)
+        "driver_short_id": str(driver_id).split("-")[0],
 
         "trip_label": f"{trip.client_name} — {(
             trip.custom_delivery_description
@@ -442,4 +442,9 @@ def get_driver_single_trip(
         "recurrence_rule": trip.recurrence_rule,
         "notes": trip.notes,
         "custom_delivery_description": trip.custom_delivery_description,
+
+        # ✅ Compliance / confirmation fields (WTN + PIN flags)
+        "requires_wtn": getattr(trip, "requires_wtn", False),
+        "wtn_serial": getattr(trip, "wtn_serial", None),
+        "requires_pin": getattr(trip, "requires_pin", False),
     }
