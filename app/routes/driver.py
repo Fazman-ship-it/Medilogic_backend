@@ -307,7 +307,6 @@ async def get_driver_trip_confirmation(
     ).first()
 
     if not confirmation:
-        # Create new confirmation with token
         from uuid import uuid4
         confirmation = DeliveryConfirmation(
             trip_id=trip.id,
@@ -320,7 +319,6 @@ async def get_driver_trip_confirmation(
         db.commit()
         db.refresh(confirmation)
     else:
-        # Re-issue token if expired
         if not confirmation.access_token or confirmation.token_expires_at < now_utc():
             from uuid import uuid4
             confirmation.access_token = uuid4().hex
@@ -345,7 +343,19 @@ async def get_driver_trip_confirmation(
         "trip_id": str(trip.id),
         "driver_name": trip.driver_name,
         "client_name": getattr(trip, "client_name", None),
-        "delivery_type": trip.delivery_type,
+
+        # ✅ UPDATED: match your other endpoints behaviour
+        "trip_label": f"{trip.client_name} — {(
+            trip.custom_delivery_description
+            if trip.delivery_type and str(trip.delivery_type).lower() == 'others'
+            else (trip.delivery_type or 'Unspecified')
+        )}",
+        "delivery_type": (
+            trip.custom_delivery_description
+            if trip.delivery_type and str(trip.delivery_type).lower() == "others"
+            else (trip.delivery_type if trip.delivery_type else None)
+        ),
+
         "pickup_location": trip.pickup_location,
         "dropoff_location": trip.dropoff_location,
         "scheduled_time": trip.scheduled_time,
