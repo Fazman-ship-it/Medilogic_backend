@@ -127,87 +127,92 @@ import logging
 
 from fastapi import Query
 
+from fastapi import Query, HTTPException, Depends
+from sqlalchemy.orm import Session
+from typing import Optional
+from uuid import UUID
+
 @router.get("/confirm", response_model=dict)
 async def get_delivery_confirmation_prefill(
-    trip_id: Optional[UUID] = Query(None),
-    token: Optional[str] = Query(None),
+    token: str = Query(...),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    # --------------------------
-    # Identify user type & fetch trip (same rules as POST)
-    # --------------------------
-    if current_user:
-        if not trip_id:
-            raise HTTPException(status_code=400, detail="trip_id is required for internal users")
+    # 1) Find confirmation by stable access_token
+    confirmation = db.query(DeliveryConfirmation).filter(
+        DeliveryConfirmation.access_token == token
+    ).first()
 
-        org_id = current_user.organization_id
-        trip = db.query(Trip).filter(
-            Trip.id == trip_id,
-            Trip.organization_id == org_id
-        ).first()
-    else:
-        if not token:
-            raise HTTPException(status_code=400, detail="Token is required for external users")
+    if not confirmation:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        except Exception:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if confirmation.token_expires_at and confirmation.token_expires_at < now_utc():
+        raise HTTPException(status_code=401, detail="Token has expired")
 
-        trip_id_str = payload.get("trip_id")
-        org_id_str = payload.get("organization_id")
-
-        if not trip_id_str or not org_id_str:
-            raise HTTPException(status_code=400, detail="Invalid token payload")
-
-        trip = db.query(Trip).filter(
-            Trip.id == UUID(trip_id_str),
-            Trip.organization_id == UUID(org_id_str),
-        ).first()
+    # 2) Fetch trip
+    trip = db.query(Trip).filter(
+        Trip.id == confirmation.trip_id,
+        Trip.organization_id == confirmation.organization_id
+    ).first()
 
     if not trip:
-        raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
+        raise HTTPException(status_code=404, detail="Trip not found")
 
-    # --------------------------
-    # Client info (auto-fill display)
-    # --------------------------
-    client_user = None
-    if getattr(trip, "client_id", None):
-        client_user = db.query(User).filter(User.id == trip.client_id).first()
-
-    client_name = (
-        getattr(client_user, "name", None)
-        or getattr(trip, "client_name", None)
-        or None
-    )
-    client_email = getattr(client_user, "email", None)
-
-    # --------------------------
-    # Delivery type display (fix "unknown")
-    # --------------------------
-    delivery_type_value = getattr(trip, "delivery_type", None)
+    # 3) Delivery type (same logic as your other endpoints)
+    raw_delivery_type = getattr(trip, "delivery_type", None)
     custom_desc = getattr(trip, "custom_delivery_description", None)
 
     delivery_type_display = (
         custom_desc
-        if delivery_type_value and str(delivery_type_value).lower() == "others"
-        else (delivery_type_value or "Unspecified")
+        if raw_delivery_type and str(raw_delivery_type).lower() == "others"
+        else (str(raw_delivery_type) if raw_delivery_type else "Unspecified")
     )
+
+    completed = bool(trip.is_delivered) or bool(getattr(confirmation, "dropoff_photo_path", None))
+
+    # 4) Presigned URLs (if files exist)
+    presigned_urls = {}
+    for field in [
+        "pickup_photo_path",
+        "dropoff_photo_path",
+        "signature_image_path",
+        "disposal_facility_signature_path",
+        "pdf_receipt_path",
+    ]:
+        path = getattr(confirmation, field, None)
+        if path:
+            try:
+                presigned_urls[field] = await generate_presigned_url_async(path)
+            except Exception:
+                pass
 
     return {
         "trip_id": str(trip.id),
+        "completed": completed,
 
-        "client_name": client_name,
-        "client_email": client_email,
+        # matches your older endpoint outputs
+        "client_name": confirmation.external_client_name or getattr(trip, "client_name", None),
+        "client_email": confirmation.external_client_email or None,
 
         "requires_pin": bool(getattr(trip, "requires_pin", False)),
         "requires_wtn": bool(getattr(trip, "requires_wtn", False)),
         "wtn_serial": getattr(trip, "wtn_serial", None),
 
+        # ✅ include BOTH display + raw fields (covers frontend needs)
         "delivery_type": delivery_type_display,
-        "raw_delivery_type": delivery_type_value,
+        "raw_delivery_type": str(raw_delivery_type) if raw_delivery_type else None,
         "custom_delivery_description": custom_desc,
+
+        # ✅ saved progress so the form can show what was already entered
+        "saved": {
+            "pickup_at": confirmation.pickup_at,
+            "dropoff_at": confirmation.dropoff_at,
+            "wtn_code": confirmation.wtn_code,
+            "disposal_facility_name": confirmation.disposal_facility_name,
+            "disposal_facility_address": confirmation.disposal_facility_address,
+            "extra_notes": confirmation.extra_notes,
+        },
+
+        "presigned_urls": presigned_urls,
     }
 
 
