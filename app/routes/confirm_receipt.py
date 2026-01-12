@@ -191,7 +191,7 @@ async def get_delivery_confirmation_prefill(
 
         # matches your older endpoint outputs
         "client_name": confirmation.external_client_name or getattr(trip, "client_name", None),
-        "client_email": confirmation.external_client_email or None,
+        "client_email": confirmation.external_client_email or getattr(trip, "client_email", None),
 
         "requires_pin": bool(getattr(trip, "requires_pin", False)),
         "requires_wtn": bool(getattr(trip, "requires_wtn", False)),
