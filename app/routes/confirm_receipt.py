@@ -216,8 +216,6 @@ async def get_delivery_confirmation_prefill(
     }
 
 
-
-
 # Logging (Render-friendly)
 # --------------------------
 logger = logging.getLogger("confirm_receipt")
@@ -403,15 +401,16 @@ async def submit_delivery_confirmation(
         raise HTTPException(status_code=400, detail="WTN code is required for this trip")
 
     # --------------------------
-    # Duplicate confirmation check
+    # ✅ Duplicate confirmation check (FIXED: use fields you actually have)
     # --------------------------
     try:
         existing_confirmation = db.query(DeliveryConfirmation).filter(
             DeliveryConfirmation.trip_id == trip.id
         ).first()
 
+        # ✅ block if trip is delivered OR dropoff already exists
         if getattr(trip, "is_delivered", False) or (
-            existing_confirmation and getattr(existing_confirmation, "is_confirmed", False)
+            existing_confirmation and getattr(existing_confirmation, "dropoff_photo_path", None)
         ):
             raise HTTPException(status_code=409, detail="Trip already confirmed/delivered")
 
@@ -502,8 +501,12 @@ async def submit_delivery_confirmation(
             latitude=latitude,
             longitude=longitude,
             extra_notes=extra_notes,
-            pickup_at=now_utc(),
-            dropoff_at=now_utc(),
+
+            # ✅ IMPORTANT MERGE: do NOT always set both timestamps.
+            # Pickup timestamp only when pickup_photo is provided.
+            pickup_at=now_utc() if pickup_photo else None,
+            # Dropoff timestamp only when dropoff_photo is provided.
+            dropoff_at=now_utc() if dropoff_photo else None,
 
             disposal_facility_name=disposal_facility_name,
             disposal_facility_address=disposal_facility_address,
@@ -533,7 +536,19 @@ async def submit_delivery_confirmation(
         logger.info("[CONFIRM] File uploads done")
         print("[CONFIRM] File uploads done")
 
-        # Generate PDF
+        # ✅ IMPORTANT MERGE:
+        # Finalise delivery ONLY if dropoff_photo is provided
+        delivered_now = False
+        if dropoff_photo:
+            trip.is_delivered = True
+            trip.status = "delivered"
+            trip.delivered_at = now_utc()
+            trip.delivery_confirmed_at = now_utc()
+            delivered_now = True
+
+            db.add(trip)
+
+        # Generate PDF (keep your behaviour)
         try:
             logger.info("[CONFIRM] Generating PDF...")
             print("[CONFIRM] Generating PDF...")
@@ -559,7 +574,7 @@ async def submit_delivery_confirmation(
 
             logger.info("[CONFIRM] Uploading PDF...")
             print("[CONFIRM] Uploading PDF...")
-            
+
             confirmation = await handle_file_upload(
                 app=confirmation,
                 file=pdf_file,
@@ -577,6 +592,8 @@ async def submit_delivery_confirmation(
 
         db.commit()
         db.refresh(confirmation)
+        if dropoff_photo:
+            db.refresh(trip)
 
         logger.info(f"[CONFIRM] DB commit OK | confirmation_id={confirmation.id}")
         print(f"[CONFIRM] DB commit OK | confirmation_id={confirmation.id}")
@@ -596,7 +613,7 @@ async def submit_delivery_confirmation(
                 await delete_file_from_s3(key)
             except Exception as cleanup_err:
                 logger.exception(f"[CONFIRM] Cleanup S3 failed: {cleanup_err}")
-                print("[CONFIRM] Cleanup S3 failed:", repr(cleanup_err))
+                print("[CONFIRM] Cleanup S3 failed:", repr(e))
 
         raise HTTPException(status_code=500, detail=f"Delivery confirmation failed: {str(e)}")
 
@@ -607,7 +624,7 @@ async def submit_delivery_confirmation(
         log_activity(
             db=db,
             user_id=current_user.id if current_user else None,
-            action="delivery_confirmed",
+            action="delivery_confirmed" if dropoff_photo else "delivery_progress_saved",
             details=f"Trip {trip.id} confirmed | IP: {ip_address} | UA: {user_agent}",
         )
     except Exception as e:
@@ -637,7 +654,7 @@ async def submit_delivery_confirmation(
     # Email (non-blocking)
     # --------------------------
     try:
-        # ✅ send to BOTH internal client + external client (avoid duplicates)
+        # ✅ Keep your attachments as-is
         attachments = []
         short_ref = str(trip.id)[:8]
 
@@ -713,6 +730,29 @@ async def submit_delivery_confirmation(
         except Exception:
             pass
 
+        # ✅ MERGE: Put clickable links OUTSIDE the CSV in the email body too
+        links_lines = []
+        if presigned_urls.get("pickup_photo_path"):
+            links_lines.append(f"Pickup photo: {presigned_urls['pickup_photo_path']}")
+        if presigned_urls.get("dropoff_photo_path"):
+            links_lines.append(f"Dropoff photo: {presigned_urls['dropoff_photo_path']}")
+        if presigned_urls.get("signature_image_path"):
+            links_lines.append(f"Signature: {presigned_urls['signature_image_path']}")
+        if presigned_urls.get("disposal_facility_signature_path"):
+            links_lines.append(f"Facility signature: {presigned_urls['disposal_facility_signature_path']}")
+        if presigned_urls.get("pdf_receipt_path"):
+            links_lines.append(f"PDF receipt: {presigned_urls['pdf_receipt_path']}")
+
+        links_text = "\n".join(links_lines) if links_lines else "No file links available."
+
+        email_body = (
+            f"Your trip ({short_ref}) has been updated.\n\n"
+            "Attached: CSV + PDF (if generated).\n\n"
+            "Quick links:\n"
+            f"{links_text}\n\n"
+            "The CSV also contains these links plus facility details."
+        )
+
         # ✅ Send to everyone we found
         for email in recipients:
             logger.info(f"[CONFIRM] Sending email to {email}")
@@ -720,12 +760,8 @@ async def submit_delivery_confirmation(
 
             send_email(
                 to_email=email,
-                subject=f"Trip {short_ref} Delivered - Medilogic",
-                body=(
-                    f"Your trip ({short_ref}) has been successfully delivered.\n\n"
-                    "Please find attached your delivery documents. "
-                    "The CSV contains links to the signature and photos, plus facility details."
-                ),
+                subject=f"Trip {short_ref} Delivery Update - Medilogic",
+                body=email_body,
                 attachments=attachments,
             )
 
@@ -737,6 +773,6 @@ async def submit_delivery_confirmation(
         print("[CONFIRM] Email failed (ignored):", repr(e))
 
     return {
-        "message": "Delivery confirmed",
+        "message": "Delivery confirmed" if dropoff_photo else "Saved",
         "presigned_urls": presigned_urls,
     }
