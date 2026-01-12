@@ -125,13 +125,6 @@ from redis.asyncio import Redis
 import logging
 
 
-from fastapi import Query
-
-from fastapi import Query, HTTPException, Depends
-from sqlalchemy.orm import Session
-from typing import Optional
-from uuid import UUID
-
 @router.get("/confirm", response_model=dict)
 async def get_delivery_confirmation_prefill(
     token: str = Query(...),
@@ -156,6 +149,14 @@ async def get_delivery_confirmation_prefill(
 
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
+
+    # ✅ Extract client email from attached trip (if any), else leave blank
+    client_email = confirmation.external_client_email
+    if not client_email:
+        client_user = None
+        if getattr(trip, "client_id", None):
+            client_user = db.query(User).filter(User.id == trip.client_id).first()
+        client_email = getattr(client_user, "email", None)
 
     # 3) Delivery type (same logic as your other endpoints)
     raw_delivery_type = getattr(trip, "delivery_type", None)
@@ -191,7 +192,7 @@ async def get_delivery_confirmation_prefill(
 
         # matches your older endpoint outputs
         "client_name": confirmation.external_client_name or getattr(trip, "client_name", None),
-        "client_email": confirmation.external_client_email or getattr(trip, "client_email", None),
+        "client_email": client_email,
 
         "requires_pin": bool(getattr(trip, "requires_pin", False)),
         "requires_wtn": bool(getattr(trip, "requires_wtn", False)),
