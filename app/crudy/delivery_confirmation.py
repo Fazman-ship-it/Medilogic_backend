@@ -8,7 +8,6 @@ from fastapi import HTTPException, status
 from app.utilites.time_utilities import now_utc
 from typing import Optional
 
-
 def create_delivery_confirmation(
     db: Session,
     trip_id,
@@ -54,16 +53,16 @@ def create_delivery_confirmation(
         if trip.confirmation_pin != pin_entered:
             raise HTTPException(status_code=401, detail="Invalid PIN")
 
-    # --- Stop duplicates ---
-    if getattr(trip, "is_delivered", False):
-        raise HTTPException(status_code=400, detail="Trip already confirmed")
+    # ✅ IMPORTANT CHANGE:
+    # Do NOT block on trip.is_delivered here, because pickup can be saved first,
+    # and delivery is finalised later when dropoff_photo is uploaded.
+    # Duplicate/finalisation control belongs in the endpoint.
 
     confirmation = DeliveryConfirmation(
         trip_id=trip.id,
         organization_id=organization_id,
         pin_entered=pin_entered,
 
-        # ✅ keep what endpoint decided (auto-filled)
         wtn_code=wtn_code,
 
         confirmed_at=now_utc(),
@@ -71,8 +70,10 @@ def create_delivery_confirmation(
         user_agent=user_agent,
         latitude=latitude,
         longitude=longitude,
+
         pickup_at=pickup_at,
         dropoff_at=dropoff_at,
+
         external_client_name=external_client_name,
         external_client_email=external_client_email,
         extra_notes=extra_notes,
@@ -80,12 +81,11 @@ def create_delivery_confirmation(
         disposal_facility_address=disposal_facility_address,
     )
 
-    # Mark trip delivered
-    trip.is_delivered = True
-    trip.delivery_confirmed_at = confirmation.confirmed_at
-    trip.delivery_ip = ip_address
+    # ✅ IMPORTANT CHANGE:
+    # Do NOT mark trip delivered here.
+    # Trip should only be set delivered in the endpoint when dropoff_photo is provided.
 
-    # ✅ IMPORTANT: only set wtn_serial if we actually have a value
+    # ✅ Still safe to set wtn_serial if provided (optional)
     if wtn_code:
         trip.wtn_serial = wtn_code
 
