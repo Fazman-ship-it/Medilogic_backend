@@ -124,6 +124,95 @@ from app.config import settings
 from redis.asyncio import Redis
 import logging
 
+
+from fastapi import Query
+
+@router.get("/confirm", response_model=dict)
+async def get_delivery_confirmation_prefill(
+    trip_id: Optional[UUID] = Query(None),
+    token: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    # --------------------------
+    # Identify user type & fetch trip (same rules as POST)
+    # --------------------------
+    if current_user:
+        if not trip_id:
+            raise HTTPException(status_code=400, detail="trip_id is required for internal users")
+
+        org_id = current_user.organization_id
+        trip = db.query(Trip).filter(
+            Trip.id == trip_id,
+            Trip.organization_id == org_id
+        ).first()
+    else:
+        if not token:
+            raise HTTPException(status_code=400, detail="Token is required for external users")
+
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+        trip_id_str = payload.get("trip_id")
+        org_id_str = payload.get("organization_id")
+
+        if not trip_id_str or not org_id_str:
+            raise HTTPException(status_code=400, detail="Invalid token payload")
+
+        trip = db.query(Trip).filter(
+            Trip.id == UUID(trip_id_str),
+            Trip.organization_id == UUID(org_id_str),
+        ).first()
+
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
+
+    # --------------------------
+    # Client info (auto-fill display)
+    # --------------------------
+    client_user = None
+    if getattr(trip, "client_id", None):
+        client_user = db.query(User).filter(User.id == trip.client_id).first()
+
+    client_name = (
+        getattr(client_user, "name", None)
+        or getattr(trip, "client_name", None)
+        or None
+    )
+    client_email = getattr(client_user, "email", None)
+
+    # --------------------------
+    # Delivery type display (fix "unknown")
+    # --------------------------
+    delivery_type_value = getattr(trip, "delivery_type", None)
+    custom_desc = getattr(trip, "custom_delivery_description", None)
+
+    delivery_type_display = (
+        custom_desc
+        if delivery_type_value and str(delivery_type_value).lower() == "others"
+        else (delivery_type_value or "Unspecified")
+    )
+
+    return {
+        "trip_id": str(trip.id),
+
+        "client_name": client_name,
+        "client_email": client_email,
+
+        "requires_pin": bool(getattr(trip, "requires_pin", False)),
+        "requires_wtn": bool(getattr(trip, "requires_wtn", False)),
+        "wtn_serial": getattr(trip, "wtn_serial", None),
+
+        "delivery_type": delivery_type_display,
+        "raw_delivery_type": delivery_type_value,
+        "custom_delivery_description": custom_desc,
+    }
+
+
+
+
 # Logging (Render-friendly)
 # --------------------------
 logger = logging.getLogger("confirm_receipt")
