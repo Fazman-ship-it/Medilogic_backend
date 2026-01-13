@@ -480,35 +480,79 @@ async def submit_delivery_confirmation(
         logger.info("[CONFIRM] File validation passed")
         print("[CONFIRM] File validation passed")
 
-        confirmation = create_delivery_confirmation(
-            db=db,
-            trip_id=trip.id,
-            organization_id=org_id,
-            pin_entered=pin,
-            external_client_name=external_client_name,
-            external_client_email=external_client_email,
+        # ✅✅✅ UPDATED PART ONLY: REUSE existing confirmation if it exists (so pickup saves and persists)
+        existing_confirmation = db.query(DeliveryConfirmation).filter(
+            DeliveryConfirmation.trip_id == trip.id
+        ).first()
 
-            # ✅ use final_wtn_code (auto-filled)
-            wtn_code=final_wtn_code,
+        if existing_confirmation:
+            confirmation = existing_confirmation
 
-            ip_address=ip_address,
-            user_agent=user_agent,
-            latitude=latitude,
-            longitude=longitude,
-            extra_notes=extra_notes,
+            # update fields (keep existing if new empty)
+            if external_client_name:
+                confirmation.external_client_name = external_client_name
+            if external_client_email:
+                confirmation.external_client_email = external_client_email
 
-            # ✅ IMPORTANT MERGE: do NOT always set both timestamps.
-            # Pickup timestamp only when pickup_photo is provided.
-            pickup_at=now_utc() if pickup_photo else None,
-            # Dropoff timestamp only when dropoff_photo is provided.
-            dropoff_at=now_utc() if dropoff_photo else None,
+            # always keep latest WTN if provided/available
+            confirmation.wtn_code = final_wtn_code
 
-            disposal_facility_name=disposal_facility_name,
-            disposal_facility_address=disposal_facility_address,
-        )
+            if latitude is not None:
+                confirmation.latitude = latitude
+            if longitude is not None:
+                confirmation.longitude = longitude
 
-        logger.info(f"[CONFIRM] Confirmation created (pre-upload) | id={confirmation.id}")
-        print(f"[CONFIRM] Confirmation created (pre-upload) | id={confirmation.id}")
+            if extra_notes is not None:
+                confirmation.extra_notes = extra_notes
+
+            if disposal_facility_name is not None:
+                confirmation.disposal_facility_name = disposal_facility_name
+            if disposal_facility_address is not None:
+                confirmation.disposal_facility_address = disposal_facility_address
+
+            # timestamps only when that step happens (don’t overwrite)
+            if pickup_photo and not confirmation.pickup_at:
+                confirmation.pickup_at = now_utc()
+            if dropoff_photo:
+                confirmation.dropoff_at = now_utc()
+
+            # optional audit fields
+            confirmation.ip_address = ip_address
+            confirmation.user_agent = user_agent
+            confirmation.pin_entered = pin or confirmation.pin_entered
+
+            db.add(confirmation)
+            db.flush()
+
+        else:
+            confirmation = create_delivery_confirmation(
+                db=db,
+                trip_id=trip.id,
+                organization_id=org_id,
+                pin_entered=pin,
+                external_client_name=external_client_name,
+                external_client_email=external_client_email,
+
+                # ✅ use final_wtn_code (auto-filled)
+                wtn_code=final_wtn_code,
+
+                ip_address=ip_address,
+                user_agent=user_agent,
+                latitude=latitude,
+                longitude=longitude,
+                extra_notes=extra_notes,
+
+                # ✅ IMPORTANT MERGE: do NOT always set both timestamps.
+                pickup_at=now_utc() if pickup_photo else None,
+                dropoff_at=now_utc() if dropoff_photo else None,
+
+                disposal_facility_name=disposal_facility_name,
+                disposal_facility_address=disposal_facility_address,
+            )
+
+        logger.info(f"[CONFIRM] Confirmation ready (pre-upload) | id={confirmation.id}")
+        print(f"[CONFIRM] Confirmation ready (pre-upload) | id={confirmation.id}")
+        # ✅✅✅ END UPDATED PART ONLY
 
         # Upload files
         for field_name, upload_file in file_mapping.items():
