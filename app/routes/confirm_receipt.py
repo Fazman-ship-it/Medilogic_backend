@@ -480,10 +480,23 @@ async def submit_delivery_confirmation(
         logger.info("[CONFIRM] File validation passed")
         print("[CONFIRM] File validation passed")
 
-        # ✅✅✅ UPDATED PART ONLY: REUSE existing confirmation if it exists (so pickup saves and persists)
-        existing_confirmation = db.query(DeliveryConfirmation).filter(
-            DeliveryConfirmation.trip_id == trip.id
-        ).first()
+        # ✅✅✅ UPDATED PART ONLY: choose the right confirmation row
+        if current_user:
+            # internal: reuse by trip/org
+            existing_confirmation = db.query(DeliveryConfirmation).filter(
+                DeliveryConfirmation.trip_id == trip.id,
+                DeliveryConfirmation.organization_id == org_id
+            ).first()
+        else:
+            # external: MUST reuse the token row (same row GET /confirm uses)
+            existing_confirmation = db.query(DeliveryConfirmation).filter(
+                DeliveryConfirmation.access_token == token,
+                DeliveryConfirmation.organization_id == org_id
+            ).first()
+
+        print("TOKEN CONFIRMATION ID:", getattr(confirmation, "id", None))
+        print("EXISTING CONFIRMATION ID:", getattr(existing_confirmation, "id", None))
+        # ✅✅✅ END UPDATED PART ONLY
 
         if existing_confirmation:
             confirmation = existing_confirmation
@@ -552,7 +565,6 @@ async def submit_delivery_confirmation(
 
         logger.info(f"[CONFIRM] Confirmation ready (pre-upload) | id={confirmation.id}")
         print(f"[CONFIRM] Confirmation ready (pre-upload) | id={confirmation.id}")
-        # ✅✅✅ END UPDATED PART ONLY
 
         # Upload files
         for field_name, upload_file in file_mapping.items():
