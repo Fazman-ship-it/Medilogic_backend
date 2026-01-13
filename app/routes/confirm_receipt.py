@@ -124,7 +124,6 @@ from app.config import settings
 from redis.asyncio import Redis
 import logging
 
-
 @router.get("/confirm", response_model=dict)
 async def get_delivery_confirmation_prefill(
     token: str = Query(...),
@@ -203,20 +202,36 @@ async def get_delivery_confirmation_prefill(
         "raw_delivery_type": str(raw_delivery_type) if raw_delivery_type else None,
         "custom_delivery_description": custom_desc,
 
-        # ✅ saved progress so the form can show what was already entered
+        # ✅ UPDATED: return full “saved state” + booleans so frontend can persist UI
         "saved": {
+            # timestamps
             "pickup_at": confirmation.pickup_at,
             "dropoff_at": confirmation.dropoff_at,
+
+            # data fields
             "wtn_code": confirmation.wtn_code,
             "disposal_facility_name": confirmation.disposal_facility_name,
             "disposal_facility_address": confirmation.disposal_facility_address,
             "extra_notes": confirmation.extra_notes,
+            "latitude": confirmation.latitude,
+            "longitude": confirmation.longitude,
+
+            # file state (so UI doesn’t “clear”)
+            "has_signature_image": bool(getattr(confirmation, "signature_image_path", None)),
+            "has_pickup_photo": bool(getattr(confirmation, "pickup_photo_path", None)),
+            "has_dropoff_photo": bool(getattr(confirmation, "dropoff_photo_path", None)),
+            "has_facility_signature": bool(getattr(confirmation, "disposal_facility_signature_path", None)),
+
+            # optional: include the URLs directly too (frontend can preview immediately)
+            "signature_image_url": presigned_urls.get("signature_image_path"),
+            "pickup_photo_url": presigned_urls.get("pickup_photo_path"),
+            "dropoff_photo_url": presigned_urls.get("dropoff_photo_path"),
+            "facility_signature_url": presigned_urls.get("disposal_facility_signature_path"),
+            "pdf_receipt_url": presigned_urls.get("pdf_receipt_path"),
         },
 
         "presigned_urls": presigned_urls,
     }
-
-
 # Logging (Render-friendly)
 # --------------------------
 logger = logging.getLogger("confirm_receipt")
