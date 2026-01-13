@@ -318,36 +318,30 @@ async def submit_delivery_confirmation(
             ).first()
 
         else:
+            # ✅ UPDATED PART ONLY (external users now use stable access_token)
             if not token:
                 raise HTTPException(status_code=400, detail="Token is required for external users")
 
-            try:
-                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            except ExpiredSignatureError:
-                logger.warning("[CONFIRM] Token expired")
-                raise HTTPException(
-                    status_code=401,
-                    detail="Token has expired. Please request a new confirmation link."
-                )
-            except InvalidTokenError:
-                logger.warning("[CONFIRM] Invalid token")
-                raise HTTPException(
-                    status_code=401,
-                    detail="Invalid token. Please request a new confirmation link."
-                )
+            confirmation = db.query(DeliveryConfirmation).filter(
+                DeliveryConfirmation.access_token == token
+            ).first()
 
-            trip_id_str = payload.get("trip_id")
-            org_id_str = payload.get("organization_id")
+            if not confirmation:
+                raise HTTPException(status_code=401, detail="Invalid token")
 
-            if not trip_id_str or not org_id_str:
-                raise HTTPException(status_code=400, detail="Invalid token payload")
-
-            trip_id = UUID(trip_id_str)
-            org_id = UUID(org_id_str)
+            if confirmation.token_expires_at and confirmation.token_expires_at < now_utc():
+                raise HTTPException(status_code=401, detail="Token has expired")
 
             trip = db.query(Trip).filter(
-                Trip.id == trip_id,Trip.organization_id == org_id
+                Trip.id == confirmation.trip_id,
+                Trip.organization_id == confirmation.organization_id
             ).first()
+
+            if not trip:
+                raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
+
+            org_id = confirmation.organization_id
+            # ✅ END UPDATED PART
 
         if not trip:
             raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
