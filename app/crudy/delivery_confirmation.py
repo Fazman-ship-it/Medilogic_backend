@@ -41,16 +41,20 @@ def create_delivery_confirmation(
         raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
 
     # --- Optional PIN check (STRICT) ---
+    # ✅ FIX: Only enforce PIN here if the caller actually provided a PIN.
+    # Draft saves will pass pin_entered=None (your POST /confirm already does this).
     pin_required = bool(getattr(trip, "requires_pin", False) or getattr(trip, "pin_required", False))
-    if pin_required:
-        if not pin_entered:
-            raise HTTPException(status_code=400, detail="PIN is required")
 
+    pin_clean = pin_entered.strip() if isinstance(pin_entered, str) else None
+    if pin_required and pin_clean:
         # ✅ if requires_pin is enabled, the trip MUST have a confirmation_pin
         if not getattr(trip, "confirmation_pin", None):
-            raise HTTPException(status_code=400, detail="This trip requires a PIN but no PIN is set. Contact admin.")
+            raise HTTPException(
+                status_code=400,
+                detail="This trip requires a PIN but no PIN is set. Contact admin."
+            )
 
-        if trip.confirmation_pin != pin_entered:
+        if trip.confirmation_pin != pin_clean:
             raise HTTPException(status_code=401, detail="Invalid PIN")
 
     # ✅ IMPORTANT CHANGE:
@@ -61,7 +65,7 @@ def create_delivery_confirmation(
     confirmation = DeliveryConfirmation(
         trip_id=trip.id,
         organization_id=organization_id,
-        pin_entered=pin_entered,
+        pin_entered=pin_clean,  # store cleaned pin if provided
 
         wtn_code=wtn_code,
 
