@@ -13,7 +13,6 @@ from app.utilites.shortid import ShortIDMixin
 
 router = APIRouter(prefix="/chatbot", tags=["Chatbot"])
 
-
 def role_help_menu(role: str) -> Tuple[str, List[str]]:
     """Return a role-specific help string and options list."""
     if role == "driver":
@@ -98,13 +97,13 @@ def chatbot(
     if any(k in text for k in ["hi", "hello", "hey"]) and len(text.split()) <= 2:
         reply = f"Hello {current_user.name or 'there'} — how can I help?"
         options = ["help", "trip status", "next pickup", "urgent trips"]
-        log_activity(db, current_user.id, "chat_greet", details="User greeted chatbot", organization_id=current_user.organization_id)
+        log_activity(db, current_user.id, "chat_greet", details="User greeted chatbot")
         return ChatResponse(reply=reply, options=options)
 
     if "help" in text or "what can you do" in text or "commands" in text:
         help_text, options = role_help_menu(current_user.role)
         reply = f"{help_text}\nYou can try: {', '.join(options)}"
-        log_activity(db, current_user.id, "chat_help", details="User requested help", organization_id=current_user.organization_id)
+        log_activity(db, current_user.id, "chat_help", details="User requested help")
         return ChatResponse(reply=reply, options=options)
 
     # --- 2) Basic user info ---
@@ -160,7 +159,7 @@ def chatbot(
                 "pickup_location": trip.pickup_location,
                 "dropoff_location": trip.dropoff_location
             }
-            log_activity(db, current_user.id, "chat_trip_lookup", details=f"Looked up trip {identifier}", organization_id=current_user.organization_id, trip_id=trip.id)
+            log_activity(db, current_user.id, "chat_trip_lookup", details=f"Looked up trip {identifier}", trip_id=trip.id)
             return ChatResponse(reply=f"Trip {trip.short_id} is '{trip.status}' (priority: {trip.priority})", data=data)
         return ChatResponse(reply="Please provide a Trip ID like: trip <id>")
 
@@ -174,7 +173,7 @@ def chatbot(
         ).all()
         summary = f"You have {len(urgent)} urgent trips."
         items = [{"id": str(t.id), "short_id": t.short_id, "scheduled_time": t.scheduled_time.isoformat() if t.scheduled_time else None} for t in urgent[:10]]
-        log_activity(db, current_user.id, "chat_urgent_trips", details=f"Fetched {len(urgent)} urgent trips", organization_id=current_user.organization_id)
+        log_activity(db, current_user.id, "chat_urgent_trips", details=f"Fetched {len(urgent)} urgent trips")
         return ChatResponse(reply=summary, data={"items": items})
 
     if "next trip" in text or "next pickup" in text:
@@ -184,7 +183,7 @@ def chatbot(
         ).order_by(models.Trip.scheduled_time.asc())
         next_trip = q.first()
         if next_trip:
-            log_activity(db, current_user.id, "chat_next_trip", details=f"Fetched next trip {next_trip.id}", organization_id=current_user.organization_id, trip_id=next_trip.id)
+            log_activity(db, current_user.id, "chat_next_trip", details=f"Fetched next trip {next_trip.id}", trip_id=next_trip.id)
             return ChatResponse(reply=f"Next trip {next_trip.short_id} scheduled at {next_trip.scheduled_time}", data={"id": str(next_trip.id), "short_id": next_trip.short_id})
         return ChatResponse(reply="No upcoming trips found.")
 
@@ -192,7 +191,7 @@ def chatbot(
     if "proof of delivery" in text or text.startswith("pod") or "pod" in text:
         pod = db.query(models.POD).filter_by(organization_id=current_user.organization_id).order_by(models.POD.created_at.desc()).first()
         if pod:
-            log_activity(db, current_user.id, "chat_pod_lookup", details=f"Fetched latest POD {pod.id}", organization_id=current_user.organization_id)
+            log_activity(db, current_user.id, "chat_pod_lookup", details=f"Fetched latest POD {pod.id}")
             return ChatResponse(reply=f"Latest POD at {pod.created_at}", data={"files": pod.files, "created_at": pod.created_at.isoformat()})
         return ChatResponse(reply="No proof of delivery found for your organization.")
 
@@ -215,7 +214,7 @@ def chatbot(
                 inc = find_by_uuid_or_short_id(incidents, identifier)
                 if not inc:
                     return ChatResponse(reply="Incident not found.")
-                log_activity(db, current_user.id, "chat_incident_lookup", details=f"Looked up incident {identifier}", organization_id=current_user.organization_id)
+                log_activity(db, current_user.id, "chat_incident_lookup", details=f"Looked up incident {identifier}")
                 return ChatResponse(reply=f"Incident {inc.short_id} - {inc.description} - status: {inc.status}", data={"id": str(inc.id), "short_id": inc.short_id, "status": inc.status, "description": inc.description})
         if "report incident" in text or "open incident" in text:
             return ChatResponse(reply="To report an incident, please use the 'Report Incident' form in the dashboard or call support. Provide description, location, and photos if available.")
@@ -233,7 +232,7 @@ def chatbot(
                 inv = find_by_uuid_or_short_id(invoices, identifier)
                 if not inv:
                     return ChatResponse(reply="Invoice not found.")
-                log_activity(db, current_user.id, "chat_invoice_lookup", details=f"Looked up invoice {identifier}", organization_id=current_user.organization_id)
+                log_activity(db, current_user.id, "chat_invoice_lookup", details=f"Looked up invoice {identifier}")
                 return ChatResponse(
                     reply=f"Invoice {inv.short_id} - Amount: {inv.amount} - Status: {inv.status}",
                     data={"id": str(inv.id), "short_id": inv.short_id, "amount": inv.amount, "status": inv.status, "pdf_url": getattr(inv, "pdf_url", None)}
@@ -252,7 +251,6 @@ def chatbot(
                 log_activity(
                     db, current_user.id, "chat_delivery_confirmation_lookup",
                     details=f"Looked up delivery confirmation {identifier}",
-                    organization_id=current_user.organization_id,
                     trip_id=confirmation.trip_id
                 )
                 data = {
@@ -284,5 +282,5 @@ def chatbot(
         return ChatResponse(reply="Please provide a Delivery ID like: delivery <id>")
 
     # --- 9) Fallback ---
-    log_activity(db, current_user.id, "chat_fallback", details=f"Unrecognized chat message: {raw}", organization_id=current_user.organization_id)
+    log_activity(db, current_user.id, "chat_fallback", details=f"Unrecognized chat message: {raw}")
     return ChatResponse(reply="Sorry, I didn't understand that. Try 'help' to see what I can do.")
