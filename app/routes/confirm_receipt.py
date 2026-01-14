@@ -725,115 +725,120 @@ async def submit_delivery_confirmation(
     # Email (non-blocking)
     # --------------------------
     try:
-        attachments = []
-        short_ref = str(trip.id)[:8]
+        # ✅ ONLY EMAIL ON FINAL SUBMIT (when dropoff_photo exists)
+        if not dropoff_photo:
+            logger.info("[CONFIRM] Email skipped (draft save - no dropoff photo)")
+            print("[CONFIRM] Email skipped (draft save - no dropoff photo)")
+        else:
+            attachments = []
+            short_ref = str(trip.id)[:8]
 
-        csv_buffer = io.StringIO()
-        csv_writer = csv.writer(csv_buffer)
+            csv_buffer = io.StringIO()
+            csv_writer = csv.writer(csv_buffer)
 
-        csv_writer.writerow([
-            "Trip ID",
-            "Short Ref",
-            "Client Name",
-            "Client Email",
-            "Driver Name",
-            "WTN Code",
-            "Pickup Timestamp",
-            "Dropoff Timestamp",
-            "Signature URL",
-            "Pickup Photo URL",
-            "Dropoff Photo URL",
-            "Facility Name",
-            "Facility Address",
-            "Facility Signature URL",
-            "Notes",
-            "Latitude",
-            "Longitude",
-        ])
+            csv_writer.writerow([
+                "Trip ID",
+                "Short Ref",
+                "Client Name",
+                "Client Email",
+                "Driver Name",
+                "WTN Code",
+                "Pickup Timestamp",
+                "Dropoff Timestamp",
+                "Signature URL",
+                "Pickup Photo URL",
+                "Dropoff Photo URL",
+                "Facility Name",
+                "Facility Address",
+                "Facility Signature URL",
+                "Notes",
+                "Latitude",
+                "Longitude",
+            ])
 
-        csv_writer.writerow([
-            str(trip.id),
-            short_ref,
-            confirmation.external_client_name,
-            confirmation.external_client_email,
-            getattr(trip, "driver_name", None),
-            confirmation.wtn_code,
-            confirmation.pickup_at,
-            confirmation.dropoff_at,
-            presigned_urls.get("signature_image_path"),
-            presigned_urls.get("pickup_photo_path"),
-            presigned_urls.get("dropoff_photo_path"),
-            confirmation.disposal_facility_name,
-            confirmation.disposal_facility_address,
-            presigned_urls.get("disposal_facility_signature_path"),
-            confirmation.extra_notes,
-            confirmation.latitude,
-            confirmation.longitude,
-        ])
+            csv_writer.writerow([
+                str(trip.id),
+                short_ref,
+                confirmation.external_client_name,
+                confirmation.external_client_email,
+                getattr(trip, "driver_name", None),
+                confirmation.wtn_code,
+                confirmation.pickup_at,
+                confirmation.dropoff_at,
+                presigned_urls.get("signature_image_path"),
+                presigned_urls.get("pickup_photo_path"),
+                presigned_urls.get("dropoff_photo_path"),
+                confirmation.disposal_facility_name,
+                confirmation.disposal_facility_address,
+                presigned_urls.get("disposal_facility_signature_path"),
+                confirmation.extra_notes,
+                confirmation.latitude,
+                confirmation.longitude,
+            ])
 
-        csv_bytes = csv_buffer.getvalue().encode("utf-8")
+            csv_bytes = csv_buffer.getvalue().encode("utf-8")
 
-        attachments.append({
-            "ContentType": "text/csv",
-            "Filename": f"trip_{short_ref}_confirmation.csv",
-            "Base64Content": base64.b64encode(csv_bytes).decode("utf-8"),
-        })
-
-        if pdf_bytes:
             attachments.append({
-                "ContentType": "application/pdf",
-                "Filename": f"trip_{short_ref}_receipt.pdf",
-                "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8"),
+                "ContentType": "text/csv",
+                "Filename": f"trip_{short_ref}_confirmation.csv",
+                "Base64Content": base64.b64encode(csv_bytes).decode("utf-8"),
             })
 
-        recipients = set()
+            if pdf_bytes:
+                attachments.append({
+                    "ContentType": "application/pdf",
+                    "Filename": f"trip_{short_ref}_receipt.pdf",
+                    "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8"),
+                })
 
-        if confirmation.external_client_email:
-            recipients.add(confirmation.external_client_email.strip().lower())
+            recipients = set()
 
-        try:
-            if getattr(trip, "client_id", None):
-                client_user = db.query(User).filter(User.id == trip.client_id).first()
-                if client_user and getattr(client_user, "email", None):
-                    recipients.add(client_user.email.strip().lower())
-        except Exception:
-            pass
+            if confirmation.external_client_email:
+                recipients.add(confirmation.external_client_email.strip().lower())
 
-        links_lines = []
-        if presigned_urls.get("pickup_photo_path"):
-            links_lines.append(f"Pickup photo: {presigned_urls['pickup_photo_path']}")
-        if presigned_urls.get("dropoff_photo_path"):
-            links_lines.append(f"Dropoff photo: {presigned_urls['dropoff_photo_path']}")
-        if presigned_urls.get("signature_image_path"):
-            links_lines.append(f"Signature: {presigned_urls['signature_image_path']}")
-        if presigned_urls.get("disposal_facility_signature_path"):
-            links_lines.append(f"Facility signature: {presigned_urls['disposal_facility_signature_path']}")
-        if presigned_urls.get("pdf_receipt_path"):
-            links_lines.append(f"PDF receipt: {presigned_urls['pdf_receipt_path']}")
+            try:
+                if getattr(trip, "client_id", None):
+                    client_user = db.query(User).filter(User.id == trip.client_id).first()
+                    if client_user and getattr(client_user, "email", None):
+                        recipients.add(client_user.email.strip().lower())
+            except Exception:
+                pass
 
-        links_text = "\n".join(links_lines) if links_lines else "No file links available."
+            links_lines = []
+            if presigned_urls.get("pickup_photo_path"):
+                links_lines.append(f"Pickup photo: {presigned_urls['pickup_photo_path']}")
+            if presigned_urls.get("dropoff_photo_path"):
+                links_lines.append(f"Dropoff photo: {presigned_urls['dropoff_photo_path']}")
+            if presigned_urls.get("signature_image_path"):
+                links_lines.append(f"Signature: {presigned_urls['signature_image_path']}")
+            if presigned_urls.get("disposal_facility_signature_path"):
+                links_lines.append(f"Facility signature: {presigned_urls['disposal_facility_signature_path']}")
+            if presigned_urls.get("pdf_receipt_path"):
+                links_lines.append(f"PDF receipt: {presigned_urls['pdf_receipt_path']}")
 
-        email_body = (
-            f"Your trip ({short_ref}) has been updated.\n\n"
-            "Attached: CSV + PDF (if generated).\n\n"
-            "Quick links:\n"
-            f"{links_text}\n\n"
-            "The CSV also contains these links plus facility details."
-        )
+            links_text = "\n".join(links_lines) if links_lines else "No file links available."
 
-        for email in recipients:
-            logger.info(f"[CONFIRM] Sending email to {email}")
-            print(f"[CONFIRM] Sending email to {email}")
-
-            send_email(
-                to_email=email,
-                subject=f"Trip {short_ref} Delivery Update - Medilogic",
-                body=email_body,
-                attachments=attachments,
+            email_body = (
+                f"Your trip ({short_ref}) has been delivered.\n\n"
+                "Attached: CSV + PDF (if generated).\n\n"
+                "Quick links:\n"
+                f"{links_text}\n\n"
+                "The CSV also contains these links plus facility details."
             )
 
-        logger.info("[CONFIRM] Email sent OK")
-        print("[CONFIRM] Email sent OK")
+            for email in recipients:
+                logger.info(f"[CONFIRM] Sending FINAL email to {email}")
+                print(f"[CONFIRM] Sending FINAL email to {email}")
+
+                send_email(
+                    to_email=email,
+                    subject=f"Trip {short_ref} Delivery Completed - Medilogic",
+                    body=email_body,
+                    attachments=attachments,
+                )
+
+            logger.info("[CONFIRM] Final email sent OK")
+            print("[CONFIRM] Final email sent OK")
 
     except Exception as e:
         logger.exception(f"[CONFIRM] Email failed (ignored): {e}")
