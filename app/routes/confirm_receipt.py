@@ -232,6 +232,8 @@ async def get_delivery_confirmation_prefill(
 
         "presigned_urls": presigned_urls,
     }
+
+
 # Logging (Render-friendly)
 # --------------------------
 logger = logging.getLogger("confirm_receipt")
@@ -256,6 +258,7 @@ _RATE_LIMIT_MAX_ATTEMPTS = 10
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 from jwt import ExpiredSignatureError, InvalidTokenError
+
 
 @router.post("/confirm", response_model=dict)
 async def submit_delivery_confirmation(
@@ -318,6 +321,8 @@ async def submit_delivery_confirmation(
         logger.exception(f"[CONFIRM] Redis failed (ignored): {e}")
         print("[CONFIRM] Redis failed (ignored):", repr(e))
 
+    token_confirmation = None  # ✅ so prints work for both internal/external
+
     # --------------------------
     # Identify user type & fetch trip
     # --------------------------
@@ -333,30 +338,29 @@ async def submit_delivery_confirmation(
             ).first()
 
         else:
-            # ✅ UPDATED PART ONLY (external users now use stable access_token)
+            # ✅ external users: use stable access_token
             if not token:
                 raise HTTPException(status_code=400, detail="Token is required for external users")
 
-            confirmation = db.query(DeliveryConfirmation).filter(
+            token_confirmation = db.query(DeliveryConfirmation).filter(
                 DeliveryConfirmation.access_token == token
             ).first()
 
-            if not confirmation:
+            if not token_confirmation:
                 raise HTTPException(status_code=401, detail="Invalid token")
 
-            if confirmation.token_expires_at and confirmation.token_expires_at < now_utc():
+            if token_confirmation.token_expires_at and token_confirmation.token_expires_at < now_utc():
                 raise HTTPException(status_code=401, detail="Token has expired")
 
             trip = db.query(Trip).filter(
-                Trip.id == confirmation.trip_id,
-                Trip.organization_id == confirmation.organization_id
+                Trip.id == token_confirmation.trip_id,
+                Trip.organization_id == token_confirmation.organization_id
             ).first()
 
             if not trip:
                 raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
 
-            org_id = confirmation.organization_id
-            # ✅ END UPDATED PART
+            org_id = token_confirmation.organization_id
 
         if not trip:
             raise HTTPException(status_code=404, detail="Trip not found or unauthorized")
@@ -371,6 +375,9 @@ async def submit_delivery_confirmation(
         print("[CONFIRM] Trip lookup failed:", repr(e))
         raise HTTPException(status_code=500, detail="Internal error while fetching trip")
 
+    # ✅ Decide draft vs final submit (final = dropoff_photo present)
+    is_final_submit = bool(dropoff_photo)
+
     # --------------------------
     # ✅ AUTO-FILL CLIENT NAME/EMAIL (if trip has client)
     # --------------------------
@@ -379,7 +386,6 @@ async def submit_delivery_confirmation(
         if getattr(trip, "client_id", None):
             client_user = db.query(User).filter(User.id == trip.client_id).first()
 
-        # Only fill if frontend didn’t send anything
         if not external_client_name:
             external_client_name = (
                 getattr(client_user, "name", None)
@@ -402,23 +408,21 @@ async def submit_delivery_confirmation(
     # --------------------------
     trip_requires_wtn = bool(getattr(trip, "requires_wtn", False))
     trip_wtn_serial = getattr(trip, "wtn_serial", None)
-
-    # Final WTN: prefer form value, else trip value
     final_wtn_code = (wtn_code or trip_wtn_serial or None)
 
-    # Enforce WTN if required
-    if trip_requires_wtn and not final_wtn_code:
+    # ✅ IMPORTANT FIX:
+    # Only enforce WTN when FINAL submit (dropoff) happens.
+    if is_final_submit and trip_requires_wtn and not final_wtn_code:
         raise HTTPException(status_code=400, detail="WTN code is required for this trip")
 
     # --------------------------
-    # ✅ Duplicate confirmation check (FIXED: use fields you actually have)
+    # ✅ Duplicate confirmation check (leave as-is)
     # --------------------------
     try:
         existing_confirmation = db.query(DeliveryConfirmation).filter(
             DeliveryConfirmation.trip_id == trip.id
         ).first()
 
-        # ✅ block if trip is delivered OR dropoff already exists
         if getattr(trip, "is_delivered", False) or (
             existing_confirmation and getattr(existing_confirmation, "dropoff_photo_path", None)
         ):
@@ -432,11 +436,14 @@ async def submit_delivery_confirmation(
         raise HTTPException(status_code=500, detail="Internal error during duplicate check")
 
     # --------------------------
-    # PIN validation (presence only here; strict match happens in create_delivery_confirmation)
+    # ✅ PIN validation (FINAL submit only)
     # --------------------------
     try:
         pin_required = bool(getattr(trip, "requires_pin", False) or getattr(trip, "pin_required", False))
-        if pin_required:
+
+        # ✅ IMPORTANT FIX:
+        # Only enforce PIN on FINAL submit (dropoff) so draft saves don’t get blocked.
+        if is_final_submit and pin_required:
             expected_len = 6  # must match generate_delivery_pin()
             if not pin:
                 raise HTTPException(status_code=400, detail="PIN is required")
@@ -447,6 +454,7 @@ async def submit_delivery_confirmation(
                     status_code=400,
                     detail=f"PIN must be exactly {expected_len} digits"
                 )
+
     except HTTPException:
         raise
     except Exception as e:
@@ -509,20 +517,18 @@ async def submit_delivery_confirmation(
                 DeliveryConfirmation.organization_id == org_id
             ).first()
 
-        print("TOKEN CONFIRMATION ID:", getattr(confirmation, "id", None))
+        print("TOKEN CONFIRMATION ID:", getattr(token_confirmation, "id", None))
         print("EXISTING CONFIRMATION ID:", getattr(existing_confirmation, "id", None))
         # ✅✅✅ END UPDATED PART ONLY
 
         if existing_confirmation:
             confirmation = existing_confirmation
 
-            # update fields (keep existing if new empty)
             if external_client_name:
                 confirmation.external_client_name = external_client_name
             if external_client_email:
                 confirmation.external_client_email = external_client_email
 
-            # always keep latest WTN if provided/available
             confirmation.wtn_code = final_wtn_code
 
             if latitude is not None:
@@ -538,42 +544,42 @@ async def submit_delivery_confirmation(
             if disposal_facility_address is not None:
                 confirmation.disposal_facility_address = disposal_facility_address
 
-            # timestamps only when that step happens (don’t overwrite)
             if pickup_photo and not confirmation.pickup_at:
                 confirmation.pickup_at = now_utc()
             if dropoff_photo:
                 confirmation.dropoff_at = now_utc()
 
-            # optional audit fields
             confirmation.ip_address = ip_address
             confirmation.user_agent = user_agent
-            confirmation.pin_entered = pin or confirmation.pin_entered
+
+            # ✅ only store pin if provided (and it will be required on final anyway)
+            if pin:
+                confirmation.pin_entered = pin
 
             db.add(confirmation)
             db.flush()
 
         else:
+            # ✅ IMPORTANT FIX:
+            # If this is a DRAFT save, DO NOT pass pin into create_delivery_confirmation()
+            # (because create_delivery_confirmation() does strict PIN matching).
+            pin_for_create = pin if is_final_submit else None
+
             confirmation = create_delivery_confirmation(
                 db=db,
                 trip_id=trip.id,
                 organization_id=org_id,
-                pin_entered=pin,
+                pin_entered=pin_for_create,
                 external_client_name=external_client_name,
                 external_client_email=external_client_email,
-
-                # ✅ use final_wtn_code (auto-filled)
                 wtn_code=final_wtn_code,
-
                 ip_address=ip_address,
                 user_agent=user_agent,
                 latitude=latitude,
                 longitude=longitude,
                 extra_notes=extra_notes,
-
-                # ✅ IMPORTANT MERGE: do NOT always set both timestamps.
                 pickup_at=now_utc() if pickup_photo else None,
                 dropoff_at=now_utc() if dropoff_photo else None,
-
                 disposal_facility_name=disposal_facility_name,
                 disposal_facility_address=disposal_facility_address,
             )
@@ -602,7 +608,6 @@ async def submit_delivery_confirmation(
         logger.info("[CONFIRM] File uploads done")
         print("[CONFIRM] File uploads done")
 
-        # ✅ IMPORTANT MERGE:
         # Finalise delivery ONLY if dropoff_photo is provided
         delivered_now = False
         if dropoff_photo:
@@ -720,7 +725,6 @@ async def submit_delivery_confirmation(
     # Email (non-blocking)
     # --------------------------
     try:
-        # ✅ Keep your attachments as-is
         attachments = []
         short_ref = str(trip.id)[:8]
 
@@ -782,7 +786,6 @@ async def submit_delivery_confirmation(
                 "Base64Content": base64.b64encode(pdf_bytes).decode("utf-8"),
             })
 
-        # ✅ Collect recipients (external + internal), avoid duplicates
         recipients = set()
 
         if confirmation.external_client_email:
@@ -796,7 +799,6 @@ async def submit_delivery_confirmation(
         except Exception:
             pass
 
-        # ✅ MERGE: Put clickable links OUTSIDE the CSV in the email body too
         links_lines = []
         if presigned_urls.get("pickup_photo_path"):
             links_lines.append(f"Pickup photo: {presigned_urls['pickup_photo_path']}")
@@ -819,7 +821,6 @@ async def submit_delivery_confirmation(
             "The CSV also contains these links plus facility details."
         )
 
-        # ✅ Send to everyone we found
         for email in recipients:
             logger.info(f"[CONFIRM] Sending email to {email}")
             print(f"[CONFIRM] Sending email to {email}")
