@@ -20,7 +20,7 @@ router = APIRouter(prefix="/Medilogic_drivers", tags=[" Medilogic_Drivers"])
 
 @router.post("/basic", response_model=schemas.MedilogicDriverOut)
 def submit_basic_driver(
-    payload: schemas.MedilogicDriverBase,  # 🔑 use a schema with password fields
+    payload: schemas.MedilogicDriverCreate,  # 🔑 use a schema with password fields
     db: Session = Depends(get_db),
 ):
     """
