@@ -279,6 +279,7 @@ from app.config import settings
 from app.auth import create_access_token
 from app. utilites.qr import generate_qr_code_base64
 from app.utilites.time_utilities import now_utc
+from app.utilites.storage_utilites import handle_file_upload, generate_presigned_url_async, upload_file_to_s3_async,delete_file_from_s3
 
 @router.get("/trips/{trip_id}/confirmation", response_model=dict)
 async def get_driver_trip_confirmation(
