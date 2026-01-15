@@ -612,7 +612,7 @@ async def submit_delivery_confirmation(
         delivered_now = False
         if dropoff_photo:
             trip.is_delivered = True
-            trip.status = "delivered"
+            trip.status = "completed"
             trip.delivered_at = now_utc()
             trip.delivery_confirmed_at = now_utc()
             delivered_now = True
