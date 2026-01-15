@@ -303,6 +303,14 @@ async def get_driver_trip_confirmation(
         DeliveryConfirmation.organization_id == current_user.organization_id
     ).first()
 
+    # ✅ NEW (minimal): try compute receipt_url if PDF exists
+    receipt_url = None
+    try:
+        if confirmation and getattr(confirmation, "pdf_receipt_path", None):
+            receipt_url = await generate_presigned_url_async(confirmation.pdf_receipt_path)
+    except Exception:
+        receipt_url = None
+
     # ✅ If delivered -> do NOT create new token/link/QR
     if trip.is_delivered or str(trip.status).lower() == "delivered":
         return {
@@ -325,7 +333,10 @@ async def get_driver_trip_confirmation(
             "confirmation_url": None,
             "qr_code_base64": None,
             "token_expires_at": None,
-            "status": "completed"
+            "status": "completed",
+
+            # ✅ NEW (minimal): receipt link if available
+            "receipt_url": receipt_url,
         }
 
     # ✅ Create confirmation row if missing (only if not delivered)
@@ -361,6 +372,14 @@ async def get_driver_trip_confirmation(
     # completed if dropoff uploaded or trip delivered
     completed = bool(trip.is_delivered) or bool(getattr(confirmation, "dropoff_photo_path", None))
 
+    # ✅ NEW (minimal): recompute receipt_url now that confirmation definitely exists
+    receipt_url = None
+    try:
+        if getattr(confirmation, "pdf_receipt_path", None):
+            receipt_url = await generate_presigned_url_async(confirmation.pdf_receipt_path)
+    except Exception:
+        receipt_url = None
+
     return {
         "trip_id": str(trip.id),
         "driver_name": trip.driver_name,
@@ -385,7 +404,10 @@ async def get_driver_trip_confirmation(
         "qr_code_base64": qr_base64,
         "token_expires_at": confirmation.token_expires_at,
 
-        "status": "completed" if completed else "pending"
+        "status": "completed" if completed else "pending",
+
+        # ✅ NEW (minimal): receipt link if available (after final submit)
+        "receipt_url": receipt_url,
     }
     
 @router.get(
