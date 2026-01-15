@@ -833,12 +833,12 @@ class Medilogic_Driver(Base,ShortIDMixin):
     country = Column(String, nullable=False)
     state = Column(String, nullable=False)
     region = Column(String, nullable=True)
-    license_number = Column(String, nullable=False)
-    license_expiry = Column(Date, nullable=False)
-    vehicle_type = Column(String, nullable=False)  # e.g., "van", "truck"
+    license_number = Column(String, nullable=True)
+    license_expiry = Column(Date, nullable=True)
+    vehicle_type = Column(String, nullable=True)  # e.g., "van", "truck"
     zip_code = Column(String, nullable=True)
     experience_years = Column(Integer, nullable=True)
-    preferred_role = Column(String, nullable=False)  # e.g. "waste driver", "medical delivery"
+    preferred_role = Column(String, nullable=True)  # e.g. "waste driver", "medical delivery"
     status = Column(SqlEnum(MedilogicDriverStatus, name="driverstatus"), default=MedilogicDriverStatus.submitted, nullable=False)
     subscription_status = Column(SqlEnum(SubscriptionStatus, name="subscriptionstatus"), default=SubscriptionStatus.none, nullable=False)
     subscription_plan = Column(SqlEnum(SubscriptionPlan, name="subscriptionplan"), default=SubscriptionPlan.free, nullable=False)

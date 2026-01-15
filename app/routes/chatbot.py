@@ -191,9 +191,29 @@ def chatbot(
     if "proof of delivery" in text or text.startswith("pod") or "pod" in text:
         pod = db.query(models.POD).filter_by(organization_id=current_user.organization_id).order_by(models.POD.created_at.desc()).first()
         if pod:
-            log_activity(db, current_user.id, "chat_pod_lookup", details=f"Fetched latest POD {pod.id}")
-            return ChatResponse(reply=f"Latest POD at {pod.created_at}", data={"files": pod.files, "created_at": pod.created_at.isoformat()})
-        return ChatResponse(reply="No proof of delivery found for your organization.")
+            safe_files = []
+            try:
+                if pod.files:
+                    for f in pod.files:
+                        safe_files.append({
+                            "id": str(getattr(f, "id", "")) if getattr(f, "id", None) else None,
+                            "file_url": getattr(f, "file_url", None),
+                            "file_type": getattr(f, "file_type", None),
+                            "filename": getattr(f, "filename", None),
+                            "created_ at" : getattr(f, "created_at", None). isoformat() if getattr(f, "created_at", None) else None,
+                        })
+            except Exception:
+                safe_files = []
+                log_activity(db, current_user.id, "chat_pod_lookup", details=f"Fetched latest POD {pod.id}")
+            return ChatResponse(
+                reply=f"Latest POD {pod.short_id} for trip {pod.trip_id} created at {pod.created_at}",
+                data={
+                    "files": safe_files,
+                    "id": str(pod.id),
+                    "created_at": pod.created_at.isoformat() if pod.created_at else None,
+                }
+            )
+        return ChatResponse(reply="No Proof of Delivery records found for your organization.")
 
     # --- 6) Incidents ---
     if "incident" in text:
