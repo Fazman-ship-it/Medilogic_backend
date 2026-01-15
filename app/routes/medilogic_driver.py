@@ -20,15 +20,11 @@ router = APIRouter(prefix="/Medilogic_drivers", tags=[" Medilogic_Drivers"])
 
 @router.post("/basic", response_model=schemas.MedilogicDriverOut)
 def submit_basic_driver(
-    payload: schemas.MedilogicDriverCreate,  # 🔑 use a schema with password fields
+    payload: schemas.MedilogicDriverBase,
     db: Session = Depends(get_db),
 ):
     """
-    ✅ Step 1: A new driver submits their basic info (before approval).
-    - Checks for duplicate email
-    - Ensures passwords match
-    - Hashes password before saving
-    - Marks driver as submitted (inactive + unverified until super_admin approves)
+    Step 1: Driver submits BASIC application info only.
     """
 
     # ✅ Check duplicate email
@@ -45,29 +41,23 @@ def submit_basic_driver(
             detail="Driver already submitted or approved with this email"
         )
 
-    # ✅ Ensure passwords match
-    if payload.password != payload.confirm_password:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
-
-    # ✅ Hash password before saving
-    hashed_pw = get_password_hash(payload.password)
-
-    # ✅ Create driver record
+    # ✅ Create BASIC driver record ONLY
     driver = models.Medilogic_Driver(
         name=payload.name,
         email=payload.email,
+        phone_number=payload.phone_number,
+        zip_code=payload.zip_code,
         country=payload.country,
         state=payload.state,
-        hashed_password=hashed_pw,  # 🔑 store only hashed password
         status=models.MedilogicDriverStatus.submitted,
-        is_active=False,   # not active until approved
-        is_verified=False, # not verified until approved
+        is_active=False,
+        is_verified=False,
     )
+
     db.add(driver)
     db.commit()
     db.refresh(driver)
     return driver
-
 
 @router.patch("/super/{medilogic_driver_id}/approve", response_model=schemas.MedilogicDriverOut)
 def approve_driver(
