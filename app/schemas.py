@@ -1608,9 +1608,9 @@ class DeletedUser(BaseModel):
 class MedilogicDriverBase(BaseModel):
     name: str
     email: EmailStr
-    phone_number: str
-    country: str
-    state: str
+    phone_number: Optional[str]=None
+    country: Optional[str]=None
+    state: Optional[str]=None
     license_number: Optional[str]=None
     license_expiry: Optional[date]= None
     vehicle_type: Optional[str]=None
