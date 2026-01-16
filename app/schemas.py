@@ -1611,10 +1611,10 @@ class MedilogicDriverBase(BaseModel):
     phone_number: str
     country: str
     state: str
-    license_number: str
-    license_expiry: date
-    vehicle_type: str
-    preferred_role: str
+    license_number: Optional[str]=None
+    license_expiry: Optional[date]= None
+    vehicle_type: Optional[str]=None
+    preferred_role: Optional[str]=None
     accept_terms: bool
 
     # optional fields
