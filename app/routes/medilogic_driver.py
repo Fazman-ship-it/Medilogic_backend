@@ -152,24 +152,19 @@ def reject_driver(
 @router.get("/", response_model=List[schemas.MedilogicDriverOut])
 def list_medilogic_drivers(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role(["super_admin", "admin"])),  # restrict access
+    current_user: models.User = Depends(get_current_user),
     country: Optional[str] = Query(None, description="Filter by driver country"),
     state: Optional[str] = Query(None, description="Filter by driver state"),
     preferred_role: Optional[str] = Query(None, description="Filter by preferred role"),
     min_experience: Optional[int] = Query(None, description="Minimum years of experience"),
     status: Optional[str] = Query(None, description="Driver status (pending, approved, rejected)"),
 ):
-    """
-    List/Search Medilogic Drivers.
-    - Only Super Admin & Org Admin can access.
-    - Super Admin: sees all Medilogic drivers.
-    - Org Admin: can also view Medilogic driver applications.
-    - Filters: country, state, preferred_role, experience_years, status.
-    - Results auto-sorted by subscription_status (Blue > Green > None).
-    """
+    # ✅ ROLE CHECK
+    if current_user.role not in ["super_admin", "admin"]:
+        raise HTTPException(status_code=403, detail="Not authorised to access this resource")
+
     query = db.query(models.Medilogic_Driver)
 
-    # Apply filters
     if country:
         query = query.filter(models.Medilogic_Driver.country.ilike(f"%{country}%"))
     if state:
@@ -181,37 +176,40 @@ def list_medilogic_drivers(
     if status:
         query = query.filter(models.Medilogic_Driver.status == status)
 
-    # Subscription priority ordering (Blue > Green > None)
     subscription_order = case(
         (models.Medilogic_Driver.subscription_status == "blue", 3),
         (models.Medilogic_Driver.subscription_status == "green", 2),
         else_=1,
     )
+
     query = query.order_by(subscription_order.desc())
 
     return query.all()
-
 
 @router.get("/{medilogic_driver_id}", response_model=schemas.MedilogicDriverOut)
 def get_driver(
     medilogic_driver_id: UUID,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role(["super_admin", "admin"]))  # ✅ Role protection
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Retrieve a single Medilogic driver application.
-
-    - Super Admin & Admin: can view all Medilogic drivers.
+    - Only super_admin & admin can access.
     """
+
+    # ✅ ROLE CHECK
+    if current_user.role not in ["super_admin", "admin"]:
+        raise HTTPException(status_code=403, detail="Not authorised to access this resource")
+
     driver = db.query(models.Medilogic_Driver).filter(
-        models.Medilogic_Driver.medilogic_driver_id == medilogic_driver_id
+        models.Medilogic_Driver.id == medilogic_driver_id
     ).first()
 
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
     return driver
-
+    
 from app.utilites.time_utilities import now_utc
 from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
 from sqlalchemy.orm import Session
@@ -225,6 +223,7 @@ from app.dependencies import require_role
 from app import models, schemas
 from app.schemas import SubscriptionPlan, SubscriptionStatus, BadgeType
 from app.utilites.storage_utilites import upload_file_to_s3_async
+
 @router.put("/me", response_model=schemas.MedilogicDriverOut)
 async def update_profile_and_subscribe(
     # Profile fields
