@@ -10,7 +10,7 @@ from app import models, schemas
 from app.database import get_db
 from app.auth import get_password_hash, generate_temp_password
 from app.utilites.logging import log_activity
-from app.dependencies import require_role
+from app.dependencies import require_role, get_db, get_current_user 
 from sqlalchemy import case
 import os
 from app.utilites.time_utilities import now_utc
@@ -219,7 +219,7 @@ import os
 import stripe
 import uuid
 from app.database import get_db
-from app.dependencies import require_role
+from app.dependencies import require_role,get_db, get_current_user 
 from app import models, schemas
 from app.schemas import SubscriptionPlan, SubscriptionStatus, BadgeType
 from app.utilites.storage_utilites import upload_file_to_s3_async
