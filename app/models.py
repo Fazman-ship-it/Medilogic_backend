@@ -831,7 +831,7 @@ class Medilogic_Driver(Base,ShortIDMixin):
     address = Column(String, nullable=True)
     date_of_birth = Column(Date, nullable=True)
     country = Column(String, nullable=False)
-    state = Column(String, nullable=False)
+    state = Column(String, nullable=True)
     region = Column(String, nullable=True)
     license_number = Column(String, nullable=True)
     license_expiry = Column(Date, nullable=True)
