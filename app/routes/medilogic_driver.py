@@ -149,6 +149,15 @@ def reject_driver(
 
     return driver
 
+from typing import List, Optional
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from sqlalchemy import case, cast, String
+from app.dependencies import get_db, get_current_user
+from app import models, schemas
+
+
 @router.get("/", response_model=List[schemas.MedilogicDriverOut])
 def list_medilogic_drivers(
     db: Session = Depends(get_db),
@@ -176,15 +185,18 @@ def list_medilogic_drivers(
     if status:
         query = query.filter(models.Medilogic_Driver.status == status)
 
+    # ✅ UPDATED (Option 2): cast ENUM -> string before comparing
     subscription_order = case(
-        (models.Medilogic_Driver.subscription_status == "blue", 3),
-        (models.Medilogic_Driver.subscription_status == "green", 2),
+        (cast(models.Medilogic_Driver.subscription_status, String) == "blue", 3),
+        (cast(models.Medilogic_Driver.subscription_status, String) == "green", 2),
         else_=1,
     )
 
     query = query.order_by(subscription_order.desc())
 
     return query.all()
+
+
 
 @router.get("/{medilogic_driver_id}", response_model=schemas.MedilogicDriverOut)
 def get_driver(
