@@ -17,6 +17,12 @@ from sqlalchemy import func
 
 router = APIRouter(prefix="/applications/international", tags=["International Applications"])
 
+@property
+def application_fee_payment(self):
+    fees = [p for p in self.payments if p.payment_type == "application_fee"]
+    fees.sort(key=lambda p: p.created_at or 0, reverse=True)
+    return fees[0] if fees else None
+
 @router.post("/basic", response_model=schemas.IntlApplicationOut)
 def submit_basic_application(
     payload: schemas.IntlBasicCreate,

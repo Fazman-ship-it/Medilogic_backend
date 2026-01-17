@@ -168,7 +168,7 @@ class User(Base,ShortIDMixin):
     created_at = Column(DateTime(timezone=True), default=now_utc)
     updated_at = Column(DateTime(timezone=True), default=now_utc, onupdate=now_utc)
     is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
     organization_name = Column(String, nullable=True)  # Optional field for organization name
     logo_url = Column(String, nullable=True)  # Optional field for organization logo URL
     organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
@@ -750,8 +750,6 @@ class InternationalApplication(Base,ShortIDMixin):
 
     # Gate fee
     has_paid_application_fee = Column(Boolean, default=False)
-    application_fee_payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True)
-    application_fee_payment = relationship("Payment",foreign_keys=[application_fee_payment_id],uselist=False)  # single payment
     payments = relationship("Payment",back_populates="application",cascade="all, delete-orphan",foreign_keys="Payment.application_id")
     # Post-approval details (nullable until filled)
     email = Column(String, nullable=True)

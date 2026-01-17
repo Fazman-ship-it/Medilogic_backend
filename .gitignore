@@ -22,3 +22,6 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+
+# Local one-off admin script (contains secrets)
+file.py
