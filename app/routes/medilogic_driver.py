@@ -163,7 +163,7 @@ def list_medilogic_drivers(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
     country: Optional[str] = Query(None, description="Filter by driver country"),
-    state: Optional[str] = Query(None, description="Filter by driver state"),
+    region: Optional[str] = Query(None, description="Filter by driver region"),
     preferred_role: Optional[str] = Query(None, description="Filter by preferred role"),
     min_experience: Optional[int] = Query(None, description="Minimum years of experience"),
     status: Optional[str] = Query(None, description="Driver status (pending, approved, rejected)"),
@@ -176,8 +176,8 @@ def list_medilogic_drivers(
 
     if country:
         query = query.filter(models.Medilogic_Driver.country.ilike(f"%{country}%"))
-    if state:
-        query = query.filter(models.Medilogic_Driver.state.ilike(f"%{state}%"))
+    if region:
+        query = query.filter(models.Medilogic_Driver.region.ilike(f"%{region}%"))
     if preferred_role:
         query = query.filter(models.Medilogic_Driver.preferred_role == preferred_role)
     if min_experience:
@@ -244,7 +244,7 @@ async def update_profile_and_subscribe(
     date_of_birth: Optional[date] = Form(None),
     phone_number: Optional[str] = Form(None),
     country: Optional[str] = Form(None),
-    state: Optional[str] = Form(None),
+    region: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     zip_code: Optional[str] = Form(None),
     license_number: Optional[str] = Form(None),
@@ -285,7 +285,7 @@ async def update_profile_and_subscribe(
         "license_expiry": license_expiry,
         "phone_number": phone_number,
         "country": country,
-        "state": state,
+        "region": region,
         "address": address,
         "zip_code": zip_code,
         "vehicle_type": vehicle_type,
