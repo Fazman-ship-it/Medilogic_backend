@@ -210,7 +210,7 @@ def get_driver(
     """
 
     # ✅ ROLE CHECK
-    if current_user.role not in ["super_admin", "admin"]:
+    if current_user.role not in ["super_admin", "admin","medilogic_driver"]:
         raise HTTPException(status_code=403, detail="Not authorised to access this resource")
 
     driver = db.query(models.Medilogic_Driver).filter(
