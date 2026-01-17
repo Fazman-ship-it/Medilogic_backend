@@ -206,11 +206,12 @@ def get_driver(
 ):
     """
     Retrieve a single Medilogic driver application.
-    - Only super_admin & admin can access.
+    - super_admin/admin: can view any driver.
+    - medilogic_driver: can only view their own driver record.
     """
 
-    # ✅ ROLE CHECK
-    if current_user.role not in ["super_admin", "admin","medilogic_driver"]:
+    # ✅ Allow only these roles
+    if current_user.role not in ["super_admin", "admin", "medilogic_driver"]:
         raise HTTPException(status_code=403, detail="Not authorised to access this resource")
 
     driver = db.query(models.Medilogic_Driver).filter(
@@ -219,6 +220,11 @@ def get_driver(
 
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
+
+    # ✅ If medilogic_driver, restrict to OWN record only
+    if current_user.role == "medilogic_driver":
+        if not driver.user_id or driver.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorised to access this driver record")
 
     return driver
     
