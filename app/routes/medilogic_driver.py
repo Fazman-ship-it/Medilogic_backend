@@ -88,7 +88,7 @@ def approve_driver(
     new_user = models.User(
         email=driver.email,
         name=driver.name,
-        role="driver",
+        role="medilogic_driver",
         hashed_password=get_password_hash(temp_password),
         is_verified=True,
         is_active=True,
