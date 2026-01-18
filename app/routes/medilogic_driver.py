@@ -149,6 +149,37 @@ def reject_driver(
 
     return driver
 
+# ✅ ADD THIS ENDPOINT (do not change your other endpoints)
+
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.dependencies import get_db, get_current_user
+from app import models, schemas
+
+@router.get("/me", response_model=schemas.MedilogicDriverOut)
+def get_my_medilogic_driver_profile(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    ✅ Medilogic driver fetches ONLY their own Medilogic driver record.
+    """
+
+    # ✅ Only medilogic_driver can use this endpoint
+    if current_user.role != "medilogic_driver":
+        raise HTTPException(status_code=403, detail="Not authorised to access this resource")
+
+    # ✅ Find driver record linked to THIS user
+    driver = db.query(models.Medilogic_Driver).filter(
+        models.Medilogic_Driver.user_id == current_user.id
+    ).first()
+
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver profile not found")
+
+    return driver
+
+
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
