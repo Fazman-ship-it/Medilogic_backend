@@ -281,7 +281,7 @@ async def update_profile_and_subscribe(
     date_of_birth: Optional[date] = Form(None),
     phone_number: Optional[str] = Form(None),
     country: Optional[str] = Form(None),
-    region: Optional[str] = Form(None),
+    state: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     zip_code: Optional[str] = Form(None),
     license_number: Optional[str] = Form(None),
@@ -294,7 +294,7 @@ async def update_profile_and_subscribe(
     # Document uploads
     files: List[UploadFile] = File([]),
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["medilogic_driver"]))
+    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
 ):
     """
     Full Medilogic Driver dashboard update:
@@ -303,6 +303,10 @@ async def update_profile_and_subscribe(
     - Subscribe/pay for plan (Stripe)
     - Access analytics based on badge
     """
+
+    # ✅ ONLY Medilogic drivers allowed
+    if current_user.role != "medilogic_driver":
+        raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
     # Fetch the Medilogic driver
     driver = db.query(models.Medilogic_Driver).filter(
@@ -322,7 +326,7 @@ async def update_profile_and_subscribe(
         "license_expiry": license_expiry,
         "phone_number": phone_number,
         "country": country,
-        "region": region,
+        "state": state,
         "address": address,
         "zip_code": zip_code,
         "vehicle_type": vehicle_type,
@@ -405,10 +409,10 @@ async def update_profile_and_subscribe(
     # -------------------------
     if files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
         for file in files:
-        # ✅ Upload directly with async helper
+            # ✅ Upload directly with async helper
             key = await upload_file_to_s3_async(file, prefix=f"drivers/{driver.id}")
 
-        # ✅ Save metadata to DB
+            # ✅ Save metadata to DB
             doc = models.Document(
                 medilogic_driver_id=driver.id,
                 filename=file.filename,
@@ -461,16 +465,22 @@ async def update_profile_and_subscribe(
         response["payment_id"] = payment_id
 
     return response
-
+    
+    
 @router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["medilogic_driver"]))
+    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
 ):
     """
     Return analytics data for the logged-in Medilogic driver.
     - Only Blue and Green badge drivers have access
     """
+
+    # ✅ ONLY Medilogic drivers allowed
+    if current_user.role != "medilogic_driver":
+        raise HTTPException(status_code=403, detail="Only Medilogic drivers can access analytics")
+
     medilogic_driver = db.query(models.Medilogic_Driver).filter(
         models.Medilogic_Driver.user_id == current_user.id
     ).first()
@@ -506,7 +516,7 @@ from fastapi import APIRouter, HTTPException, Depends, Form
 from sqlalchemy.orm import Session
 from datetime import datetime
 from app.database import get_db
-from app.dependencies import require_role
+from app.dependencies import get_current_user
 from app import models, schemas
 import stripe
 import os
@@ -517,11 +527,16 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 def change_subscription(
     new_plan: schemas.SubscriptionPlan = Form(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["medilogic_driver"]))
+    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
 ):
     """
     Upgrade or downgrade a Medilogic Driver subscription.
     """
+
+    # ✅ Only Medilogic drivers allowed
+    if current_user.role != "medilogic_driver":
+        raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
+
     driver = db.query(models.Medilogic_Driver).filter(
         models.Medilogic_Driver.user_id == current_user.id
     ).first()
@@ -576,6 +591,7 @@ def change_subscription(
     driver.subscription_status = schemas.SubscriptionStatus.active
     driver.subscription_start = now_utc()
     driver.subscription_end = None  # Stripe handles recurring
+
     if new_plan == schemas.SubscriptionPlan.green:
         driver.badge_type = schemas.BadgeType.green
         driver.can_upload_docs = True
@@ -586,23 +602,28 @@ def change_subscription(
         driver.can_upload_docs = True
         driver.can_view_analytics = True
         driver.can_see_org_names = True
+
     db.commit()
     db.refresh(driver)
 
-    return driver 
-
-
+    return driver
+    
 @router.delete("/driver/subscription", response_model=schemas.MedilogicDriverOut)
 def cancel_subscription(
     at_period_end: bool = True,
     db: Session = Depends(get_db),
-    current_user=Depends(require_role(["medilogic_driver"]))
+    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
 ):
     """
     Cancel the Medilogic Driver's subscription.
     - at_period_end=True → cancel at the end of billing cycle
     - at_period_end=False → cancel immediately
     """
+
+    # ✅ Only Medilogic drivers allowed
+    if current_user.role != "medilogic_driver":
+        raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
+
     driver = db.query(models.Medilogic_Driver).filter(
         models.Medilogic_Driver.user_id == current_user.id
     ).first()
@@ -630,9 +651,9 @@ def cancel_subscription(
         driver.can_view_analytics = False
         driver.can_see_org_names = False
         driver.subscription_end = now_utc()
-        driver.stripe_subscription_id = None  # remove reference to Stripe subscription
+        driver.stripe_subscription_id = None
 
     db.commit()
     db.refresh(driver)
 
-    return driver   
+    return driver
