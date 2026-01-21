@@ -1734,7 +1734,17 @@ class MedilogicDriverAnalyticsOut(BaseModel):
     
     class Config:
         from_attributes = True
-        
+
+class MedilogicDriverMeOut(BaseModel):
+    driver: MedilogicDriverOut
+    analytics: Optional[dict] = None
+    client_secret: Optional[str] = None
+    payment_id: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+    
+                                
 
 
 # ==========================
