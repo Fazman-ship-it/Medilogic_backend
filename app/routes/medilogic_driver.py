@@ -273,7 +273,7 @@ from app import models, schemas
 from app.schemas import SubscriptionPlan, SubscriptionStatus, BadgeType
 from app.utilites.storage_utilites import upload_file_to_s3_async
 
-@router.put("/me", response_model=schemas.MedilogicDriverOut)
+@router.put("/me", response_model=schemas.MedilogicDriverMeOut)
 async def update_profile_and_subscribe(
     # Profile fields
     email: Optional[str] = Form(None),
