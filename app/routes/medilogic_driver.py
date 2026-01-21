@@ -333,9 +333,14 @@ async def update_profile_and_subscribe(
         "preferred_role": preferred_role,
         "experience_years": experience_years
     }
+
+    # ✅ UPDATED: don't overwrite existing values with empty strings
     for field, value in update_data.items():
-        if value is not None:
-            setattr(driver, field, value)
+        if value is None:
+            continue
+        if isinstance(value, str) and value.strip() == "":
+            continue
+        setattr(driver, field, value)
 
     # -------------------------
     # Handle subscription/payment via Stripe
@@ -394,6 +399,23 @@ async def update_profile_and_subscribe(
         driver.cancel_at_period_end = False  # new subscription starts active
         client_secret = subscription.latest_invoice.payment_intent.client_secret
         payment_id = str(payment.id)
+
+        # ✅ UPDATED: persist subscription plan/status + enable features in YOUR DB
+        driver.subscription_plan = plan
+        driver.subscription_status = schemas.SubscriptionStatus.active
+        driver.subscription_start = now_utc()
+        driver.subscription_end = None  # Stripe handles recurring
+
+        if plan == schemas.SubscriptionPlan.green:
+            driver.badge_type = BadgeType.green.value
+            driver.can_upload_docs = True
+            driver.can_view_analytics = True
+            driver.can_see_org_names = False
+        elif plan == schemas.SubscriptionPlan.blue:
+            driver.badge_type = BadgeType.blue.value
+            driver.can_upload_docs = True
+            driver.can_view_analytics = True
+            driver.can_see_org_names = True
 
     # -------------------------
     # Restrict document uploads for free users
