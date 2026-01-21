@@ -334,8 +334,31 @@ async def update_profile_and_subscribe(
         "experience_years": experience_years
     }
 
+    # ✅ UPDATED: only allow driver-editable fields (prevents "revert"/overwrites)
+    DRIVER_EDITABLE_FIELDS = {
+        "email",
+        "name",
+        "phone_number",
+        "zip_code",
+        "address",
+        "state",
+        "region",
+        "date_of_birth",
+        "license_number",
+        "license_expiry",
+        "country",
+        "preferred_role",
+        "vechile_type",
+        "experience_years,
+        # add these only if you truly want drivers to edit them:
+        
+    }
+
     # ✅ UPDATED: don't overwrite existing values with empty strings
+    # ✅ UPDATED: only update whitelisted fields
     for field, value in update_data.items():
+        if field not in DRIVER_EDITABLE_FIELDS:
+            continue
         if value is None:
             continue
         if isinstance(value, str) and value.strip() == "":
@@ -420,7 +443,10 @@ async def update_profile_and_subscribe(
     # -------------------------
     # Restrict document uploads for free users
     # -------------------------
-    if driver.subscription_plan == schemas.SubscriptionPlan.free and files:
+    # ✅ UPDATED: treat as "no upload" unless a real filename exists
+    has_real_files = any(f and getattr(f, "filename", "") for f in files)
+
+    if driver.subscription_plan == schemas.SubscriptionPlan.free and has_real_files:
         raise HTTPException(
             status_code=403,
             detail="You must subscribe to Green or Blue to upload documents"
@@ -429,8 +455,11 @@ async def update_profile_and_subscribe(
     # -------------------------
     # Handle document uploads (S3 production)
     # -------------------------
-    if files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
+    if has_real_files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
         for file in files:
+            if not file.filename:
+                continue
+
             # ✅ Upload directly with async helper
             key = await upload_file_to_s3_async(file, prefix=f"drivers/{driver.id}")
 
