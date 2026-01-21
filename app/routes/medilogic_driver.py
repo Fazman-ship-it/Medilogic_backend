@@ -349,7 +349,7 @@ async def update_profile_and_subscribe(
         "country",
         "preferred_role",
         "vechile_type",
-        "experience_years,
+        "experience_years",
         # add these only if you truly want drivers to edit them:
         
     }
