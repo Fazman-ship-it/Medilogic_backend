@@ -336,10 +336,9 @@ async def update_profile_and_subscribe(
         "experience_years": experience_years
     }
 
-    # ✅ UPDATED: only allow driver-editable fields (prevents "revert"/overwrites)
+    # ✅ UPDATED: split fields by where they truly belong
+    USER_EDITABLE_FIELDS = {"email", "name"}  # these must also update current_user to prevent "revert"
     DRIVER_EDITABLE_FIELDS = {
-        "email",
-        "name",
         "phone_number",
         "zip_code",
         "address",
@@ -352,21 +351,23 @@ async def update_profile_and_subscribe(
         "preferred_role",
         "vehicle_type",
         "experience_years",
-        "region",
-        # add these only if you truly want drivers to edit them:
-        
+        # (email/name handled via USER_EDITABLE_FIELDS)
     }
 
     # ✅ UPDATED: don't overwrite existing values with empty strings
-    # ✅ UPDATED: only update whitelisted fields
+    # ✅ UPDATED: update User for email/name + Driver for driver-only fields
     for field, value in update_data.items():
-        if field not in DRIVER_EDITABLE_FIELDS:
-            continue
         if value is None:
             continue
         if isinstance(value, str) and value.strip() == "":
             continue
-        setattr(driver, field, value)
+
+        if field in USER_EDITABLE_FIELDS:
+            setattr(current_user, field, value)  # ✅ critical fix (User table)
+            # Optional: keep Medilogic_Driver in sync too (your model has these columns)
+            setattr(driver, field, value)
+        elif field in DRIVER_EDITABLE_FIELDS:
+            setattr(driver, field, value)
 
     # -------------------------
     # Handle subscription/payment via Stripe
@@ -509,6 +510,7 @@ async def update_profile_and_subscribe(
 
     db.commit()
     db.refresh(driver)
+    db.refresh(current_user)  # ✅ important if any response/GET reads from User
 
     # -------------------------
     # Prepare response
