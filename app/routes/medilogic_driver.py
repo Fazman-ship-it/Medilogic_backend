@@ -273,6 +273,10 @@ from app import models, schemas
 from app.schemas import SubscriptionPlan, SubscriptionStatus, BadgeType
 from app.utilites.storage_utilites import upload_file_to_s3_async
 
+import logging
+from uuid import uuid4
+logger = logging.getLogger(__name__)
+
 @router.put("/me", response_model=schemas.MedilogicDriverMeOut)
 async def update_profile_and_subscribe(
     # Profile fields
@@ -297,16 +301,36 @@ async def update_profile_and_subscribe(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),  # ✅ normal auth
 ):
-    """
-    Full Medilogic Driver dashboard update:
-    - Update profile
-    - Upload documents (Green/Blue only)
-    - Subscribe/pay for plan (Stripe)
-    - Access analytics based on badge
-    """
+    request_id = str(uuid4())[:8]
+
+    def _safe(v):
+        # Avoid dumping huge/sensitive values into logs
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            if len(s) > 80:
+                return s[:80] + "…"
+            return s
+        return v
+
+    logger.info(
+        "[%s] PUT /me called user_id=%s role=%s has_files=%s plan=%s",
+        request_id,
+        getattr(current_user, "id", None),
+        getattr(current_user, "role", None),
+        any(f and getattr(f, "filename", "") for f in (files or [])),
+        getattr(plan, "value", plan),
+    )
 
     # ✅ ONLY Medilogic drivers allowed
     if current_user.role != "medilogic_driver":
+        logger.warning(
+            "[%s] Forbidden role=%s user_id=%s",
+            request_id,
+            getattr(current_user, "role", None),
+            getattr(current_user, "id", None),
+        )
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
     # Fetch the Medilogic driver
@@ -314,7 +338,10 @@ async def update_profile_and_subscribe(
         models.Medilogic_Driver.user_id == current_user.id
     ).first()
     if not driver:
+        logger.warning("[%s] Driver not found for user_id=%s", request_id, current_user.id)
         raise HTTPException(status_code=404, detail="Driver not found")
+
+    logger.info("[%s] Loaded driver id=%s user_id=%s", request_id, driver.id, driver.user_id)
 
     # -------------------------
     # Update profile fields
@@ -336,8 +363,7 @@ async def update_profile_and_subscribe(
         "experience_years": experience_years
     }
 
-    # ✅ UPDATED: split fields by where they truly belong
-    USER_EDITABLE_FIELDS = {"email", "name"}  # these must also update current_user to prevent "revert"
+    USER_EDITABLE_FIELDS = {"email", "name"}
     DRIVER_EDITABLE_FIELDS = {
         "phone_number",
         "zip_code",
@@ -351,23 +377,42 @@ async def update_profile_and_subscribe(
         "preferred_role",
         "vehicle_type",
         "experience_years",
-        # (email/name handled via USER_EDITABLE_FIELDS)
     }
 
-    # ✅ UPDATED: don't overwrite existing values with empty strings
-    # ✅ UPDATED: update User for email/name + Driver for driver-only fields
+    # Snapshot before
+    before_user = {"email": getattr(current_user, "email", None), "name": getattr(current_user, "name", None)}
+    before_driver = {k: getattr(driver, k, None) for k in DRIVER_EDITABLE_FIELDS.union(USER_EDITABLE_FIELDS)}
+
+    incoming_keys = [k for k, v in update_data.items() if v is not None]
+    logger.info("[%s] Incoming update keys=%s", request_id, incoming_keys)
+
+    applied_user = {}
+    applied_driver = {}
+    skipped = {}
+
     for field, value in update_data.items():
         if value is None:
             continue
         if isinstance(value, str) and value.strip() == "":
+            skipped[field] = "empty_string"
             continue
 
         if field in USER_EDITABLE_FIELDS:
-            setattr(current_user, field, value)  # ✅ critical fix (User table)
-            # Optional: keep Medilogic_Driver in sync too (your model has these columns)
+            applied_user[field] = _safe(value)
+            setattr(current_user, field, value)
+            # keep driver in sync too (your model has these cols)
+            applied_driver[field] = _safe(value)
             setattr(driver, field, value)
         elif field in DRIVER_EDITABLE_FIELDS:
+            applied_driver[field] = _safe(value)
             setattr(driver, field, value)
+        else:
+            skipped[field] = "not_whitelisted"
+
+    logger.info("[%s] Applied USER fields=%s", request_id, applied_user)
+    logger.info("[%s] Applied DRIVER fields=%s", request_id, applied_driver)
+    if skipped:
+        logger.info("[%s] Skipped fields=%s", request_id, skipped)
 
     # -------------------------
     # Handle subscription/payment via Stripe
@@ -376,16 +421,21 @@ async def update_profile_and_subscribe(
     payment_id = None
 
     if plan and plan != schemas.SubscriptionPlan.free:
+        logger.info("[%s] Subscription requested plan=%s", request_id, getattr(plan, "value", plan))
+
         price_map = {
             schemas.SubscriptionPlan.green: 1099,
             schemas.SubscriptionPlan.blue: 1599
         }
         if plan not in price_map:
+            logger.warning("[%s] Invalid subscription plan=%s", request_id, getattr(plan, "value", plan))
             raise HTTPException(status_code=400, detail="Invalid subscription plan")
+
         amount = price_map[plan]
 
         # Stripe Customer
         if not driver.stripe_customer_id:
+            logger.info("[%s] Creating Stripe customer for driver_id=%s", request_id, driver.id)
             customer = stripe.Customer.create(
                 email=driver.email,
                 name=driver.name,
@@ -393,6 +443,7 @@ async def update_profile_and_subscribe(
             )
             driver.stripe_customer_id = customer.id
         else:
+            logger.info("[%s] Retrieving Stripe customer=%s", request_id, driver.stripe_customer_id)
             customer = stripe.Customer.retrieve(driver.stripe_customer_id)
 
         # Stripe Subscription
@@ -400,6 +451,12 @@ async def update_profile_and_subscribe(
             schemas.SubscriptionPlan.green: os.getenv("STRIPE_GREEN_PRICE_ID"),
             schemas.SubscriptionPlan.blue: os.getenv("STRIPE_BLUE_PRICE_ID")
         }
+
+        if not price_id_map.get(plan):
+            logger.error("[%s] Missing STRIPE price id in env for plan=%s", request_id, getattr(plan, "value", plan))
+            raise HTTPException(status_code=500, detail="Stripe price ID not configured")
+
+        logger.info("[%s] Creating Stripe subscription customer=%s plan=%s", request_id, customer.id, plan.value)
         subscription = stripe.Subscription.create(
             customer=customer.id,
             items=[{"price": price_id_map[plan]}],
@@ -407,7 +464,6 @@ async def update_profile_and_subscribe(
             expand=["latest_invoice.payment_intent"]
         )
 
-        # Save Payment record
         payment = models.Payment(
             medilogic_driver_id=driver.id,
             amount=amount / 100,
@@ -420,18 +476,16 @@ async def update_profile_and_subscribe(
         )
         db.add(payment)
 
-        # Update driver Stripe subscription info
         driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id_map[plan]
-        driver.cancel_at_period_end = False  # new subscription starts active
+        driver.cancel_at_period_end = False
         client_secret = subscription.latest_invoice.payment_intent.client_secret
         payment_id = str(payment.id)
 
-        # ✅ UPDATED: persist subscription plan/status + enable features in YOUR DB
         driver.subscription_plan = plan
         driver.subscription_status = schemas.SubscriptionStatus.active
         driver.subscription_start = now_utc()
-        driver.subscription_end = None  # Stripe handles recurring
+        driver.subscription_end = None
 
         if plan == schemas.SubscriptionPlan.green:
             driver.badge_type = BadgeType.green.value
@@ -444,42 +498,44 @@ async def update_profile_and_subscribe(
             driver.can_view_analytics = True
             driver.can_see_org_names = True
 
+        logger.info("[%s] Subscription persisted in DB plan=%s badge=%s", request_id, driver.subscription_plan, driver.badge_type)
+
     # -------------------------
     # Restrict document uploads for free users
     # -------------------------
-    # ✅ UPDATED: treat as "no upload" unless a real filename exists
-    has_real_files = any(f and getattr(f, "filename", "") for f in files)
+    has_real_files = any(f and getattr(f, "filename", "") for f in (files or []))
+    logger.info("[%s] has_real_files=%s subscription_plan=%s", request_id, has_real_files, getattr(driver, "subscription_plan", None))
 
     if driver.subscription_plan == schemas.SubscriptionPlan.free and has_real_files:
-        raise HTTPException(
-            status_code=403,
-            detail="You must subscribe to Green or Blue to upload documents"
-        )
+        logger.warning("[%s] Upload blocked due to free plan driver_id=%s", request_id, driver.id)
+        raise HTTPException(status_code=403, detail="You must subscribe to Green or Blue to upload documents")
 
     # -------------------------
     # Handle document uploads (S3 production)
     # -------------------------
     if has_real_files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
         for file in files:
-            if not file.filename:
+            if not getattr(file, "filename", ""):
                 continue
 
-            # ✅ Upload directly with async helper
+            logger.info("[%s] Uploading file=%s driver_id=%s", request_id, file.filename, driver.id)
             key = await upload_file_to_s3_async(file, prefix=f"drivers/{driver.id}")
 
-            # ✅ Save metadata to DB
             doc = models.Document(
                 medilogic_driver_id=driver.id,
                 filename=file.filename,
-                file_path=key,  # S3 key
+                file_path=key,
                 upload_time=now_utc(),
                 doc_type=file.content_type
             )
             db.add(doc)
+            logger.info("[%s] Document row staged filename=%s key=%s", request_id, file.filename, key)
 
     # -------------------------
     # Badge-based access
     # -------------------------
+    prev_badge = getattr(driver, "badge_type", None)
+
     if driver.badge_type == BadgeType.blue.value:
         driver.can_view_analytics = True
         driver.can_see_org_names = True
@@ -489,6 +545,15 @@ async def update_profile_and_subscribe(
     else:
         driver.can_view_analytics = False
         driver.can_see_org_names = False
+
+    logger.info(
+        "[%s] Badge access computed prev_badge=%s now_badge=%s can_view_analytics=%s can_see_org_names=%s",
+        request_id,
+        prev_badge,
+        driver.badge_type,
+        driver.can_view_analytics,
+        driver.can_see_org_names,
+    )
 
     # -------------------------
     # Analytics path
@@ -508,9 +573,33 @@ async def update_profile_and_subscribe(
             ).all()
             analytics["charts"]["views_over_time"] = charts
 
-    db.commit()
+    # -------------------------
+    # Commit + refresh
+    # -------------------------
+    try:
+        db.commit()
+        logger.info("[%s] DB commit OK driver_id=%s user_id=%s", request_id, driver.id, current_user.id)
+    except Exception:
+        logger.exception("[%s] DB commit FAILED driver_id=%s user_id=%s", request_id, driver.id, current_user.id)
+        db.rollback()
+        raise
+
     db.refresh(driver)
-    db.refresh(current_user)  # ✅ important if any response/GET reads from User
+    db.refresh(current_user)
+
+    # Snapshot after
+    after_user = {"email": getattr(current_user, "email", None), "name": getattr(current_user, "name", None)}
+    after_driver = {k: getattr(driver, k, None) for k in DRIVER_EDITABLE_FIELDS.union(USER_EDITABLE_FIELDS)}
+
+    logger.info("[%s] BEFORE user=%s", request_id, {k: _safe(v) for k, v in before_user.items()})
+    logger.info("[%s] AFTER  user=%s", request_id, {k: _safe(v) for k, v in after_user.items()})
+
+    # Only log differences to keep logs clean
+    diffs = {}
+    for k in after_driver.keys():
+        if before_driver.get(k) != after_driver.get(k):
+            diffs[k] = {"before": _safe(before_driver.get(k)), "after": _safe(after_driver.get(k))}
+    logger.info("[%s] DRIVER diffs=%s", request_id, diffs)
 
     # -------------------------
     # Prepare response
@@ -519,6 +608,8 @@ async def update_profile_and_subscribe(
     if client_secret:
         response["client_secret"] = client_secret
         response["payment_id"] = payment_id
+
+    logger.info("[%s] Returning response client_secret=%s payment_id=%s", request_id, bool(client_secret), payment_id)
 
     return response
     
