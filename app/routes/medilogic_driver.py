@@ -282,6 +282,7 @@ async def update_profile_and_subscribe(
     phone_number: Optional[str] = Form(None),
     country: Optional[str] = Form(None),
     state: Optional[str] = Form(None),
+    region: Optional[str] = Form(None),
     address: Optional[str] = Form(None),
     zip_code: Optional[str] = Form(None),
     license_number: Optional[str] = Form(None),
@@ -322,6 +323,7 @@ async def update_profile_and_subscribe(
         "email": email,
         "name": name,
         "date_of_birth": date_of_birth,
+        "region": region,
         "license_number": license_number,
         "license_expiry": license_expiry,
         "phone_number": phone_number,
@@ -348,8 +350,9 @@ async def update_profile_and_subscribe(
         "license_expiry",
         "country",
         "preferred_role",
-        "vechile_type",
+        "vehicle_type",
         "experience_years",
+        "region",
         # add these only if you truly want drivers to edit them:
         
     }
