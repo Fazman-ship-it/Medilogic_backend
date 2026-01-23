@@ -285,8 +285,8 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-@router.put("/me/profile", response_model=schemas.MedilogicDriverOut)
-def update_medilogic_driver_profile(
+@router.put("/profile", response_model=schemas.MedilogicDriverOut)
+def update_medilogic_driver_profile_all(
     # Profile fields ONLY
     email: Optional[str] = Form(None),
     name: Optional[str] = Form(None),
