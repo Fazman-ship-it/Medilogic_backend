@@ -285,30 +285,16 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-@router.put("/profile", response_model=schemas.MedilogicDriverOut)
-def update_medilogic_driver_profile_all(
-    # Profile fields ONLY
-    email: Optional[str] = Form(None),
-    name: Optional[str] = Form(None),
-    date_of_birth: Optional[date] = Form(None),
-    phone_number: Optional[str] = Form(None),
-    country: Optional[str] = Form(None),
-    state: Optional[str] = Form(None),
-    region: Optional[str] = Form(None),
-    address: Optional[str] = Form(None),
-    zip_code: Optional[str] = Form(None),
-    license_number: Optional[str] = Form(None),
-    license_expiry: Optional[date] = Form(None),
-    vehicle_type: Optional[str] = Form(None),
-    preferred_role: Optional[str] = Form(None),
-    experience_years: Optional[int] = Form(None),
+from fastapi import Body
 
+@router.put("/profile/json", response_model=schemas.MedilogicDriverOut)
+def update_medilogic_driver_profile_json(
+    payload: schemas.MedilogicDriverProfileUpdate = Body(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     request_id = str(uuid4())[:8]
 
-    # ✅ ONLY Medilogic drivers allowed
     if current_user.role != "medilogic_driver":
         logger.warning("[%s] Forbidden role=%s user_id=%s", request_id, current_user.role, current_user.id)
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
@@ -321,26 +307,9 @@ def update_medilogic_driver_profile_all(
         logger.warning("[%s] Driver not found for user_id=%s", request_id, current_user.id)
         raise HTTPException(status_code=404, detail="Driver not found")
 
-    update_data = {
-        "email": email,
-        "name": name,
-        "date_of_birth": date_of_birth,
-        "phone_number": phone_number,
-        "country": country,
-        "state": state,
-        "region": region,
-        "address": address,
-        "zip_code": zip_code,
-        "license_number": license_number,
-        "license_expiry": license_expiry,
-        "vehicle_type": vehicle_type,
-        "preferred_role": preferred_role,
-        "experience_years": experience_years,
-    }
+    update_data = payload.model_dump(exclude_unset=True)
 
-    USER_FIELDS = {"email", "name"}  # must update BOTH user + driver
-    DRIVER_FIELDS = set(update_data.keys()) - USER_FIELDS
-
+    USER_FIELDS = {"email", "name"}
     applied = {"user": [], "driver": [], "skipped": []}
 
     for field, value in update_data.items():
@@ -355,7 +324,7 @@ def update_medilogic_driver_profile_all(
             setattr(driver, field, value)
             applied["user"].append(field)
             applied["driver"].append(field)
-        elif field in DRIVER_FIELDS:
+        else:
             setattr(driver, field, value)
             applied["driver"].append(field)
 
@@ -369,7 +338,7 @@ def update_medilogic_driver_profile_all(
     db.refresh(driver)
     db.refresh(current_user)
 
-    logger.info("[%s] Profile updated applied=%s", request_id, applied)
+    logger.info("[%s] Profile updated(JSON) applied=%s", request_id, applied)
     return driver
     
     
