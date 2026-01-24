@@ -1724,7 +1724,26 @@ class MedilogicDriverOut(BaseModel):
 
     class Config:
         from_attributes = True
-        
+
+class MedilogicDriverProfileUpdate(BaseModel):
+    email: Optional[str] = None
+    name: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    phone_number: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    region: Optional[str] = None
+    address: Optional[str] = None
+    zip_code: Optional[str] = None
+    license_number: Optional[str] = None
+    license_expiry: Optional[date] = None
+    vehicle_type: Optional[str] = None
+    preferred_role: Optional[str] = None
+    experience_years: Optional[int] = None
+    
+    class Config:
+        from_attributes = True
+
 
 
 class MedilogicDriverAnalyticsOut(BaseModel):
