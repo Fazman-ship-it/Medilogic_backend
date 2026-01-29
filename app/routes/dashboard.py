@@ -6,6 +6,7 @@ from app.database import get_db
 from app import models
 from app.dependencies import get_current_user
 from uuid import UUID
+from app.utilites.time_utilities import now_utc
 
 router = APIRouter(
     prefix="/dashboard",
@@ -35,7 +36,7 @@ def get_driver_dashboard(
     # ✅ Allow admin or self-driver
     driver_name = current_user.name if current_user.role == "driver" else db.query(models.User).get(driver_id).name
 
-    now = datetime.utcnow()
+    now = now_utc()
     query = db.query(models.Trip).filter(
         models.Trip.driver_id == driver_id,
         models.Trip.organization_id == current_user.organization_id
