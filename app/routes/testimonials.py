@@ -13,7 +13,6 @@ from app.utilites.logging import log_activity
 router = APIRouter(prefix="/testimonials", tags=["Testimonials"])
 
 
-# ✅ 1) Anyone can submit a testimonial (logged-in or not)
 @router.post("/", response_model=schemas.TestimonialOut)
 def submit_testimonial(
     testimonial: schemas.TestimonialCreate,
@@ -24,14 +23,13 @@ def submit_testimonial(
         name=testimonial.name,
         content=testimonial.content,
         user_id=current_user.id if current_user else None,
-        is_approved=False,  # ✅ default: admin approves later
+        is_approved=False,
     )
 
     db.add(new_testimonial)
     db.commit()
     db.refresh(new_testimonial)
 
-    # ✅ Log only if user is authenticated
     if current_user:
         log_activity(
             db=db,
@@ -43,28 +41,40 @@ def submit_testimonial(
     return new_testimonial
 
 
-# ✅ 2) Public testimonials endpoint (approved only)
-@router.get("/public", response_model=List[schemas.TestimonialOut])
-def list_public_testimonials(
+# ✅ Admin/Super Admin sees ALL testimonials (pending + approved)
+@router.get("/", response_model=List[schemas.TestimonialOut])
+def list_all_testimonials(
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
-    testimonials = (
+    if current_user.role not in ["admin", "super_admin"]:
+        raise HTTPException(status_code=403, detail="Not authorised")
+
+    return (
+        db.query(models.Testimonial)
+        .order_by(models.Testimonial.created_at.desc())
+        .all()
+    )
+
+
+# ✅ Public sees approved only
+@router.get("/public", response_model=List[schemas.TestimonialOut])
+def list_public_testimonials(db: Session = Depends(get_db)):
+    return (
         db.query(models.Testimonial)
         .filter(models.Testimonial.is_approved == True)  # noqa: E712
         .order_by(models.Testimonial.created_at.desc())
         .all()
     )
-    return testimonials
 
 
-# ✅ 3) Admin approves a testimonial
+# ✅ Admin approves
 @router.patch("/{testimonial_id}/approve", response_model=schemas.TestimonialOut)
 def approve_testimonial(
     testimonial_id: UUID,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # ✅ Only admin/super_admin can approve
     if current_user.role not in ["admin", "super_admin"]:
         raise HTTPException(status_code=403, detail="Not authorised")
 
@@ -76,13 +86,12 @@ def approve_testimonial(
         raise HTTPException(status_code=404, detail="Testimonial not found")
 
     if testimonial.is_approved:
-        return testimonial  # already approved, just return it
+        return testimonial
 
     testimonial.is_approved = True
     db.commit()
     db.refresh(testimonial)
 
-    # ✅ Log admin action
     log_activity(
         db=db,
         user_id=current_user.id,
