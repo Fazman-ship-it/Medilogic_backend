@@ -46,7 +46,7 @@ async def upload_file_to_s3_async(file, prefix: str, filename: str = None, conte
 async def generate_presigned_url_async(
     key: str,
     method: str = "get_object",
-    expires_in: int = 3600,
+    expires_in: int = 604800,  # 7 days in seconds
     content_type: str | None = None
 ) -> str:
     """
