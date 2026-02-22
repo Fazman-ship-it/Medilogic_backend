@@ -11,64 +11,70 @@ router = APIRouter(
     tags=["Driver Availability"]
 )
 
-# 🚚 Drivers: Set their availability
-from fastapi import HTTPException
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from sqlalchemy import func
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
 
-@router.post("/", status_code=201)
+@router.post("/", status_code=201, response_model=schemas.DriverAvailabilityReplaceResponse)
 def set_availability(
     entries: List[schemas.DriverAvailabilityCreate],
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),
 ):
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can set availability.")
 
-    # ✅ Debug: confirm we received entries
-    print("SET AVAILABILITY user_id:", current_user.id)
-    print("SET AVAILABILITY entries_count:", len(entries))
+    # ✅ must send full list (or empty list to clear all)
+    if entries is None:
+        raise HTTPException(status_code=400, detail="entries is required")
 
-    # Clear old entries (safer for bulk delete)
+    # ✅ Validate duplicates in request (same day twice)
+    seen_days = set()
+    for e in entries:
+        if e.day_of_week in seen_days:
+            raise HTTPException(status_code=400, detail=f"Duplicate day_of_week in request: {e.day_of_week}")
+        seen_days.add(e.day_of_week)
+
+    # ✅ Delete existing rows FIRST (full replace)
     db.query(models.DriverAvailability)\
       .filter(models.DriverAvailability.driver_id == current_user.id)\
       .delete(synchronize_session=False)
 
-    # Add new entries
-    objs = []
-    for entry in entries:
-        obj = models.DriverAvailability(
+    # ✅ Insert new rows
+    objs = [
+        models.DriverAvailability(
             driver_id=current_user.id,
             organization_id=current_user.organization_id,
-            day_of_week=entry.day_of_week,
-            start_time=entry.start_time,
-            end_time=entry.end_time
+            day_of_week=e.day_of_week,   # enum handled by schema
+            start_time=e.start_time,
+            end_time=e.end_time,
         )
-        objs.append(obj)
+        for e in entries
+    ]
 
-    db.add_all(objs)
+    if objs:
+        db.add_all(objs)
 
-    # ✅ Flush first so we know rows exist before commit
-    db.flush()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
-    # ✅ Debug: confirm rows exist inside this transaction
-    in_tx_count = db.query(func.count(models.DriverAvailability.id))\
+    # ✅ Return what’s now saved (helps frontend immediately)
+    saved = db.query(models.DriverAvailability)\
         .filter(models.DriverAvailability.driver_id == current_user.id)\
-        .scalar()
-    print("IN-TRANSACTION count:", in_tx_count)
-
-    db.commit()
-
-    # ✅ Debug: confirm after commit too
-    after_commit_count = db.query(func.count(models.DriverAvailability.id))\
-        .filter(models.DriverAvailability.driver_id == current_user.id)\
-        .scalar()
-    print("AFTER COMMIT count:", after_commit_count)
+        .order_by(models.DriverAvailability.day_of_week.asc())\
+        .all()
 
     return {
-        "message": "Availability updated successfully.",
-        "saved": len(entries),
-        "after_commit_count": after_commit_count,
-        "user_id": str(current_user.id),
+        "message": "Availability replaced successfully.",
+        "count": len(saved),
+        "entries": saved,
     }
 
 @router.get("/me", response_model=List[schemas.DriverAvailabilityOut])
