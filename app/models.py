@@ -41,14 +41,14 @@ class RecurrenceRule(str, enum.Enum):
     weekly = "weekly"
     monthly = "monthly"
     
-class WeekDay(enum.Enum):
-    monday = "Monday"
-    tuesday = "Tuesday"
-    wednesday = "Wednesday"
-    thursday = "Thursday"
-    friday = "Friday"
-    saturday = "Saturday"
-    sunday = "Sunday"    
+class WeekDay(str ,enum.Enum):
+    monday = "monday"
+    tuesday = "tuesday"
+    wednesday = "wednesday"
+    thursday = "thursday"
+    friday = "friday"
+    saturday = "saturday"
+    sunday = "sunday"    
 
 class SeverityLevel(str,enum.Enum):
     low ="low"

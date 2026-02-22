@@ -873,16 +873,7 @@ from pydantic import BaseModel, validator
 from typing import Optional
 from enum import Enum
 from datetime import time
-
-# Weekday Enum (must match the PostgreSQL enum)
-class WeekDay(str, Enum):
-    Monday = "Monday"
-    Tuesday = "Tuesday"
-    Wednesday = "Wednesday"
-    Thursday = "Thursday"
-    Friday = "Friday"
-    Saturday = "Saturday"
-    Sunday = "Sunday"
+from app.models import WeekDay
 
 # 🔹 Create / Update availability
 class DriverAvailabilityCreate(BaseModel):
