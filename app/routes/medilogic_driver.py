@@ -598,8 +598,7 @@ from app.utilites.time_utilities import now_utc
 # If you use BadgeType like in /me
 from app.models import BadgeType  # adjust import if your BadgeType lives elsewhere
 
-
-@router.put("/subscription", response_model=schemas.MedilogicDriverSubscriptionChangeOut)
+@router.put("/driver/subscription", response_model=schemas.MedilogicDriverSubscriptionChangeOut)
 def change_subscription(
     new_plan: schemas.SubscriptionPlan = Form(...),
     db: Session = Depends(get_db),
