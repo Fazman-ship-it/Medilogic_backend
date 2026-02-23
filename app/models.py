@@ -483,8 +483,17 @@ class ComplianceStatus(Base, ShortIDMixin):
     organization = relationship("Organization", back_populates="compliance_status")
 
 
-class DriverAvailability(Base,ShortIDMixin):
+import uuid
+from sqlalchemy import Column, ForeignKey, Time, Enum, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+class DriverAvailability(Base, ShortIDMixin):
     __tablename__ = "driver_availabilities"
+
+    __table_args__ = (
+        UniqueConstraint("driver_id", "day_of_week", name="uq_driver_availability_driver_day"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
     driver_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
@@ -494,7 +503,6 @@ class DriverAvailability(Base,ShortIDMixin):
     end_time = Column(Time, nullable=False)
     driver = relationship("User", back_populates="availabilities")
     organization = relationship("Organization", back_populates="availabilities")
-    
 
 class ShiftAssignment(Base, ShortIDMixin):
     __tablename__ = "shift_assignments"

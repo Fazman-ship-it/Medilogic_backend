@@ -11,14 +11,6 @@ router = APIRouter(
     tags=["Driver Availability"]
 )
 
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from app import models, schemas
-from app.database import get_db
-from app.dependencies import get_current_user
-
 @router.post("/", status_code=201, response_model=schemas.DriverAvailabilityReplaceResponse)
 def set_availability(
     entries: List[schemas.DriverAvailabilityCreate],
@@ -28,7 +20,6 @@ def set_availability(
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can set availability.")
 
-    # ✅ must send full list (or empty list to clear all)
     if entries is None:
         raise HTTPException(status_code=400, detail="entries is required")
 
@@ -39,25 +30,24 @@ def set_availability(
             raise HTTPException(status_code=400, detail=f"Duplicate day_of_week in request: {e.day_of_week}")
         seen_days.add(e.day_of_week)
 
-    # ✅ Delete existing rows FIRST (full replace)
-    db.query(models.DriverAvailability)\
-      .filter(models.DriverAvailability.driver_id == current_user.id)\
-      .delete(synchronize_session=False)
+    # ✅ MERGE/UPSERT (no delete)
+    for e in entries:
+        existing = db.query(models.DriverAvailability).filter(
+            models.DriverAvailability.driver_id == current_user.id,
+            models.DriverAvailability.day_of_week == e.day_of_week,
+        ).first()
 
-    # ✅ Insert new rows
-    objs = [
-        models.DriverAvailability(
-            driver_id=current_user.id,
-            organization_id=current_user.organization_id,
-            day_of_week=e.day_of_week,   # enum handled by schema
-            start_time=e.start_time,
-            end_time=e.end_time,
-        )
-        for e in entries
-    ]
-
-    if objs:
-        db.add_all(objs)
+        if existing:
+            existing.start_time = e.start_time
+            existing.end_time = e.end_time
+        else:
+            db.add(models.DriverAvailability(
+                driver_id=current_user.id,
+                organization_id=current_user.organization_id,
+                day_of_week=e.day_of_week,
+                start_time=e.start_time,
+                end_time=e.end_time,
+            ))
 
     try:
         db.commit()
@@ -65,14 +55,13 @@ def set_availability(
         db.rollback()
         raise
 
-    # ✅ Return what’s now saved (helps frontend immediately)
     saved = db.query(models.DriverAvailability)\
         .filter(models.DriverAvailability.driver_id == current_user.id)\
         .order_by(models.DriverAvailability.day_of_week.asc())\
         .all()
 
     return {
-        "message": "Availability replaced successfully.",
+        "message": "Availability saved successfully.",
         "count": len(saved),
         "entries": saved,
     }
