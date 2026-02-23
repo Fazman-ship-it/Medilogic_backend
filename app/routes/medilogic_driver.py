@@ -345,127 +345,44 @@ def update_medilogic_driver_profile_json(
 import logging
 from uuid import uuid4
 logger = logging.getLogger(__name__)
+from typing import List, Optional
+from fastapi import UploadFile, File, Depends, HTTPException
+from sqlalchemy.orm import Session
+from uuid import uuid4
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+from app.utilites.time_utilities import now_utc
+from app.utilites.storage_utilites import upload_file_to_s3_async
+from app.models import BadgeType  # adjust import if needed
 
 @router.put("/me", response_model=schemas.MedilogicDriverMeOut)
-async def update_profile_and_subscribe(
-    # ✅ keep only subscription + documents inputs
-    plan: Optional[schemas.SubscriptionPlan] = Form(None),
+async def update_me_upload_docs(
     files: List[UploadFile] = File([]),
-
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     request_id = str(uuid4())[:8]
 
-    logger.info(
-        "[%s] PUT /me (subscription/docs) called user_id=%s role=%s has_files=%s plan=%s",
-        request_id,
-        getattr(current_user, "id", None),
-        getattr(current_user, "role", None),
-        any(f and getattr(f, "filename", "") for f in (files or [])),
-        getattr(plan, "value", plan),
-    )
-
     # ✅ ONLY Medilogic drivers allowed
     if current_user.role != "medilogic_driver":
-        logger.warning("[%s] Forbidden role=%s user_id=%s", request_id, current_user.role, current_user.id)
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
-    # Fetch driver
     driver = db.query(models.Medilogic_Driver).filter(
         models.Medilogic_Driver.user_id == current_user.id
     ).first()
 
     if not driver:
-        logger.warning("[%s] Driver not found for user_id=%s", request_id, current_user.id)
         raise HTTPException(status_code=404, detail="Driver not found")
 
-    # -------------------------
-    # Handle subscription/payment via Stripe
-    # -------------------------
-    client_secret = None
-    payment_id = None
-
-    if plan and plan != schemas.SubscriptionPlan.free:
-        price_map = {
-            schemas.SubscriptionPlan.green: 1099,
-            schemas.SubscriptionPlan.blue: 1599
-        }
-        if plan not in price_map:
-            raise HTTPException(status_code=400, detail="Invalid subscription plan")
-
-        amount = price_map[plan]
-
-        if not driver.stripe_customer_id:
-            customer = stripe.Customer.create(
-                email=driver.email,
-                name=driver.name,
-                metadata={"driver_id": str(driver.id)}
-            )
-            driver.stripe_customer_id = customer.id
-        else:
-            customer = stripe.Customer.retrieve(driver.stripe_customer_id)
-
-        price_id_map = {
-            schemas.SubscriptionPlan.green: os.getenv("STRIPE_GREEN_PRICE_ID"),
-            schemas.SubscriptionPlan.blue: os.getenv("STRIPE_BLUE_PRICE_ID")
-        }
-        if not price_id_map.get(plan):
-            raise HTTPException(status_code=500, detail="Stripe price ID not configured")
-
-        subscription = stripe.Subscription.create(
-            customer=customer.id,
-            items=[{"price": price_id_map[plan]}],
-            metadata={"driver_id": str(driver.id), "plan": plan.value},
-            expand=["latest_invoice.payment_intent"]
-        )
-
-        payment = models.Payment(
-            medilogic_driver_id=driver.id,
-            amount=amount / 100,
-            currency="GBP",
-            provider="stripe",
-            reference=subscription.id,
-            status="pending",
-            payment_type="subscription",
-            created_at=now_utc()
-        )
-        db.add(payment)
-
-        driver.stripe_subscription_id = subscription.id
-        driver.stripe_price_id = price_id_map[plan]
-        driver.cancel_at_period_end = False
-        client_secret = subscription.latest_invoice.payment_intent.client_secret
-        payment_id = str(payment.id)
-
-        # ✅ persist subscription in DB
-        driver.subscription_plan = plan
-        driver.subscription_status = schemas.SubscriptionStatus.active
-        driver.subscription_start = now_utc()
-        driver.subscription_end = None
-
-        if plan == schemas.SubscriptionPlan.green:
-            driver.badge_type = BadgeType.green.value
-            driver.can_upload_docs = True
-            driver.can_view_analytics = True
-            driver.can_see_org_names = False
-        elif plan == schemas.SubscriptionPlan.blue:
-            driver.badge_type = BadgeType.blue.value
-            driver.can_upload_docs = True
-            driver.can_view_analytics = True
-            driver.can_see_org_names = True
-
-    # -------------------------
-    # Restrict document uploads for free users
-    # -------------------------
+    # Check if any real files were sent
     has_real_files = any(f and getattr(f, "filename", "") for f in (files or []))
 
+    # ✅ Restrict uploads for free plan
     if driver.subscription_plan == schemas.SubscriptionPlan.free and has_real_files:
         raise HTTPException(status_code=403, detail="You must subscribe to Green or Blue to upload documents")
 
-    # -------------------------
-    # Handle document uploads
-    # -------------------------
+    # ✅ Upload documents only if allowed
     if has_real_files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
         for file in files:
             if not getattr(file, "filename", ""):
@@ -478,13 +395,11 @@ async def update_profile_and_subscribe(
                 filename=file.filename,
                 file_path=key,
                 upload_time=now_utc(),
-                doc_type=file.content_type
+                doc_type=file.content_type,
             )
             db.add(doc)
 
-    # -------------------------
-    # Badge-based access
-    # -------------------------
+    # Badge-based access (optional but fine to keep)
     if driver.badge_type == BadgeType.blue.value:
         driver.can_view_analytics = True
         driver.can_see_org_names = True
@@ -495,9 +410,7 @@ async def update_profile_and_subscribe(
         driver.can_view_analytics = False
         driver.can_see_org_names = False
 
-    # -------------------------
-    # Analytics response
-    # -------------------------
+    # Analytics block (optional)
     analytics = None
     if driver.badge_type in [BadgeType.green.value, BadgeType.blue.value]:
         analytics = {
@@ -515,19 +428,11 @@ async def update_profile_and_subscribe(
         db.commit()
     except Exception:
         db.rollback()
-        logger.exception("[%s] Commit failed driver_id=%s user_id=%s", request_id, driver.id, current_user.id)
         raise
 
     db.refresh(driver)
-    db.refresh(current_user)
 
-    response = {"driver": driver, "analytics": analytics}
-    if client_secret:
-        response["client_secret"] = client_secret
-        response["payment_id"] = payment_id
-
-    return response
-    
+    return {"driver": driver, "analytics": analytics}
     
 @router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(
@@ -604,74 +509,66 @@ def change_subscription(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Upgrade/downgrade a Medilogic Driver subscription (green/blue).
-    Returns client_secret if Stripe requires payment confirmation.
-    """
-
-    # ✅ Only Medilogic drivers allowed
+    # ✅ Only Medilogic drivers
     if current_user.role != "medilogic_driver":
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
-    driver = db.query(models.Medilogic_Driver).filter(
-        models.Medilogic_Driver.user_id == current_user.id
-    ).first()
-
+    driver = (
+        db.query(models.Medilogic_Driver)
+        .filter(models.Medilogic_Driver.user_id == current_user.id)
+        .first()
+    )
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
     if new_plan == driver.subscription_plan:
         raise HTTPException(status_code=400, detail="You are already on this plan")
 
-    # ✅ If you want "free", use your DELETE endpoint instead (cleanest)
     if new_plan == schemas.SubscriptionPlan.free:
-        raise HTTPException(status_code=400, detail="Use DELETE /driver/subscription to cancel (free plan)")
+        raise HTTPException(status_code=400, detail="Use DELETE /Medilogic_drivers/driver/subscription to cancel")
 
-    # -------------------------
-    # Stripe customer
-    # -------------------------
-    if not driver.stripe_customer_id:
-        customer = stripe.Customer.create(
-            email=getattr(driver, "email", None),
-            name=getattr(driver, "name", None),
-            metadata={"driver_id": str(driver.id)},
-        )
-        driver.stripe_customer_id = customer.id
-    else:
-        customer = stripe.Customer.retrieve(driver.stripe_customer_id)
-
-    # -------------------------
-    # Plan → Stripe price_id
-    # -------------------------
+    # Plan -> Stripe price IDs
     price_id_map = {
         schemas.SubscriptionPlan.green: os.getenv("STRIPE_GREEN_PRICE_ID"),
         schemas.SubscriptionPlan.blue: os.getenv("STRIPE_BLUE_PRICE_ID"),
     }
-
     price_id = price_id_map.get(new_plan)
     if not price_id:
         raise HTTPException(status_code=500, detail="Stripe price ID not configured for this plan")
 
-    # Optional: amount tracking (for your Payment table)
+    # Amount map (optional Payment table)
     amount_map = {
         schemas.SubscriptionPlan.green: 1099,
         schemas.SubscriptionPlan.blue: 1599,
     }
     amount_pennies = amount_map.get(new_plan)
 
-    # -------------------------
-    # Create/Modify subscription
-    # -------------------------
+    # Ensure Stripe customer exists
+    try:
+        if not driver.stripe_customer_id:
+            customer = stripe.Customer.create(
+                email=getattr(driver, "email", None),
+                name=getattr(driver, "name", None),
+                metadata={"driver_id": str(driver.id)},
+            )
+            driver.stripe_customer_id = customer.id
+        else:
+            customer = stripe.Customer.retrieve(driver.stripe_customer_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stripe customer error: {str(e)}")
+
     client_secret: Optional[str] = None
     payment_id: Optional[str] = None
     subscription_id: Optional[str] = None
 
     try:
+        # ---------
+        # CREATE or MODIFY subscription using modern flow
+        # ---------
         if driver.stripe_subscription_id:
-            # retrieve item id
             current_sub = stripe.Subscription.retrieve(
                 driver.stripe_subscription_id,
-                expand=["items.data.price"],
+                expand=["items.data.price", "latest_invoice.payment_intent"],
             )
             item_id = current_sub["items"]["data"][0]["id"]
 
@@ -679,38 +576,37 @@ def change_subscription(
                 driver.stripe_subscription_id,
                 cancel_at_period_end=False,
                 proration_behavior="create_prorations",
+                payment_behavior="default_incomplete",
+                payment_settings={"save_default_payment_method": "on_subscription"},
                 items=[{"id": item_id, "price": price_id}],
                 expand=["latest_invoice.payment_intent"],
             )
 
             subscription_id = updated_sub["id"]
-
-            if updated_sub.get("latest_invoice") and updated_sub["latest_invoice"].get("payment_intent"):
-                pi = updated_sub["latest_invoice"]["payment_intent"]
-                client_secret = pi.get("client_secret")
+            pi = (updated_sub.get("latest_invoice") or {}).get("payment_intent")
+            client_secret = pi.get("client_secret") if pi else None
 
         else:
             created_sub = stripe.Subscription.create(
                 customer=customer.id,
-                items=[{"price": price_id}],metadata={"driver_id": str(driver.id), "plan": new_plan.value},
+                items=[{"price": price_id}],
+                metadata={"driver_id": str(driver.id), "plan": new_plan.value},
+                payment_behavior="default_incomplete",
+                payment_settings={"save_default_payment_method": "on_subscription"},
                 expand=["latest_invoice.payment_intent"],
             )
 
             subscription_id = created_sub["id"]
             driver.stripe_subscription_id = subscription_id
-
-            pi = created_sub.get("latest_invoice", {}).get("payment_intent")
+            pi = (created_sub.get("latest_invoice") or {}).get("payment_intent")
             client_secret = pi.get("client_secret") if pi else None
 
         # Save Stripe price used
         driver.stripe_price_id = price_id
         driver.cancel_at_period_end = False
 
-        # -------------------------
-        # Create Payment row (optional, but recommended)
-        # -------------------------
-        # If you already have models.Payment, keep it consistent with /me
-        if hasattr(models, "Payment") and amount_pennies is not None:
+        # Optional: create Payment row if you have models.Payment
+        if hasattr(models, "Payment") and amount_pennies is not None and subscription_id:
             payment = models.Payment(
                 medilogic_driver_id=driver.id,
                 amount=amount_pennies / 100,
@@ -722,21 +618,22 @@ def change_subscription(
                 created_at=now_utc(),
             )
             db.add(payment)
-            db.flush()  # so payment.id exists
+            db.flush()
             payment_id = str(payment.id)
 
-        # -------------------------
-        # Update driver subscription state in DB
-        # -------------------------
+        # Update local DB state
         driver.subscription_plan = new_plan
         driver.subscription_start = now_utc()
         driver.subscription_end = None
 
-        # ✅ IMPORTANT: pending until payment confirmed
-        if client_secret:
-            driver.subscription_status = schemas.SubscriptionStatus.none
-        else:
-            driver.subscription_status = schemas.SubscriptionStatus.active
+        # ✅ With your statuses:
+        # - if we got client_secret -> payment still needs confirmation -> keep None
+        # - if no client_secret -> already active
+        driver.subscription_status = (
+            schemas.SubscriptionStatus.none
+            if client_secret
+            else schemas.SubscriptionStatus.active
+        )
 
         # Badge/features
         if new_plan == schemas.SubscriptionPlan.green:
