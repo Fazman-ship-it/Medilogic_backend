@@ -95,3 +95,30 @@ def get_all_driver_availability(
         query = query.filter(models.DriverAvailability.organization_id == current_user.organization_id)
 
     return query.all()
+    
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+
+@router.delete("/day/{day_of_week}", status_code=200)
+def delete_availability_day(
+    day_of_week: schemas.WeekDay,  # use your WeekDay enum from schemas
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if current_user.role != "driver":
+        raise HTTPException(status_code=403, detail="Only drivers can edit availability.")
+
+    deleted = db.query(models.DriverAvailability).filter(
+        models.DriverAvailability.driver_id == current_user.id,
+        models.DriverAvailability.day_of_week == day_of_week,
+    ).delete(synchronize_session=False)
+
+    db.commit()
+
+    return {
+        "message": "Day removed" if deleted else "Day not found",
+        "day_of_week": day_of_week,
+    }
