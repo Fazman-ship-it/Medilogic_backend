@@ -102,23 +102,45 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user
 
-@router.delete("/day/{day_of_week}", status_code=200)
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+@router.delete(
+    "/day/{day_of_week}",
+    status_code=200,
+    response_model=schemas.DriverAvailabilityReplaceResponse
+)
 def delete_availability_day(
-    day_of_week: schemas.WeekDay,  # use your WeekDay enum from schemas
+    day_of_week: schemas.WeekDay,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     if current_user.role != "driver":
         raise HTTPException(status_code=403, detail="Only drivers can edit availability.")
 
+    # ✅ Delete ONLY that day for this driver
     deleted = db.query(models.DriverAvailability).filter(
         models.DriverAvailability.driver_id == current_user.id,
         models.DriverAvailability.day_of_week == day_of_week,
     ).delete(synchronize_session=False)
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    # ✅ Return final saved list (same pattern as POST)
+    saved = (
+        db.query(models.DriverAvailability)
+        .filter(models.DriverAvailability.driver_id == current_user.id)
+        .order_by(models.DriverAvailability.day_of_week.asc())
+        .all()
+    )
 
     return {
         "message": "Day removed" if deleted else "Day not found",
-        "day_of_week": day_of_week,
+        "count": len(saved),
+        "entries": saved,
     }
