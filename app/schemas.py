@@ -894,11 +894,19 @@ class DriverAvailabilityOut(DriverAvailabilityCreate):
     short_id: Optional[str] = None
     driver_id: UUID
     organization_id: UUID
+    day_of_week: WeekDay
+    start_time: time
+    end_time: time 
     
 class DriverAvailabilityReplaceResponse(BaseModel):
     message:str
     count:int
     entries:List[DriverAvailabilityOut]
+    
+class DriverAvailabilityGroupedOut(BaseModel):
+    driver_id: UUID
+    driver_name: Optional[str] = None
+    availability: List[DriverAvailabilityOut]
 
 class LocationUpdate(BaseModel):
     latitude: float
