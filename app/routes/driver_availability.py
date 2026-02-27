@@ -144,3 +144,50 @@ def delete_availability_day(
         "count": len(saved),
         "entries": saved,
     }
+    
+from typing import List, Dict
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
+from app import models, schemas
+from app.database import get_db
+from app.dependencies import get_current_user
+
+@router.get("/all/grouped", response_model=List[schemas.DriverAvailabilityGroupedOut])
+def get_all_driver_availability_grouped(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Admin-only
+    if current_user.role not in ["admin", "superadmin"]:
+        raise HTTPException(status_code=403, detail="Admins only.")
+
+    query = db.query(models.DriverAvailability, models.User).join(
+        models.User,
+        models.User.id == models.DriverAvailability.driver_id
+    )
+
+    # Non-superadmin must stay inside their org
+    if current_user.role != "superadmin":
+        query = query.filter(models.DriverAvailability.organization_id == current_user.organization_id)
+
+    rows = query.order_by(
+        models.DriverAvailability.driver_id.asc(),
+        models.DriverAvailability.day_of_week.asc()
+    ).all()
+
+    grouped: Dict[str, dict] = {}
+
+    for availability_row, driver_user in rows:
+        driver_id = str(availability_row.driver_id)
+
+        if driver_id not in grouped:
+            grouped[driver_id] = {
+                "driver_id": availability_row.driver_id,
+                "driver_name": getattr(driver_user, "name", None),
+                "availability": [],
+            }
+
+        grouped[driver_id]["availability"].append(availability_row)
+
+    return list(grouped.values())
