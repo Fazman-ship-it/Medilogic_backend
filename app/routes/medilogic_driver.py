@@ -503,20 +503,57 @@ from app.utilites.time_utilities import now_utc
 # If you use BadgeType like in /me
 from app.models import BadgeType  # adjust import if your BadgeType lives elsewhere
 
+@router.post("/driver/setup-intent")
+def create_setup_intent(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    if current_user.role != "medilogic_driver":
+        raise HTTPException(status_code=403, detail="Only Medilogic drivers allowed")
+
+    driver = db.query(models.Medilogic_Driver).filter(
+        models.Medilogic_Driver.user_id == current_user.id
+    ).first()
+
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+
+    # Ensure Stripe customer exists
+    if not driver.stripe_customer_id:
+        customer = stripe.Customer.create(
+            email=driver.email,
+            name=driver.name,
+            metadata={"driver_id": str(driver.id)},
+        )
+        driver.stripe_customer_id = customer.id
+        db.commit()
+    else:
+        customer = stripe.Customer.retrieve(driver.stripe_customer_id)
+
+    setup_intent = stripe.SetupIntent.create(
+        customer=customer.id,
+        payment_method_types=["card"],
+    )
+
+    return {
+        "client_secret": setup_intent.client_secret
+    }
+
+
 @router.put("/driver/subscription", response_model=schemas.MedilogicDriverSubscriptionChangeOut)
 def change_subscription(
     new_plan: schemas.SubscriptionPlan = Form(...),
+    payment_method_id: str = Form(...),  # 🔥 NEW REQUIRED FIELD
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
     if current_user.role != "medilogic_driver":
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
-    driver = (
-        db.query(models.Medilogic_Driver)
-        .filter(models.Medilogic_Driver.user_id == current_user.id)
-        .first()
-    )
+    driver = db.query(models.Medilogic_Driver).filter(
+        models.Medilogic_Driver.user_id == current_user.id
+    ).first()
+
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
@@ -535,106 +572,48 @@ def change_subscription(
     if not price_id:
         raise HTTPException(status_code=500, detail="Stripe price ID not configured")
 
-    # Ensure Stripe customer exists
     try:
-        if not driver.stripe_customer_id:
-            customer = stripe.Customer.create(
-                email=driver.email,
-                name=driver.name,
-                metadata={"driver_id": str(driver.id)},
-            )
-            driver.stripe_customer_id = customer.id
-        else:
-            customer = stripe.Customer.retrieve(driver.stripe_customer_id)
+        # Attach payment method to customer
+        stripe.PaymentMethod.attach(
+            payment_method_id,
+            customer=driver.stripe_customer_id,
+        )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Stripe customer error: {str(e)}")
+        # Set as default payment method
+        stripe.Customer.modify(
+            driver.stripe_customer_id,
+            invoice_settings={
+                "default_payment_method": payment_method_id
+            }
+        )
 
-    client_secret = None
+        # Create subscription (no default_incomplete needed now)
+        subscription = stripe.Subscription.create(
+            customer=driver.stripe_customer_id,
+            items=[{"price": price_id}],
+            metadata={
+                "driver_id": str(driver.id),
+                "plan": new_plan.value,
+            },
+            collection_method="charge_automatically",
+        )
 
-    try:
-        # ===============================
-        # MODIFY existing subscription
-        # ===============================
-        if driver.stripe_subscription_id:
-
-            current_sub = stripe.Subscription.retrieve(
-                driver.stripe_subscription_id
-            )
-
-            item_id = current_sub["items"]["data"][0]["id"]
-
-            subscription = stripe.Subscription.modify(
-                driver.stripe_subscription_id,
-                cancel_at_period_end=False,
-                proration_behavior="create_prorations",
-                collection_method="charge_automatically",
-                payment_behavior="default_incomplete",
-                payment_settings={
-                    "payment_method_types": ["card"],  # 🔥 IMPORTANT FIX
-                    "save_default_payment_method": "on_subscription",
-                },
-                items=[{
-                    "id": item_id,
-                    "price": price_id
-                }],
-                expand=["latest_invoice.payment_intent"],
-            )
-
-        # ===============================
-        # CREATE new subscription
-        # ===============================
-        else:
-            subscription = stripe.Subscription.create(
-                customer=customer.id,
-                items=[{"price": price_id}],
-                metadata={
-                    "driver_id": str(driver.id),
-                    "plan": new_plan.value
-                },
-                collection_method="charge_automatically",
-                payment_behavior="default_incomplete",
-                payment_settings={
-                    "payment_method_types": ["card"],  # 🔥 IMPORTANT FIX
-                    "save_default_payment_method": "on_subscription",
-                },
-                expand=["latest_invoice.payment_intent"],
-            )
-
-            driver.stripe_subscription_id = subscription["id"]
-
-        # ===============================
-        # Extract PaymentIntent client_secret
-        # ===============================
-        latest_invoice = subscription.get("latest_invoice")
-
-        if latest_invoice:
-            payment_intent = latest_invoice.get("payment_intent")
-
-            if isinstance(payment_intent, dict):
-                client_secret = payment_intent.get("client_secret")
-
-            elif isinstance(payment_intent, str):
-                pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
-                client_secret = pi_obj.get("client_secret")
-
-        # Save Stripe info only (DO NOT activate here)
+        driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id
-        driver.cancel_at_period_end = False
         driver.subscription_status = schemas.SubscriptionStatus.none
         driver.subscription_start = None
         driver.subscription_end = None
+        driver.cancel_at_period_end = False
 
         db.commit()
         db.refresh(driver)
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Subscription change failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Subscription creation failed: {str(e)}")
 
     return {
         "driver": driver,
-        "client_secret": client_secret,
     }
 @router.delete("/driver/subscription", response_model=schemas.MedilogicDriverOut)
 def cancel_subscription(
