@@ -11,10 +11,11 @@ from app.utilites.time_utilities import now_utc
 router = APIRouter(prefix="/hookstripe", tags=["Hookstripe"])
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")  # whsec_...
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+
 
 def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.SubscriptionPlan):
-    """Keep your feature toggles in one place."""
+    """Centralised feature activation"""
     driver.subscription_plan = plan
 
     if plan == schemas.SubscriptionPlan.green:
@@ -38,6 +39,7 @@ def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.Subscript
 
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+
     if not STRIPE_WEBHOOK_SECRET:
         raise HTTPException(status_code=500, detail="STRIPE_WEBHOOK_SECRET not set")
 
@@ -51,96 +53,85 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             secret=STRIPE_WEBHOOK_SECRET,
         )
     except ValueError:
-        # Invalid payload
         raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.error.SignatureVerificationError:
-        # Invalid signature
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event["type"]
     data_obj = event["data"]["object"]
 
-    # ----------------------------
-    # 1) Invoice paid -> ACTIVE
-    # ----------------------------
+    # ==========================================================
+    # 1️⃣ PAYMENT SUCCEEDED → ACTIVATE SUBSCRIPTION
+    # ==========================================================
     if event_type == "invoice.payment_succeeded":
+
         subscription_id = data_obj.get("subscription")
-        customer_id = data_obj.get("customer")
-
-        driver = None
-        if subscription_id:
-            driver = db.query(models.Medilogic_Driver).filter(
-                models.Medilogic_Driver.stripe_subscription_id == subscription_id
-            ).first()
-
-        if not driver and customer_id:
-            driver = db.query(models.Medilogic_Driver).filter(
-                models.Medilogic_Driver.stripe_customer_id == customer_id
-            ).first()
-
-        if driver:
-            driver.subscription_status = schemas.SubscriptionStatus.active
-            driver.subscription_start = driver.subscription_start or now_utc()
-            driver.subscription_end = None
-            db.commit()
-
-        return {"ok": True}
-
-    # ----------------------------
-    # 2) Invoice failed -> EXPIRED (or NONE)
-    # ----------------------------
-    if event_type == "invoice.payment_failed":
-        subscription_id = data_obj.get("subscription")
-        customer_id = data_obj.get("customer")
-
-        driver = None
-        if subscription_id:
-            driver = db.query(models.Medilogic_Driver).filter(
-                models.Medilogic_Driver.stripe_subscription_id == subscription_id
-            ).first()
-
-        if not driver and customer_id:
-            driver = db.query(models.Medilogic_Driver).filter(
-                models.Medilogic_Driver.stripe_customer_id == customer_id
-            ).first()
-
-        if driver:
-            driver.subscription_status = schemas.SubscriptionStatus.expired
-            db.commit()
-
-        return {"ok": True}
-
-    # ----------------------------
-    # 3) Subscription deleted -> CANCELLED + FREE
-    # ----------------------------
-    if event_type == "customer.subscription.deleted":
-        subscription_id = data_obj.get("id")
-        customer_id = data_obj.get("customer")
 
         driver = db.query(models.Medilogic_Driver).filter(
             models.Medilogic_Driver.stripe_subscription_id == subscription_id
         ).first()
 
-        if not driver and customer_id:
-            driver = db.query(models.Medilogic_Driver).filter(
-                models.Medilogic_Driver.stripe_customer_id == customer_id
-            ).first()
+        if driver:
+
+            driver.subscription_status = schemas.SubscriptionStatus.active
+            driver.subscription_start = now_utc()
+            driver.subscription_end = None
+
+            # Determine plan from Stripe price
+            if driver.stripe_price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
+                apply_plan_features(driver, schemas.SubscriptionPlan.green)
+
+            elif driver.stripe_price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
+                apply_plan_features(driver, schemas.SubscriptionPlan.blue)
+
+            db.commit()
+
+        return {"status": "activated"}
+
+    # ==========================================================
+    # 2️⃣ PAYMENT FAILED → MARK EXPIRED
+    # ==========================================================
+    if event_type == "invoice.payment_failed":
+
+        subscription_id = data_obj.get("subscription")
+
+        driver = db.query(models.Medilogic_Driver).filter(
+            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+        ).first()
+
+        if driver:
+            driver.subscription_status = schemas.SubscriptionStatus.expired
+            db.commit()
+
+        return {"status": "payment_failed"}
+
+    # ==========================================================
+    # 3️⃣ SUBSCRIPTION CANCELLED → DOWNGRADE TO FREE
+    # ==========================================================
+    if event_type == "customer.subscription.deleted":
+
+        subscription_id = data_obj.get("id")
+
+        driver = db.query(models.Medilogic_Driver).filter(
+            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+        ).first()
 
         if driver:
             driver.subscription_status = schemas.SubscriptionStatus.cancelled
             driver.subscription_end = now_utc()
 
-            # move to free & lock features
+            # Downgrade to free
             apply_plan_features(driver, schemas.SubscriptionPlan.free)
 
             driver.stripe_subscription_id = None
             driver.stripe_price_id = None
             driver.cancel_at_period_end = False
+
             db.commit()
 
-        return {"ok": True}
+        return {"status": "cancelled"}
 
-    # Optional: handle subscription.updated if you want
-    # if event_type == "customer.subscription.updated": ...
-
-    return {"ok": True, "ignored": event_type}
+    # ==========================================================
+    # Ignore other Stripe events
+    # ==========================================================
+    return {"status": "ignored", "event": event_type}
