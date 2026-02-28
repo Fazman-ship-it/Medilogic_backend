@@ -624,15 +624,9 @@ def change_subscription(
 def cancel_subscription(
     at_period_end: bool = True,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
+    current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Cancel the Medilogic Driver's subscription.
-    - at_period_end=True → cancel at the end of billing cycle
-    - at_period_end=False → cancel immediately
-    """
 
-    # ✅ Only Medilogic drivers allowed
     if current_user.role != "medilogic_driver":
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
@@ -646,26 +640,21 @@ def cancel_subscription(
     if not driver.stripe_subscription_id:
         raise HTTPException(status_code=400, detail="No active subscription to cancel")
 
-    # Cancel Stripe subscription
-    stripe.Subscription.modify(
-        driver.stripe_subscription_id,
-        cancel_at_period_end=at_period_end
-    )
+    try:
+        stripe.Subscription.modify(
+            driver.stripe_subscription_id,
+            cancel_at_period_end=at_period_end
+        )
 
-    # Update driver status/features
-    if at_period_end:
+        # Mark locally as cancelling (not free yet)
         driver.subscription_status = schemas.SubscriptionStatus.cancelled
-    else:
-        driver.subscription_status = schemas.SubscriptionStatus.cancelled
-        driver.subscription_plan = schemas.SubscriptionPlan.free
-        driver.badge_type = schemas.BadgeType.none
-        driver.can_upload_docs = False
-        driver.can_view_analytics = False
-        driver.can_see_org_names = False
-        driver.subscription_end = now_utc()
-        driver.stripe_subscription_id = None
+        driver.cancel_at_period_end = at_period_end
 
-    db.commit()
-    db.refresh(driver)
+        db.commit()
+        db.refresh(driver)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Cancellation failed: {str(e)}")
 
     return driver
