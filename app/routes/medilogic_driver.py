@@ -553,67 +553,74 @@ def change_subscription(
     client_secret = None
 
     try:
+        # ===============================
         # MODIFY existing subscription
+        # ===============================
         if driver.stripe_subscription_id:
 
-            updated_sub = stripe.Subscription.modify(
+            current_sub = stripe.Subscription.retrieve(
+                driver.stripe_subscription_id
+            )
+
+            item_id = current_sub["items"]["data"][0]["id"]
+
+            subscription = stripe.Subscription.modify(
                 driver.stripe_subscription_id,
                 cancel_at_period_end=False,
                 proration_behavior="create_prorations",
+                collection_method="charge_automatically",
                 payment_behavior="default_incomplete",
-                payment_settings={"save_default_payment_method": "on_subscription"},
+                payment_settings={
+                    "payment_method_types": ["card"],  # 🔥 IMPORTANT FIX
+                    "save_default_payment_method": "on_subscription",
+                },
                 items=[{
-                    "id": stripe.Subscription.retrieve(driver.stripe_subscription_id)["items"]["data"][0]["id"],
+                    "id": item_id,
                     "price": price_id
                 }],
                 expand=["latest_invoice.payment_intent"],
             )
 
-            driver.stripe_subscription_id = updated_sub["id"]
-
-            latest_invoice = updated_sub.get("latest_invoice")
-            if latest_invoice:
-                # 🔥 Force invoice finalization
-                finalized_invoice = stripe.Invoice.finalize_invoice(latest_invoice["id"])
-
-                payment_intent = finalized_invoice.get("payment_intent")
-
-                if isinstance(payment_intent, dict):
-                    client_secret = payment_intent.get("client_secret")
-                elif isinstance(payment_intent, str):
-                    pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
-                    client_secret = pi_obj.get("client_secret")
-
+        # ===============================
         # CREATE new subscription
+        # ===============================
         else:
-            created_sub = stripe.Subscription.create(
+            subscription = stripe.Subscription.create(
                 customer=customer.id,
                 items=[{"price": price_id}],
-                metadata={"driver_id": str(driver.id), "plan": new_plan.value},
+                metadata={
+                    "driver_id": str(driver.id),
+                    "plan": new_plan.value
+                },
+                collection_method="charge_automatically",
                 payment_behavior="default_incomplete",
-                payment_settings={"save_default_payment_method": "on_subscription"},
+                payment_settings={
+                    "payment_method_types": ["card"],  # 🔥 IMPORTANT FIX
+                    "save_default_payment_method": "on_subscription",
+                },
                 expand=["latest_invoice.payment_intent"],
             )
 
-            driver.stripe_subscription_id = created_sub["id"]
+            driver.stripe_subscription_id = subscription["id"]
 
-            latest_invoice = created_sub.get("latest_invoice")
-            if latest_invoice:
-                # 🔥 Force invoice finalization
-                finalized_invoice = stripe.Invoice.finalize_invoice(latest_invoice["id"])
+        # ===============================
+        # Extract PaymentIntent client_secret
+        # ===============================
+        latest_invoice = subscription.get("latest_invoice")
 
-                payment_intent = finalized_invoice.get("payment_intent")
+        if latest_invoice:
+            payment_intent = latest_invoice.get("payment_intent")
 
-                if isinstance(payment_intent, dict):
-                    client_secret = payment_intent.get("client_secret")
-                elif isinstance(payment_intent, str):
-                    pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
-                    client_secret = pi_obj.get("client_secret")
+            if isinstance(payment_intent, dict):
+                client_secret = payment_intent.get("client_secret")
 
-        # Save Stripe info only
+            elif isinstance(payment_intent, str):
+                pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
+                client_secret = pi_obj.get("client_secret")
+
+        # Save Stripe info only (DO NOT activate here)
         driver.stripe_price_id = price_id
         driver.cancel_at_period_end = False
-
         driver.subscription_status = schemas.SubscriptionStatus.none
         driver.subscription_start = None
         driver.subscription_end = None
