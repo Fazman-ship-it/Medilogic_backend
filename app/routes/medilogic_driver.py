@@ -551,7 +551,6 @@ def change_subscription(
         raise HTTPException(status_code=500, detail=f"Stripe customer error: {str(e)}")
 
     client_secret = None
-    subscription_id = None
 
     try:
         # MODIFY existing subscription
@@ -570,15 +569,17 @@ def change_subscription(
                 expand=["latest_invoice.payment_intent"],
             )
 
-            subscription_id = updated_sub["id"]
+            driver.stripe_subscription_id = updated_sub["id"]
 
             latest_invoice = updated_sub.get("latest_invoice")
             if latest_invoice:
-                payment_intent = latest_invoice.get("payment_intent")
+                # 🔥 Force invoice finalization
+                finalized_invoice = stripe.Invoice.finalize_invoice(latest_invoice["id"])
+
+                payment_intent = finalized_invoice.get("payment_intent")
 
                 if isinstance(payment_intent, dict):
                     client_secret = payment_intent.get("client_secret")
-
                 elif isinstance(payment_intent, str):
                     pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
                     client_secret = pi_obj.get("client_secret")
@@ -594,16 +595,17 @@ def change_subscription(
                 expand=["latest_invoice.payment_intent"],
             )
 
-            subscription_id = created_sub["id"]
-            driver.stripe_subscription_id = subscription_id
+            driver.stripe_subscription_id = created_sub["id"]
 
             latest_invoice = created_sub.get("latest_invoice")
             if latest_invoice:
-                payment_intent = latest_invoice.get("payment_intent")
+                # 🔥 Force invoice finalization
+                finalized_invoice = stripe.Invoice.finalize_invoice(latest_invoice["id"])
+
+                payment_intent = finalized_invoice.get("payment_intent")
 
                 if isinstance(payment_intent, dict):
                     client_secret = payment_intent.get("client_secret")
-
                 elif isinstance(payment_intent, str):
                     pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
                     client_secret = pi_obj.get("client_secret")
@@ -627,7 +629,6 @@ def change_subscription(
         "driver": driver,
         "client_secret": client_secret,
     }
-    
 @router.delete("/driver/subscription", response_model=schemas.MedilogicDriverOut)
 def cancel_subscription(
     at_period_end: bool = True,
