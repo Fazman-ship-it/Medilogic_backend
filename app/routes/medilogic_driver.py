@@ -509,7 +509,6 @@ def change_subscription(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # Only Medilogic drivers
     if current_user.role != "medilogic_driver":
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
@@ -522,10 +521,7 @@ def change_subscription(
         raise HTTPException(status_code=404, detail="Driver not found")
 
     if new_plan == schemas.SubscriptionPlan.free:
-        raise HTTPException(
-            status_code=400,
-            detail="Use DELETE /driver/subscription to cancel"
-        )
+        raise HTTPException(status_code=400, detail="Use DELETE /driver/subscription to cancel")
 
     if new_plan == driver.subscription_plan:
         raise HTTPException(status_code=400, detail="You are already on this plan")
@@ -539,8 +535,8 @@ def change_subscription(
     if not price_id:
         raise HTTPException(status_code=500, detail="Stripe price ID not configured")
 
+    # Ensure Stripe customer exists
     try:
-        # Ensure Stripe customer exists
         if not driver.stripe_customer_id:
             customer = stripe.Customer.create(
                 email=driver.email,
@@ -561,26 +557,31 @@ def change_subscription(
         # MODIFY existing subscription
         if driver.stripe_subscription_id:
 
-            current_sub = stripe.Subscription.retrieve(
-                driver.stripe_subscription_id,
-                expand=["latest_invoice.payment_intent"],
-            )
-
-            item_id = current_sub["items"]["data"][0]["id"]
-
             updated_sub = stripe.Subscription.modify(
                 driver.stripe_subscription_id,
                 cancel_at_period_end=False,
                 proration_behavior="create_prorations",
                 payment_behavior="default_incomplete",
                 payment_settings={"save_default_payment_method": "on_subscription"},
-                items=[{"id": item_id, "price": price_id}],
+                items=[{
+                    "id": stripe.Subscription.retrieve(driver.stripe_subscription_id)["items"]["data"][0]["id"],
+                    "price": price_id
+                }],
                 expand=["latest_invoice.payment_intent"],
             )
 
             subscription_id = updated_sub["id"]
-            pi = (updated_sub.get("latest_invoice") or {}).get("payment_intent")
-            client_secret = pi.get("client_secret") if pi else None
+
+            latest_invoice = updated_sub.get("latest_invoice")
+            if latest_invoice:
+                payment_intent = latest_invoice.get("payment_intent")
+
+                if isinstance(payment_intent, dict):
+                    client_secret = payment_intent.get("client_secret")
+
+                elif isinstance(payment_intent, str):
+                    pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
+                    client_secret = pi_obj.get("client_secret")
 
         # CREATE new subscription
         else:
@@ -596,14 +597,21 @@ def change_subscription(
             subscription_id = created_sub["id"]
             driver.stripe_subscription_id = subscription_id
 
-            pi = (created_sub.get("latest_invoice") or {}).get("payment_intent")
-            client_secret = pi.get("client_secret") if pi else None
+            latest_invoice = created_sub.get("latest_invoice")
+            if latest_invoice:
+                payment_intent = latest_invoice.get("payment_intent")
+
+                if isinstance(payment_intent, dict):
+                    client_secret = payment_intent.get("client_secret")
+
+                elif isinstance(payment_intent, str):
+                    pi_obj = stripe.PaymentIntent.retrieve(payment_intent)
+                    client_secret = pi_obj.get("client_secret")
 
         # Save Stripe info only
         driver.stripe_price_id = price_id
         driver.cancel_at_period_end = False
 
-        # 🚨 DO NOT activate subscription here
         driver.subscription_status = schemas.SubscriptionStatus.none
         driver.subscription_start = None
         driver.subscription_end = None
