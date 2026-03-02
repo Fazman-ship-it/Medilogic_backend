@@ -74,18 +74,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         ).first()
 
         if driver:
-
-            # Extract price
             try:
                 price_id = data_obj["lines"]["data"][0]["price"]["id"]
-            except (KeyError, IndexError):
-                price_id = None
-
-            # Extract billing period end
-            try:
                 period_end_unix = data_obj["lines"]["data"][0]["period"]["end"]
                 period_end = datetime.fromtimestamp(period_end_unix, tz=timezone.utc)
             except (KeyError, IndexError):
+                price_id = None
                 period_end = None
 
             driver.subscription_status = schemas.SubscriptionStatus.active
@@ -94,9 +88,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             driver.stripe_price_id = price_id
             driver.cancel_at_period_end = False
 
-            # Restore premium features
             if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
                 apply_plan_features(driver, schemas.SubscriptionPlan.green)
+
             elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
                 apply_plan_features(driver, schemas.SubscriptionPlan.blue)
 
@@ -106,7 +100,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
 
     # ==========================================================
-    # 2️⃣ PAYMENT FAILED → MARK PAST_DUE + REMOVE PREMIUM
+    # 2️⃣ PAYMENT FAILED → IMMEDIATE DOWNGRADE
     # ==========================================================
     if event_type == "invoice.payment_failed":
 
@@ -119,16 +113,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if driver:
             driver.subscription_status = schemas.SubscriptionStatus.past_due
 
-            # Immediately remove premium access
+            # Immediately remove premium
             apply_plan_features(driver, schemas.SubscriptionPlan.free)
 
             db.commit()
 
-        return {"status": "payment_failed_downgraded_to_free"}
+        return {"status": "payment_failed_downgraded"}
 
 
     # ==========================================================
-    # 3️⃣ SUBSCRIPTION UPDATED → FULL STRIPE SYNC
+    # 3️⃣ SUBSCRIPTION UPDATED → STRIPE IS SOURCE OF TRUTH
     # ==========================================================
     if event_type == "customer.subscription.updated":
 
@@ -144,33 +138,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             cancel_at_period_end = data_obj.get("cancel_at_period_end", False)
             current_period_end_unix = data_obj.get("current_period_end")
 
-            # Sync lifecycle state
-            if stripe_status == "active":
-                driver.subscription_status = schemas.SubscriptionStatus.active
-
-                # Restore correct plan
-                try:
-                    price_id = data_obj["items"]["data"][0]["price"]["id"]
-                    driver.stripe_price_id = price_id
-
-                    if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
-                        apply_plan_features(driver, schemas.SubscriptionPlan.green)
-                    elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
-                        apply_plan_features(driver, schemas.SubscriptionPlan.blue)
-
-                except (KeyError, IndexError):
-                    pass
-
-            elif stripe_status == "past_due":
-                driver.subscription_status = schemas.SubscriptionStatus.past_due
-
-                # Immediate downgrade
-                apply_plan_features(driver, schemas.SubscriptionPlan.free)
-
-            elif stripe_status in ["canceled", "unpaid"]:
-                driver.subscription_status = schemas.SubscriptionStatus.cancelled
-                apply_plan_features(driver, schemas.SubscriptionPlan.free)
-
             # Sync billing period
             if current_period_end_unix:
                 driver.subscription_end = datetime.fromtimestamp(
@@ -180,13 +147,39 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
             driver.cancel_at_period_end = cancel_at_period_end
 
+            # Extract current price
+            try:
+                price_id = data_obj["items"]["data"][0]["price"]["id"]
+                driver.stripe_price_id = price_id
+            except (KeyError, IndexError):
+                price_id = None
+
+            # 🔥 FORCE PLAN FROM PRICE
+            if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
+                apply_plan_features(driver, schemas.SubscriptionPlan.green)
+
+            elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
+                apply_plan_features(driver, schemas.SubscriptionPlan.blue)
+
+            # Handle lifecycle states
+            if stripe_status == "active":
+                driver.subscription_status = schemas.SubscriptionStatus.active
+
+            elif stripe_status == "past_due":
+                driver.subscription_status = schemas.SubscriptionStatus.past_due
+                apply_plan_features(driver, schemas.SubscriptionPlan.free)
+
+            elif stripe_status in ["canceled", "unpaid"]:
+                driver.subscription_status = schemas.SubscriptionStatus.cancelled
+                apply_plan_features(driver, schemas.SubscriptionPlan.free)
+
             db.commit()
 
-        return {"status": "subscription_fully_synced"}
+        return {"status": "subscription_synced"}
 
 
     # ==========================================================
-    # 4️⃣ SUBSCRIPTION DELETED → DOWNGRADE TO FREE
+    # 4️⃣ SUBSCRIPTION DELETED → FULL CANCEL
     # ==========================================================
     if event_type == "customer.subscription.deleted":
 
@@ -211,7 +204,4 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         return {"status": "cancelled"}
 
 
-    # ==========================================================
-    # Ignore other Stripe events
-    # ==========================================================
     return {"status": "ignored", "event": event_type}
