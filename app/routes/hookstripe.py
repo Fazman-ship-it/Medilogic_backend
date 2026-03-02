@@ -73,15 +73,21 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if driver:
 
+            # 🔥 ENTERPRISE SAFE: Read price from Stripe invoice
+            try:
+                price_id = data_obj["lines"]["data"][0]["price"]["id"]
+            except (KeyError, IndexError):
+                price_id = None
+
             driver.subscription_status = schemas.SubscriptionStatus.active
             driver.subscription_start = now_utc()
             driver.subscription_end = None
 
-            # Determine plan from Stripe price
-            if driver.stripe_price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
+            # Determine plan from STRIPE price (not DB)
+            if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
                 apply_plan_features(driver, schemas.SubscriptionPlan.green)
 
-            elif driver.stripe_price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
+            elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
                 apply_plan_features(driver, schemas.SubscriptionPlan.blue)
 
             db.commit()
