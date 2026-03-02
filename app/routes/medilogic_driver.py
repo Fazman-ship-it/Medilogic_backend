@@ -543,7 +543,7 @@ def create_setup_intent(
 @router.put("/driver/subscription", response_model=schemas.MedilogicDriverSubscriptionChangeOut)
 def change_subscription(
     new_plan: schemas.SubscriptionPlan = Form(...),
-    payment_method_id: str = Form(...),  # 🔥 NEW REQUIRED FIELD
+    payment_method_id: str = Form(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -557,12 +557,6 @@ def change_subscription(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
-    if new_plan == schemas.SubscriptionPlan.free:
-        raise HTTPException(status_code=400, detail="Use DELETE /driver/subscription to cancel")
-
-    if new_plan == driver.subscription_plan:
-        raise HTTPException(status_code=400, detail="You are already on this plan")
-
     price_id_map = {
         schemas.SubscriptionPlan.green: os.getenv("STRIPE_GREEN_PRICE_ID"),
         schemas.SubscriptionPlan.blue: os.getenv("STRIPE_BLUE_PRICE_ID"),
@@ -573,36 +567,102 @@ def change_subscription(
         raise HTTPException(status_code=500, detail="Stripe price ID not configured")
 
     try:
-        # Attach payment method to customer
+        # ---------------------------------------------------
+        # 1️⃣ Ensure Stripe customer exists
+        # ---------------------------------------------------
+        if not driver.stripe_customer_id:
+            customer = stripe.Customer.create(
+                email=driver.email,
+                name=driver.name,
+                metadata={"driver_id": str(driver.id)},
+            )
+            driver.stripe_customer_id = customer.id
+        else:
+            customer = stripe.Customer.retrieve(driver.stripe_customer_id)
+
+        # ---------------------------------------------------
+        # 2️⃣ Attach Payment Method
+        # ---------------------------------------------------
         stripe.PaymentMethod.attach(
             payment_method_id,
-            customer=driver.stripe_customer_id,
+            customer=customer.id,
         )
 
-        # Set as default payment method
         stripe.Customer.modify(
-            driver.stripe_customer_id,
+            customer.id,
             invoice_settings={
                 "default_payment_method": payment_method_id
             }
         )
 
-        # Create subscription (no default_incomplete needed now)
-        subscription = stripe.Subscription.create(
-            customer=driver.stripe_customer_id,
-            items=[{"price": price_id}],
-            metadata={
-                "driver_id": str(driver.id),
-                "plan": new_plan.value,
-            },
-            collection_method="charge_automatically",
+        # ---------------------------------------------------
+        # 3️⃣ Check for ACTIVE subscriptions in Stripe
+        # ---------------------------------------------------
+        active_subscriptions = stripe.Subscription.list(
+            customer=customer.id,
+            status="active",
+            limit=10
         )
 
+        subscription = None
+
+        # ---------------------------------------------------
+        # 4️⃣ CLEAN DUPLICATES (Safety Net)
+        # ---------------------------------------------------
+        if len(active_subscriptions.data) > 1:
+            # Keep the newest one, cancel the others
+            sorted_subs = sorted(
+                active_subscriptions.data,
+                key=lambda x: x["created"],
+                reverse=True
+            )
+
+            # Keep newest
+            subscription = sorted_subs[0]
+
+            # Cancel older duplicates
+            for sub in sorted_subs[1:]:
+                stripe.Subscription.delete(sub["id"])
+
+        # ---------------------------------------------------
+        # 5️⃣ MODIFY if one active subscription exists
+        # ---------------------------------------------------
+        if active_subscriptions.data:
+            if not subscription:
+                subscription = active_subscriptions.data[0]
+
+            item_id = subscription["items"]["data"][0]["id"]
+
+            subscription = stripe.Subscription.modify(
+                subscription["id"],
+                items=[{
+                    "id": item_id,
+                    "price": price_id
+                }],
+                proration_behavior="create_prorations",
+                idempotency_key=f"sub_modify_{driver.id}_{new_plan.value}"
+            )
+
+        # ---------------------------------------------------
+        # 6️⃣ CREATE if no active subscription exists
+        # ---------------------------------------------------
+        else:
+            subscription = stripe.Subscription.create(
+                customer=customer.id,
+                items=[{"price": price_id}],
+                metadata={
+                    "driver_id": str(driver.id),
+                    "plan": new_plan.value,
+                },
+                collection_method="charge_automatically",
+                idempotency_key=f"sub_create_{driver.id}_{new_plan.value}"
+            )
+
+        # ---------------------------------------------------
+        # 7️⃣ Update Local Database
+        # ---------------------------------------------------
         driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id
-        driver.subscription_status = schemas.SubscriptionStatus.none
-        driver.subscription_start = None
-        driver.subscription_end = None
         driver.cancel_at_period_end = False
 
         db.commit()
@@ -610,7 +670,7 @@ def change_subscription(
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Subscription creation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Subscription update failed: {str(e)}")
 
     return {
         "driver": driver,
