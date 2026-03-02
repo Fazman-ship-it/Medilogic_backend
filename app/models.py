@@ -90,6 +90,7 @@ class SubscriptionStatus(str,enum.Enum):
     expired = "expired"
     cancelled = "cancelled"            
     none = "none"
+    past_due = "past_due"
     
 class SubscriptionPlan(str, enum.Enum):
     free = "free"
@@ -798,7 +799,7 @@ class Payment(Base,ShortIDMixin):
     __tablename__ = "payments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    application_id = Column(UUID(as_uuid=True), ForeignKey("international_applications.id"), nullable=False)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("international_applications.id"), nullable=True)
     medilogic_driver_id = Column(UUID(as_uuid=True),ForeignKey("medilogic_drivers.id", ondelete="CASCADE"),nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
     currency = Column(String, default="GBP", nullable=False)
