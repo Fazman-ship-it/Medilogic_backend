@@ -610,17 +610,14 @@ def change_subscription(
         # 4️⃣ CLEAN DUPLICATES (Safety Net)
         # ---------------------------------------------------
         if len(active_subscriptions.data) > 1:
-            # Keep the newest one, cancel the others
             sorted_subs = sorted(
                 active_subscriptions.data,
                 key=lambda x: x["created"],
                 reverse=True
             )
 
-            # Keep newest
             subscription = sorted_subs[0]
 
-            # Cancel older duplicates
             for sub in sorted_subs[1:]:
                 stripe.Subscription.delete(sub["id"])
 
@@ -664,6 +661,13 @@ def change_subscription(
         driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id
         driver.cancel_at_period_end = False
+
+        # ✅ Save billing period end immediately
+        if subscription.get("current_period_end"):
+            driver.subscription_end = datetime.fromtimestamp(
+                subscription["current_period_end"],
+                tz=timezone.utc
+            )
 
         db.commit()
         db.refresh(driver)
