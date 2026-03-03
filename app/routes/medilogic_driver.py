@@ -687,9 +687,19 @@ def cancel_subscription(
             cancel_at_period_end=at_period_end
         )
 
-        # Mark locally as cancelling (not free yet)
-        driver.subscription_status = schemas.SubscriptionStatus.cancelled
-        driver.cancel_at_period_end = at_period_end
+        if at_period_end:
+            # ✅ Still active but cancelling
+            driver.subscription_status = schemas.SubscriptionStatus.active
+            driver.cancel_at_period_end = True
+
+        else:
+            # ✅ Immediate cancellation
+            driver.subscription_status = schemas.SubscriptionStatus.cancelled
+            driver.cancel_at_period_end = False
+
+            apply_plan_features(driver, schemas.SubscriptionPlan.free)
+
+            driver.subscription_end = now_utc()
 
         db.commit()
         db.refresh(driver)
