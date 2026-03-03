@@ -112,10 +112,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if driver:
             driver.subscription_status = schemas.SubscriptionStatus.past_due
-
-            # Immediately remove premium
             apply_plan_features(driver, schemas.SubscriptionPlan.free)
-
             db.commit()
 
         return {"status": "payment_failed_downgraded"}
@@ -154,16 +151,15 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             except (KeyError, IndexError):
                 price_id = None
 
-            # 🔥 FORCE PLAN FROM PRICE
-            if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
-                apply_plan_features(driver, schemas.SubscriptionPlan.green)
-
-            elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
-                apply_plan_features(driver, schemas.SubscriptionPlan.blue)
-
-            # Handle lifecycle states
+            # 🔥 HANDLE STATUS FIRST (Correct Order)
             if stripe_status == "active":
                 driver.subscription_status = schemas.SubscriptionStatus.active
+
+                if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
+                    apply_plan_features(driver, schemas.SubscriptionPlan.green)
+
+                elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
+                    apply_plan_features(driver, schemas.SubscriptionPlan.blue)
 
             elif stripe_status == "past_due":
                 driver.subscription_status = schemas.SubscriptionStatus.past_due
@@ -202,6 +198,5 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             db.commit()
 
         return {"status": "cancelled"}
-
 
     return {"status": "ignored", "event": event_type}
