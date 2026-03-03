@@ -76,14 +76,19 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if driver:
             try:
                 price_id = data_obj["lines"]["data"][0]["price"]["id"]
+                period_start_unix = data_obj["lines"]["data"][0]["period"]["start"]
                 period_end_unix = data_obj["lines"]["data"][0]["period"]["end"]
+
+                period_start = datetime.fromtimestamp(period_start_unix, tz=timezone.utc)
                 period_end = datetime.fromtimestamp(period_end_unix, tz=timezone.utc)
+
             except (KeyError, IndexError):
                 price_id = None
+                period_start = None
                 period_end = None
 
             driver.subscription_status = schemas.SubscriptionStatus.active
-            driver.subscription_start = now_utc()
+            driver.subscription_start = period_start
             driver.subscription_end = period_end
             driver.stripe_price_id = price_id
             driver.cancel_at_period_end = False
@@ -133,9 +138,17 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
             stripe_status = data_obj.get("status")
             cancel_at_period_end = data_obj.get("cancel_at_period_end", False)
+            current_period_start_unix = data_obj.get("current_period_start")
             current_period_end_unix = data_obj.get("current_period_end")
 
-            # Sync billing period
+            # ✅ Sync billing period start
+            if current_period_start_unix:
+                driver.subscription_start = datetime.fromtimestamp(
+                    current_period_start_unix,
+                    tz=timezone.utc
+                )
+
+            # ✅ Sync billing period end
             if current_period_end_unix:
                 driver.subscription_end = datetime.fromtimestamp(
                     current_period_end_unix,
@@ -151,7 +164,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             except (KeyError, IndexError):
                 price_id = None
 
-            # 🔥 HANDLE STATUS FIRST (Correct Order)
+            # 🔥 HANDLE STATUS FIRST
             if stripe_status == "active":
                 driver.subscription_status = schemas.SubscriptionStatus.active
 
@@ -188,6 +201,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if driver:
             driver.subscription_status = schemas.SubscriptionStatus.cancelled
             driver.subscription_end = now_utc()
+            driver.subscription_start = None
 
             apply_plan_features(driver, schemas.SubscriptionPlan.free)
 
