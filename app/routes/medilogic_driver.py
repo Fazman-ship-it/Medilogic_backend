@@ -599,7 +599,8 @@ def change_subscription(
                     "id": item_id,
                     "price": price_id
                 }],
-                proration_behavior="create_prorations"
+                proration_behavior="create_prorations",
+                cancel_at_period_end=False  # ✅ ADDED
             )
 
         # ===================================================
