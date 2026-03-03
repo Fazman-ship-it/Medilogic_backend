@@ -543,7 +543,7 @@ def create_setup_intent(
 @router.put("/driver/subscription", response_model=schemas.MedilogicDriverSubscriptionChangeOut)
 def change_subscription(
     new_plan: schemas.SubscriptionPlan = Form(...),
-    payment_method_id: str | None = Form(None),  # ✅ NOW OPTIONAL
+    payment_method_id: str | None = Form(None),  # ✅ OPTIONAL
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -599,8 +599,7 @@ def change_subscription(
                     "id": item_id,
                     "price": price_id
                 }],
-                proration_behavior="create_prorations",
-                idempotency_key=f"sub_modify_{driver.id}_{new_plan.value}"
+                proration_behavior="create_prorations"
             )
 
         # ===================================================
@@ -634,8 +633,7 @@ def change_subscription(
                     "driver_id": str(driver.id),
                     "plan": new_plan.value,
                 },
-                collection_method="charge_automatically",
-                idempotency_key=f"sub_create_{driver.id}_{new_plan.value}"
+                collection_method="charge_automatically"
             )
 
         # ---------------------------------------------------
