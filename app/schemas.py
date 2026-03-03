@@ -1724,6 +1724,7 @@ class MedilogicDriverOut(BaseModel):
     
     subscription_start: Optional[datetime] = None
     subscription_end: Optional[datetime] = None
+    cancel_at_period_end: Optional[bool] = None
 
 
     class Config:
