@@ -37,8 +37,6 @@ def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.Subscript
         driver.can_upload_docs = False
         driver.can_view_analytics = False
         driver.can_see_org_names = False
-
-
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
@@ -74,22 +72,31 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         ).first()
 
         if driver:
+            # 🔥 ALWAYS retrieve full subscription object for reliable dates
+            subscription = stripe.Subscription.retrieve(subscription_id)
+
+            current_period_start_unix = subscription.get("current_period_start")
+            current_period_end_unix = subscription.get("current_period_end")
+
+            # Extract price from invoice line (still valid here)
             try:
                 price_id = data_obj["lines"]["data"][0]["price"]["id"]
-                period_start_unix = data_obj["lines"]["data"][0]["period"]["start"]
-                period_end_unix = data_obj["lines"]["data"][0]["period"]["end"]
-
-                period_start = datetime.fromtimestamp(period_start_unix, tz=timezone.utc)
-                period_end = datetime.fromtimestamp(period_end_unix, tz=timezone.utc)
-
             except (KeyError, IndexError):
                 price_id = None
-                period_start = None
-                period_end = None
+
+            if current_period_start_unix:
+                driver.subscription_start = datetime.fromtimestamp(
+                    current_period_start_unix,
+                    tz=timezone.utc
+                )
+
+            if current_period_end_unix:
+                driver.subscription_end = datetime.fromtimestamp(
+                    current_period_end_unix,
+                    tz=timezone.utc
+                )
 
             driver.subscription_status = schemas.SubscriptionStatus.active
-            driver.subscription_start = period_start
-            driver.subscription_end = period_end
             driver.stripe_price_id = price_id
             driver.cancel_at_period_end = False
 
@@ -138,6 +145,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
             stripe_status = data_obj.get("status")
             cancel_at_period_end = data_obj.get("cancel_at_period_end", False)
+
             current_period_start_unix = data_obj.get("current_period_start")
             current_period_end_unix = data_obj.get("current_period_end")
 
@@ -164,7 +172,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             except (KeyError, IndexError):
                 price_id = None
 
-            # 🔥 HANDLE STATUS FIRST
+            # 🔥 Lifecycle handling
             if stripe_status == "active":
                 driver.subscription_status = schemas.SubscriptionStatus.active
 
