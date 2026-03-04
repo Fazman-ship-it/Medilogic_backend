@@ -75,7 +75,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if driver:
 
-            subscription = stripe.Subscription.retrieve(subscription_id)
+            # 🔥 Retrieve full Stripe subscription
+            subscription = stripe.Subscription.retrieve(
+                subscription_id,
+                expand=["items.data.price"]
+            )
 
             current_period_start_unix = subscription.get("current_period_start")
             current_period_end_unix = subscription.get("current_period_end")
@@ -147,8 +151,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             stripe_status = data_obj.get("status")
             cancel_at_period_end = data_obj.get("cancel_at_period_end", False)
 
-            # 🔥 ALWAYS retrieve full subscription
-            subscription = stripe.Subscription.retrieve(subscription_id)
+            # 🔥 Retrieve full subscription object
+            subscription = stripe.Subscription.retrieve(
+                subscription_id,
+                expand=["items.data.price"]
+            )
 
             current_period_start_unix = subscription.get("current_period_start")
             current_period_end_unix = subscription.get("current_period_end")
