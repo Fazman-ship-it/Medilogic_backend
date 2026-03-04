@@ -657,6 +657,19 @@ def change_subscription(
         driver.stripe_price_id = price_id
         driver.cancel_at_period_end = False
 
+        # ✅ ADD THIS (CRITICAL FIX)
+        if subscription.status == "active":
+            driver.subscription_status = schemas.SubscriptionStatus.active
+            driver.subscription_plan = new_plan
+
+        elif subscription.status in ["incomplete", "past_due"]:
+            driver.subscription_status = schemas.SubscriptionStatus.past_due
+            driver.subscription_plan = new_plan
+
+        else:
+            driver.subscription_status = schemas.SubscriptionStatus.none
+            driver.subscription_plan = schemas.SubscriptionPlan.free
+
         # Save billing start
         if subscription.get("current_period_start"):
             driver.subscription_start = datetime.fromtimestamp(
