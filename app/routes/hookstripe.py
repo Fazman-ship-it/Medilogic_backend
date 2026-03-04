@@ -59,6 +59,19 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid signature")
 
+    # 🔒 Prevent duplicate Stripe webhook events
+    event_id = event["id"]
+
+    existing_event = db.query(models.StripeWebhookEvent).filter(
+        models.StripeWebhookEvent.id == event_id
+    ).first()
+
+    if existing_event:
+        return {"status": "duplicate_event_ignored"}
+
+    db.add(models.StripeWebhookEvent(id=event_id))
+    db.commit()
+
     event_type = event["type"]
     data_obj = event["data"]["object"]
 
@@ -75,7 +88,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if driver:
 
-            # 🔥 Retrieve full Stripe subscription
             subscription = stripe.Subscription.retrieve(
                 subscription_id,
                 expand=["items.data.price"]
@@ -115,7 +127,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         return {"status": "activated_or_renewed"}
 
-
     # ==========================================================
     # 2️⃣ PAYMENT FAILED → IMMEDIATE DOWNGRADE
     # ==========================================================
@@ -134,7 +145,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         return {"status": "payment_failed_downgraded"}
 
-
     # ==========================================================
     # 3️⃣ SUBSCRIPTION UPDATED → STRIPE IS SOURCE OF TRUTH
     # ==========================================================
@@ -151,7 +161,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             stripe_status = data_obj.get("status")
             cancel_at_period_end = data_obj.get("cancel_at_period_end", False)
 
-            # 🔥 Retrieve full subscription object
             subscription = stripe.Subscription.retrieve(
                 subscription_id,
                 expand=["items.data.price"]
@@ -200,7 +209,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             db.commit()
 
         return {"status": "subscription_synced"}
-
 
     # ==========================================================
     # 4️⃣ SUBSCRIPTION DELETED → FULL CANCEL
