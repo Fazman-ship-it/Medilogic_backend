@@ -543,10 +543,11 @@ def create_setup_intent(
 @router.put("/driver/subscription", response_model=schemas.MedilogicDriverSubscriptionChangeOut)
 def change_subscription(
     new_plan: schemas.SubscriptionPlan = Form(...),
-    payment_method_id: str | None = Form(None),  # ✅ OPTIONAL
+    payment_method_id: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+
     if current_user.role != "medilogic_driver":
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
@@ -563,27 +564,32 @@ def change_subscription(
     }
 
     price_id = price_id_map.get(new_plan)
+
     if not price_id:
         raise HTTPException(status_code=500, detail="Stripe price ID not configured")
 
     try:
+
         # ---------------------------------------------------
         # 1️⃣ Ensure Stripe customer exists
         # ---------------------------------------------------
         if not driver.stripe_customer_id:
+
             customer = stripe.Customer.create(
                 email=driver.email,
                 name=driver.name,
                 metadata={"driver_id": str(driver.id)},
             )
+
             driver.stripe_customer_id = customer.id
+
         else:
             customer = stripe.Customer.retrieve(driver.stripe_customer_id)
 
         subscription = None
 
         # ===================================================
-        # 🔥 CASE 1: EXISTING SUBSCRIPTION → MODIFY ONLY
+        # 🔥 CASE 1: MODIFY EXISTING SUBSCRIPTION
         # ===================================================
         if driver.stripe_subscription_id:
 
@@ -600,26 +606,25 @@ def change_subscription(
                     "price": price_id
                 }],
                 proration_behavior="create_prorations",
-                cancel_at_period_end=False  # ✅ ADDED
+                cancel_at_period_end=False
             )
 
         # ===================================================
-        # 🔥 CASE 2: FIRST-TIME SUBSCRIPTION → REQUIRE CARD
+        # 🔥 CASE 2: CREATE NEW SUBSCRIPTION
         # ===================================================
         else:
+
             if not payment_method_id:
                 raise HTTPException(
                     status_code=400,
                     detail="payment_method_id is required for first subscription"
                 )
 
-            # Attach payment method
             stripe.PaymentMethod.attach(
                 payment_method_id,
                 customer=customer.id,
             )
 
-            # Set as default
             stripe.Customer.modify(
                 customer.id,
                 invoice_settings={
@@ -638,13 +643,28 @@ def change_subscription(
             )
 
         # ---------------------------------------------------
+        # 🔥 ALWAYS RETRIEVE FULL SUBSCRIPTION OBJECT
+        # ---------------------------------------------------
+        subscription = stripe.Subscription.retrieve(
+            subscription.id,
+            expand=["items.data.price"]
+        )
+
+        # ---------------------------------------------------
         # 3️⃣ Update Local Database
         # ---------------------------------------------------
         driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id
         driver.cancel_at_period_end = False
 
-        # Save billing period end immediately
+        # Save billing start
+        if subscription.get("current_period_start"):
+            driver.subscription_start = datetime.fromtimestamp(
+                subscription["current_period_start"],
+                tz=timezone.utc
+            )
+
+        # Save billing end
         if subscription.get("current_period_end"):
             driver.subscription_end = datetime.fromtimestamp(
                 subscription["current_period_end"],
