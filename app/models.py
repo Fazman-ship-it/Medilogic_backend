@@ -934,3 +934,9 @@ class TripNotification(Base, ShortIDMixin):
     trip_id = Column(UUID(as_uuid=True), ForeignKey("trips.id", ondelete="CASCADE"))
     notification_type = Column(String, nullable=False)  # "1_day_left", "4_hours_left", etc.
     sent_at = Column(DateTime(timezone=True), default=now_utc)
+    
+class StripeWebhookEvent(Base):
+    __tablename__ = "stripe_webhook_events"
+
+    id = Column(String, primary_key=True)
+    created_at = Column(DateTime, default=now_utc)    
