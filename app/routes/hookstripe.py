@@ -39,7 +39,7 @@ def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.Subscript
         driver.can_see_org_names = False
 
 
-@router.post("/webhook")
+@@router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     if not STRIPE_WEBHOOK_SECRET:
@@ -76,11 +76,43 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     data_obj = event["data"]["object"]
 
     # ==========================================================
-    # 1️⃣ PAYMENT SUCCEEDED → ACTIVATE / RENEW
+    # 1️⃣ SUBSCRIPTION CREATED
+    # ==========================================================
+    if event_type == "customer.subscription.created":
+
+        subscription_id = data_obj.get("id")
+
+        driver = db.query(models.Medilogic_Driver).filter(
+            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+        ).first()
+
+        if driver:
+
+            price_id = data_obj["items"]["data"][0]["price"]["id"]
+
+            driver.subscription_status = schemas.SubscriptionStatus.active
+
+            if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
+                driver.subscription_plan = schemas.SubscriptionPlan.green
+                apply_plan_features(driver, schemas.SubscriptionPlan.green)
+
+            elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
+                driver.subscription_plan = schemas.SubscriptionPlan.blue
+                apply_plan_features(driver, schemas.SubscriptionPlan.blue)
+
+            db.commit()
+
+        return {"status": "subscription_created"}
+
+    # ==========================================================
+    # 2️⃣ PAYMENT SUCCEEDED → ACTIVATE / RENEW
     # ==========================================================
     if event_type == "invoice.payment_succeeded":
 
         subscription_id = data_obj.get("subscription")
+
+        if not subscription_id:
+            return {"status": "missing_subscription"}
 
         driver = db.query(models.Medilogic_Driver).filter(
             models.Medilogic_Driver.stripe_subscription_id == subscription_id
@@ -118,9 +150,11 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             driver.cancel_at_period_end = False
 
             if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
+                driver.subscription_plan = schemas.SubscriptionPlan.green
                 apply_plan_features(driver, schemas.SubscriptionPlan.green)
 
             elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
+                driver.subscription_plan = schemas.SubscriptionPlan.blue
                 apply_plan_features(driver, schemas.SubscriptionPlan.blue)
 
             db.commit()
@@ -128,11 +162,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         return {"status": "activated_or_renewed"}
 
     # ==========================================================
-    # 2️⃣ PAYMENT FAILED → IMMEDIATE DOWNGRADE
+    # 3️⃣ PAYMENT FAILED
     # ==========================================================
     if event_type == "invoice.payment_failed":
 
         subscription_id = data_obj.get("subscription")
+
+        if not subscription_id:
+            return {"status": "missing_subscription"}
 
         driver = db.query(models.Medilogic_Driver).filter(
             models.Medilogic_Driver.stripe_subscription_id == subscription_id
@@ -140,17 +177,22 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if driver:
             driver.subscription_status = schemas.SubscriptionStatus.past_due
+            driver.subscription_plan = schemas.SubscriptionPlan.free
             apply_plan_features(driver, schemas.SubscriptionPlan.free)
+
             db.commit()
 
         return {"status": "payment_failed_downgraded"}
 
     # ==========================================================
-    # 3️⃣ SUBSCRIPTION UPDATED → STRIPE IS SOURCE OF TRUTH
+    # 4️⃣ SUBSCRIPTION UPDATED
     # ==========================================================
     if event_type == "customer.subscription.updated":
 
         subscription_id = data_obj.get("id")
+
+        if not subscription_id:
+            return {"status": "missing_subscription"}
 
         driver = db.query(models.Medilogic_Driver).filter(
             models.Medilogic_Driver.stripe_subscription_id == subscription_id
@@ -193,17 +235,21 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 driver.subscription_status = schemas.SubscriptionStatus.active
 
                 if price_id == os.getenv("STRIPE_GREEN_PRICE_ID"):
+                    driver.subscription_plan = schemas.SubscriptionPlan.green
                     apply_plan_features(driver, schemas.SubscriptionPlan.green)
 
                 elif price_id == os.getenv("STRIPE_BLUE_PRICE_ID"):
+                    driver.subscription_plan = schemas.SubscriptionPlan.blue
                     apply_plan_features(driver, schemas.SubscriptionPlan.blue)
 
             elif stripe_status == "past_due":
                 driver.subscription_status = schemas.SubscriptionStatus.past_due
+                driver.subscription_plan = schemas.SubscriptionPlan.free
                 apply_plan_features(driver, schemas.SubscriptionPlan.free)
 
             elif stripe_status in ["canceled", "unpaid"]:
                 driver.subscription_status = schemas.SubscriptionStatus.cancelled
+                driver.subscription_plan = schemas.SubscriptionPlan.free
                 apply_plan_features(driver, schemas.SubscriptionPlan.free)
 
             db.commit()
@@ -211,7 +257,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         return {"status": "subscription_synced"}
 
     # ==========================================================
-    # 4️⃣ SUBSCRIPTION DELETED → FULL CANCEL
+    # 5️⃣ SUBSCRIPTION DELETED
     # ==========================================================
     if event_type == "customer.subscription.deleted":
 
@@ -223,6 +269,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
         if driver:
             driver.subscription_status = schemas.SubscriptionStatus.cancelled
+            driver.subscription_plan = schemas.SubscriptionPlan.free
             driver.subscription_end = now_utc()
             driver.subscription_start = None
 
