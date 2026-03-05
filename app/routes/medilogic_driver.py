@@ -558,6 +558,29 @@ def change_subscription(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
+    # ---------------------------------------------------
+    # 🚨 FREE PLAN HANDLING
+    # ---------------------------------------------------
+    if new_plan == schemas.SubscriptionPlan.free:
+
+        if driver.stripe_subscription_id:
+
+            stripe.Subscription.modify(
+                driver.stripe_subscription_id,
+                cancel_at_period_end=True
+            )
+
+            driver.cancel_at_period_end = True
+            driver.subscription_status = schemas.SubscriptionStatus.active
+
+            db.commit()
+            db.refresh(driver)
+
+        return {"driver": driver}
+
+    # ---------------------------------------------------
+    # STRIPE PRICE MAP
+    # ---------------------------------------------------
     price_id_map = {
         schemas.SubscriptionPlan.green: os.getenv("STRIPE_GREEN_PRICE_ID"),
         schemas.SubscriptionPlan.blue: os.getenv("STRIPE_BLUE_PRICE_ID"),
@@ -589,7 +612,7 @@ def change_subscription(
         subscription = None
 
         # ===================================================
-        # 🔥 CASE 1: MODIFY EXISTING SUBSCRIPTION
+        # MODIFY EXISTING SUBSCRIPTION
         # ===================================================
         if driver.stripe_subscription_id:
 
@@ -610,7 +633,7 @@ def change_subscription(
             )
 
         # ===================================================
-        # 🔥 CASE 2: CREATE NEW SUBSCRIPTION
+        # CREATE NEW SUBSCRIPTION
         # ===================================================
         else:
 
@@ -639,25 +662,23 @@ def change_subscription(
                     "driver_id": str(driver.id),
                     "plan": new_plan.value,
                 },
-                collection_method="charge_automatically"
+                collection_method="charge_automatically",
+                idempotency_key=f"subscription-create-{driver.id}"  # ✅ Added
             )
 
         # ---------------------------------------------------
-        # 🔥 ALWAYS RETRIEVE FULL SUBSCRIPTION OBJECT
+        # 🔥 Retrieve full subscription object
         # ---------------------------------------------------
-        subscription = stripe.Subscription.retrieve(
-            subscription.id,
-            expand=["items.data.price"]
-        )
+        subscription = stripe.Subscription.retrieve(subscription.id)
 
         # ---------------------------------------------------
-        # 3️⃣ Update Local Database
+        # Update Local Database
         # ---------------------------------------------------
         driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id
         driver.cancel_at_period_end = False
 
-        # ✅ ADD THIS (CRITICAL FIX)
+        # subscription status
         if subscription.status == "active":
             driver.subscription_status = schemas.SubscriptionStatus.active
             driver.subscription_plan = new_plan
@@ -670,17 +691,19 @@ def change_subscription(
             driver.subscription_status = schemas.SubscriptionStatus.none
             driver.subscription_plan = schemas.SubscriptionPlan.free
 
-        # Save billing start
-        if subscription.get("current_period_start"):
+        # billing period timestamps
+        start_ts = subscription.get("current_period_start")
+        end_ts = subscription.get("current_period_end")
+
+        if start_ts:
             driver.subscription_start = datetime.fromtimestamp(
-                subscription["current_period_start"],
+                start_ts,
                 tz=timezone.utc
             )
 
-        # Save billing end
-        if subscription.get("current_period_end"):
+        if end_ts:
             driver.subscription_end = datetime.fromtimestamp(
-                subscription["current_period_end"],
+                end_ts,
                 tz=timezone.utc
             )
 
@@ -689,7 +712,10 @@ def change_subscription(
 
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Subscription update failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Subscription update failed: {str(e)}"
+        )
 
     return {
         "driver": driver,
