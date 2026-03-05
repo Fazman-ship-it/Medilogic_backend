@@ -39,7 +39,7 @@ def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.Subscript
         driver.can_see_org_names = False
 
 
-@router.post("/webhook")
+@@router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     if not STRIPE_WEBHOOK_SECRET:
@@ -75,6 +75,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     event_type = event["type"]
     data_obj = event["data"]["object"]
 
+    # 🔥 Extract customer id for safer lookup
+    customer_id = data_obj.get("customer")
+
     # ==========================================================
     # 1️⃣ SUBSCRIPTION CREATED
     # ==========================================================
@@ -83,7 +86,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         subscription_id = data_obj.get("id")
 
         driver = db.query(models.Medilogic_Driver).filter(
-            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+            (models.Medilogic_Driver.stripe_subscription_id == subscription_id) |
+            (models.Medilogic_Driver.stripe_customer_id == customer_id)
         ).first()
 
         if driver:
@@ -115,7 +119,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "missing_subscription"}
 
         driver = db.query(models.Medilogic_Driver).filter(
-            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+            (models.Medilogic_Driver.stripe_subscription_id == subscription_id) |
+            (models.Medilogic_Driver.stripe_customer_id == customer_id)
         ).first()
 
         if driver:
@@ -172,7 +177,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "missing_subscription"}
 
         driver = db.query(models.Medilogic_Driver).filter(
-            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+            (models.Medilogic_Driver.stripe_subscription_id == subscription_id) |
+            (models.Medilogic_Driver.stripe_customer_id == customer_id)
         ).first()
 
         if driver:
@@ -195,7 +201,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "missing_subscription"}
 
         driver = db.query(models.Medilogic_Driver).filter(
-            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+            (models.Medilogic_Driver.stripe_subscription_id == subscription_id) |
+            (models.Medilogic_Driver.stripe_customer_id == customer_id)
         ).first()
 
         if driver:
@@ -264,7 +271,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         subscription_id = data_obj.get("id")
 
         driver = db.query(models.Medilogic_Driver).filter(
-            models.Medilogic_Driver.stripe_subscription_id == subscription_id
+            (models.Medilogic_Driver.stripe_subscription_id == subscription_id) |
+            (models.Medilogic_Driver.stripe_customer_id == customer_id)
         ).first()
 
         if driver:
