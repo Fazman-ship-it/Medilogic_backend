@@ -572,6 +572,7 @@ def change_subscription(
 
             driver.cancel_at_period_end = True
             driver.subscription_status = schemas.SubscriptionStatus.active
+            driver.subscription_plan = schemas.SubscriptionPlan.free
 
             db.commit()
             db.refresh(driver)
@@ -663,17 +664,16 @@ def change_subscription(
                     "plan": new_plan.value,
                 },
                 collection_method="charge_automatically",
-                idempotency_key=f"subscription-create-{driver.id}"  # ✅ Added
+                idempotency_key=f"subscription-create-{driver.id}"
             )
 
         # ---------------------------------------------------
-        # 🔥 Retrieve full subscription object
+        # Retrieve full subscription object
         # ---------------------------------------------------
         subscription = stripe.Subscription.retrieve(subscription.id)
-        print("Stripe subscription start:", subscription.get("current_period_start"))
-        print("Stripe subscription end:", subscription.get("current_period_end"))
+
         # ---------------------------------------------------
-        # Update Local Database
+        # Update Local Database (NO BILLING DATES HERE)
         # ---------------------------------------------------
         driver.stripe_subscription_id = subscription.id
         driver.stripe_price_id = price_id
@@ -691,22 +691,6 @@ def change_subscription(
         else:
             driver.subscription_status = schemas.SubscriptionStatus.none
             driver.subscription_plan = schemas.SubscriptionPlan.free
-
-        # billing period timestamps
-        start_ts = subscription.get("current_period_start")
-        end_ts = subscription.get("current_period_end")
-
-        if start_ts:
-            driver.subscription_start = datetime.fromtimestamp(
-                start_ts,
-                tz=timezone.utc
-            )
-
-        if end_ts:
-            driver.subscription_end = datetime.fromtimestamp(
-                end_ts,
-                tz=timezone.utc
-            )
 
         db.commit()
         db.refresh(driver)
