@@ -670,8 +670,8 @@ def change_subscription(
         # 🔥 Retrieve full subscription object
         # ---------------------------------------------------
         subscription = stripe.Subscription.retrieve(subscription.id)
-        print("Stripe subscription start:", subscription["current_period_start"])
-        print("Stripe subscription end:", subscription["current_period_end"])
+        print("Stripe subscription start:", subscription.get("current_period_start"))
+        print("Stripe subscription end:", subscription.get("current_period_end"))
         # ---------------------------------------------------
         # Update Local Database
         # ---------------------------------------------------
