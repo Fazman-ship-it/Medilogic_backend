@@ -39,7 +39,7 @@ def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.Subscript
         driver.can_see_org_names = False
 
 
-router.post("/webhook")
+@router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     if not STRIPE_WEBHOOK_SECRET:
