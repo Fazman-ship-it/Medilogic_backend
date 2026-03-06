@@ -39,7 +39,7 @@ def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.Subscript
         driver.can_see_org_names = False
 
 
-@router.post("/webhook")
+router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     if not STRIPE_WEBHOOK_SECRET:
@@ -75,7 +75,6 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     event_type = event["type"]
     data_obj = event["data"]["object"]
 
-    # 🔥 Extract customer id for safer lookup
     customer_id = data_obj.get("customer")
 
     # ==========================================================
@@ -109,7 +108,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         return {"status": "subscription_created"}
 
     # ==========================================================
-    # 2️⃣ PAYMENT SUCCEEDED → ACTIVATE / RENEW
+    # 2️⃣ PAYMENT SUCCEEDED
     # ==========================================================
     if event_type == "invoice.payment_succeeded":
 
@@ -130,10 +129,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 expand=["items.data.price"]
             )
 
-            current_period_start_unix = subscription.get("current_period_start")
-            current_period_end_unix = subscription.get("current_period_end")
+            # ✅ FIXED: Correct location of billing period
+            try:
+                item = subscription["items"]["data"][0]
+                current_period_start_unix = item.get("current_period_start")
+                current_period_end_unix = item.get("current_period_end")
+            except (KeyError, IndexError):
+                current_period_start_unix = None
+                current_period_end_unix = None
 
-            # 🔥 Fallback to invoice line period if subscription object not updated yet
+            # fallback to invoice line period
             if not current_period_start_unix or not current_period_end_unix:
                 try:
                     line = data_obj["lines"]["data"][0]
@@ -224,8 +229,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 expand=["items.data.price"]
             )
 
-            current_period_start_unix = subscription.get("current_period_start")
-            current_period_end_unix = subscription.get("current_period_end")
+            # ✅ FIXED: correct billing period location
+            try:
+                item = subscription["items"]["data"][0]
+                current_period_start_unix = item.get("current_period_start")
+                current_period_end_unix = item.get("current_period_end")
+            except (KeyError, IndexError):
+                current_period_start_unix = None
+                current_period_end_unix = None
 
             if current_period_start_unix:
                 driver.subscription_start = datetime.fromtimestamp(
