@@ -133,6 +133,15 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             current_period_start_unix = subscription.get("current_period_start")
             current_period_end_unix = subscription.get("current_period_end")
 
+            # 🔥 Fallback to invoice line period if subscription object not updated yet
+            if not current_period_start_unix or not current_period_end_unix:
+                try:
+                    line = data_obj["lines"]["data"][0]
+                    current_period_start_unix = line["period"]["start"]
+                    current_period_end_unix = line["period"]["end"]
+                except (KeyError, IndexError):
+                    pass
+
             try:
                 price_id = data_obj["lines"]["data"][0]["price"]["id"]
             except (KeyError, IndexError):
