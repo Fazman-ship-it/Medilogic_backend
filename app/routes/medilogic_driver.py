@@ -434,7 +434,7 @@ async def update_me_upload_docs(
 
     return {"driver": driver, "analytics": analytics}
     
-@router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
+@router.get( "/Medilogic_drivers/analytics", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),  # ✅ normal auth
