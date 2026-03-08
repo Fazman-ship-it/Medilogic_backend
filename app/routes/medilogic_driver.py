@@ -230,8 +230,8 @@ def list_medilogic_drivers(
 
     return query.all()
 
-@router.get( "/Medilogic_drivers/analytics", response_model=schemas.MedilogicDriverAnalyticsOut)
-def get_driver_analytics(
+@router.get( "/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
+def get_medilogic_driver_analytics(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),  # ✅ normal auth
 ):
