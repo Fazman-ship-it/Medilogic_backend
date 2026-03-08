@@ -230,10 +230,10 @@ def list_medilogic_drivers(
 
     return query.all()
 
-@router.get( "/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
+@router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
+    current_user: models.User = Depends(get_current_user),
 ):
     """
     Return analytics data for the logged-in Medilogic driver.
@@ -254,19 +254,32 @@ def get_medilogic_driver_analytics(
     if medilogic_driver.badge_type not in ["green", "blue"]:
         raise HTTPException(status_code=403, detail="Upgrade to Green or Blue to access analytics")
 
-    # Example analytics
-    profile_views = medilogic_driver.profile_views
-    org_views = medilogic_driver.org_views  # {"org_name": count}
+    # ==========================================================
+    # DRIVER PROFILE VIEWS (FIXED)
+    # ==========================================================
+    profile_views = db.query(models.DriverView).filter(
+        models.DriverView.medilogic_driver_id == medilogic_driver.id
+    ).count()
 
-    # Blue badge gets extra charts / insights
+    # ==========================================================
+    # ORGANISATION VIEWS (Placeholder for now)
+    # ==========================================================
+    org_views = {}
+
+    # ==========================================================
+    # BLUE BADGE EXTRA ANALYTICS
+    # ==========================================================
     charts = {}
+
     if medilogic_driver.badge_type == "blue":
-        # Generate a time series of profile views for Plotly/JS charting
-        charts["views_over_time"] = db.query(
-            models.DriverProfileView.viewed_at
-        ).filter(
-            models.DriverProfileView.medilogic_driver_id == medilogic_driver.id
+
+        views_over_time = db.query(models.DriverView).filter(
+            models.DriverView.medilogic_driver_id == medilogic_driver.id
         ).all()
+
+        charts["views_over_time"] = [
+            view.viewed_at for view in views_over_time
+        ]
 
     return {
         "profile_views": profile_views,
