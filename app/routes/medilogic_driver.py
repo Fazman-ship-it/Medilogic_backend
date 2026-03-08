@@ -230,7 +230,50 @@ def list_medilogic_drivers(
 
     return query.all()
 
+@router.get( "/Medilogic_drivers/analytics", response_model=schemas.MedilogicDriverAnalyticsOut)
+def get_driver_analytics(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
+):
+    """
+    Return analytics data for the logged-in Medilogic driver.
+    - Only Blue and Green badge drivers have access
+    """
 
+    # ✅ ONLY Medilogic drivers allowed
+    if current_user.role != "medilogic_driver":
+        raise HTTPException(status_code=403, detail="Only Medilogic drivers can access analytics")
+
+    medilogic_driver = db.query(models.Medilogic_Driver).filter(
+        models.Medilogic_Driver.user_id == current_user.id
+    ).first()
+
+    if not medilogic_driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
+
+    if medilogic_driver.badge_type not in ["green", "blue"]:
+        raise HTTPException(status_code=403, detail="Upgrade to Green or Blue to access analytics")
+
+    # Example analytics
+    profile_views = medilogic_driver.profile_views
+    org_views = medilogic_driver.org_views  # {"org_name": count}
+
+    # Blue badge gets extra charts / insights
+    charts = {}
+    if medilogic_driver.badge_type == "blue":
+        # Generate a time series of profile views for Plotly/JS charting
+        charts["views_over_time"] = db.query(
+            models.DriverProfileView.viewed_at
+        ).filter(
+            models.DriverProfileView.medilogic_driver_id == medilogic_driver.id
+        ).all()
+
+    return {
+        "profile_views": profile_views,
+        "org_views": org_views,
+        "charts": charts
+    }
+    
 
 @router.get("/{medilogic_driver_id}", response_model=schemas.MedilogicDriverOut)
 def get_driver(
@@ -434,50 +477,7 @@ async def update_me_upload_docs(
 
     return {"driver": driver, "analytics": analytics}
     
-@router.get( "/Medilogic_drivers/analytics", response_model=schemas.MedilogicDriverAnalyticsOut)
-def get_medilogic_driver_analytics(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),  # ✅ normal auth
-):
-    """
-    Return analytics data for the logged-in Medilogic driver.
-    - Only Blue and Green badge drivers have access
-    """
 
-    # ✅ ONLY Medilogic drivers allowed
-    if current_user.role != "medilogic_driver":
-        raise HTTPException(status_code=403, detail="Only Medilogic drivers can access analytics")
-
-    medilogic_driver = db.query(models.Medilogic_Driver).filter(
-        models.Medilogic_Driver.user_id == current_user.id
-    ).first()
-
-    if not medilogic_driver:
-        raise HTTPException(status_code=404, detail="Driver not found")
-
-    if medilogic_driver.badge_type not in ["green", "blue"]:
-        raise HTTPException(status_code=403, detail="Upgrade to Green or Blue to access analytics")
-
-    # Example analytics
-    profile_views = medilogic_driver.profile_views
-    org_views = medilogic_driver.org_views  # {"org_name": count}
-
-    # Blue badge gets extra charts / insights
-    charts = {}
-    if medilogic_driver.badge_type == "blue":
-        # Generate a time series of profile views for Plotly/JS charting
-        charts["views_over_time"] = db.query(
-            models.DriverProfileView.viewed_at
-        ).filter(
-            models.DriverProfileView.medilogic_driver_id == medilogic_driver.id
-        ).all()
-
-    return {
-        "profile_views": profile_views,
-        "org_views": org_views,
-        "charts": charts
-    }
-    
 # app/routes/medilogic_drivers.py
 from fastapi import APIRouter, HTTPException, Depends, Form
 from sqlalchemy.orm import Session
