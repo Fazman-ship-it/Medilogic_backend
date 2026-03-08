@@ -718,6 +718,7 @@ def change_subscription(
     return {
         "driver": driver,
     }
+from app.routes.hookstripe import apply_plan_features    
 @router.delete("/driver/subscription", response_model=schemas.MedilogicDriverOut)
 def cancel_subscription(
     at_period_end: bool = True,

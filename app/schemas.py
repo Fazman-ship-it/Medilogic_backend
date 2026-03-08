@@ -1725,6 +1725,9 @@ class MedilogicDriverOut(BaseModel):
     subscription_start: Optional[datetime] = None
     subscription_end: Optional[datetime] = None
     cancel_at_period_end: Optional[bool] = None
+    can_upload_docs: bool = True  # e.g., only allow uploads if application is approved or active
+    can_view_analytics: bool = True  # e.g., only for active/verified drivers
+    can_see_org_names: bool = False  # e.g., only show org names if verified or on premium plan
 
 
     class Config:
