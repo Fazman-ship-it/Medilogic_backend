@@ -1033,7 +1033,7 @@ class DocumentOut(DocumentBase):
     id: UUID
     short_id: Optional[str] = None
     upload_time: datetime
-    organization_id: UUID
+    organization_id: Optional[UUID] = None
     user_id: Optional[UUID] = None
     file_url: Optional[str] = None  # ✅ presigned S3 URL
 
