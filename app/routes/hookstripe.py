@@ -15,30 +15,28 @@ router = APIRouter(prefix="/hookstripe", tags=["Hookstripe"])
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
-
 def apply_plan_features(driver: models.Medilogic_Driver, plan: schemas.SubscriptionPlan):
     """Centralised feature activation"""
+
     driver.subscription_plan = plan
+
+    # reset everything first
+    driver.can_upload_docs = False
+    driver.can_view_analytics = False
+    driver.can_see_org_names = False
+    driver.badge_type = BadgeType.none.value
 
     if plan == schemas.SubscriptionPlan.green:
         driver.badge_type = BadgeType.green.value
         driver.can_upload_docs = True
         driver.can_view_analytics = True
-        driver.can_see_org_names = False
 
     elif plan == schemas.SubscriptionPlan.blue:
         driver.badge_type = BadgeType.blue.value
         driver.can_upload_docs = True
         driver.can_view_analytics = True
         driver.can_see_org_names = True
-
-    else:  # free
-        driver.badge_type = BadgeType.none.value
-        driver.can_upload_docs = False
-        driver.can_view_analytics = False
-        driver.can_see_org_names = False
-
-
+        
 @router.post("/webhook")
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
