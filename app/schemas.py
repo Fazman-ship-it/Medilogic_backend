@@ -1728,6 +1728,7 @@ class MedilogicDriverOut(BaseModel):
     can_upload_docs: bool = True  # e.g., only allow uploads if application is approved or active
     can_view_analytics: bool = True  # e.g., only for active/verified drivers
     can_see_org_names: bool = False  # e.g., only show org names if verified or on premium plan
+    documents: List[DocumentOut] = []
 
 
     class Config:
