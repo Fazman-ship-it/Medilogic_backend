@@ -410,6 +410,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.utilites.time_utilities import now_utc
 from app.utilites.storage_utilites import upload_file_to_s3_async
+from app.utilities.storage_utilites import generate_presigned_url_async
 from app.models import BadgeType  # adjust import if needed
 
 @router.put("/me", response_model=schemas.MedilogicDriverMeOut)
@@ -439,7 +440,10 @@ async def update_me_upload_docs(
         raise HTTPException(status_code=403, detail="You must subscribe to Green or Blue to upload documents")
 
     # ✅ Upload documents only if allowed
-    if has_real_files and driver.subscription_plan in [schemas.SubscriptionPlan.green, schemas.SubscriptionPlan.blue]:
+    if has_real_files and driver.subscription_plan in [
+        schemas.SubscriptionPlan.green,
+        schemas.SubscriptionPlan.blue,
+    ]:
         for file in files:
             if not getattr(file, "filename", ""):
                 continue
@@ -453,9 +457,10 @@ async def update_me_upload_docs(
                 upload_time=now_utc(),
                 doc_type=file.content_type,
             )
+
             db.add(doc)
 
-    # Badge-based access (optional but fine to keep)
+    # Badge-based access
     if driver.badge_type == BadgeType.blue.value:
         driver.can_view_analytics = True
         driver.can_see_org_names = True
@@ -466,18 +471,20 @@ async def update_me_upload_docs(
         driver.can_view_analytics = False
         driver.can_see_org_names = False
 
-    # Analytics block (optional)
+    # Analytics block
     analytics = None
     if driver.badge_type in [BadgeType.green.value, BadgeType.blue.value]:
         analytics = {
             "profile_views": getattr(driver, "profile_views", 0),
             "org_views": getattr(driver, "org_views", 0),
-            "charts": {}
+            "charts": {},
         }
+
         if driver.badge_type == BadgeType.blue.value:
             charts = db.query(models.DriverView.viewed_at).filter(
                 models.DriverView.medilogic_driver_id == driver.id
             ).all()
+
             analytics["charts"]["views_over_time"] = charts
 
     try:
@@ -488,8 +495,14 @@ async def update_me_upload_docs(
 
     db.refresh(driver)
 
-    return {"driver": driver, "analytics": analytics}
-    
+    # ✅ Generate presigned URLs for documents
+    for doc in driver.documents:
+        doc.file_url = await generate_presigned_url_async(doc.file_path)
+
+    return {
+        "driver": driver,
+        "analytics": analytics
+    }
 
 # app/routes/medilogic_drivers.py
 from fastapi import APIRouter, HTTPException, Depends, Form
