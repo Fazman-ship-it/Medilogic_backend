@@ -191,7 +191,6 @@ from app.dependencies import get_current_user,require_role
 from app import models, schemas
 from app.database import get_db
 
-
 @router.get("/", response_model=List[schemas.MedilogicDriverOut])
 def list_medilogic_drivers(
     db: Session = Depends(get_db),
@@ -410,7 +409,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.utilites.time_utilities import now_utc
 from app.utilites.storage_utilites import upload_file_to_s3_async
-from app.utilities.storage_utilites import generate_presigned_url_async
+from app.utilites.storage_utilites import generate_presigned_url_async
 from app.models import BadgeType  # adjust import if needed
 
 @router.put("/me", response_model=schemas.MedilogicDriverMeOut)
