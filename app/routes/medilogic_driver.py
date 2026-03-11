@@ -201,34 +201,57 @@ def list_medilogic_drivers(
     min_experience: Optional[int] = Query(None, description="Minimum years of experience"),
     status: Optional[str] = Query(None, description="Driver status (pending, approved, rejected)"),
 ):
+
     # ✅ ROLE CHECK
     if current_user.role not in ["super_admin", "admin"]:
         raise HTTPException(status_code=403, detail="Not authorised to access this resource")
 
     query = db.query(models.Medilogic_Driver)
 
+    # -----------------------------------------------------
+    # FILTERS
+    # -----------------------------------------------------
+
     if country:
         query = query.filter(models.Medilogic_Driver.country.ilike(f"%{country}%"))
+
     if region:
         query = query.filter(models.Medilogic_Driver.region.ilike(f"%{region}%"))
+
     if preferred_role:
         query = query.filter(models.Medilogic_Driver.preferred_role == preferred_role)
+
     if min_experience:
         query = query.filter(models.Medilogic_Driver.experience_years >= min_experience)
+
     if status:
         query = query.filter(models.Medilogic_Driver.status == status)
 
-    # ✅ UPDATED (Option 2): cast ENUM -> string before comparing
+    # -----------------------------------------------------
+    # SUBSCRIPTION PLAN PRIORITY ORDER
+    # Blue → Green → Free
+    # -----------------------------------------------------
+
     subscription_order = case(
-        (cast(models.Medilogic_Driver.subscription_status, String) == "blue", 3),
-        (cast(models.Medilogic_Driver.subscription_status, String) == "green", 2),
-        else_=1,
+        (cast(models.Medilogic_Driver.subscription_plan, String) == "blue", 3),
+        (cast(models.Medilogic_Driver.subscription_plan, String) == "green", 2),
+        (cast(models.Medilogic_Driver.subscription_plan, String) == "free", 1),
+        else_=0,
     )
 
-    query = query.order_by(subscription_order.desc())
+    # -----------------------------------------------------
+    # FINAL SORTING
+    # 1️⃣ Plan priority
+    # 2️⃣ Newest drivers first
+    # -----------------------------------------------------
+
+    query = query.order_by(
+        subscription_order.desc(),
+        models.Medilogic_Driver.created_at.desc()
+    )
 
     return query.all()
-
+    
 @router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(
     db: Session = Depends(get_db),
