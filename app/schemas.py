@@ -1777,6 +1777,15 @@ class MedilogicDriverSubscriptionChangeOut(BaseModel):
     client_secret: Optional[str] = None
     payment_id: Optional[str]= None    
                                 
+                                
+class MedilogicDriverListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    results: List[MedilogicDriverOut]
+
+    class Config:
+        from_attributes = True                                
 
 
 # ==========================
