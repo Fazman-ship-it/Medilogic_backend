@@ -517,12 +517,31 @@ async def update_me_upload_docs(
 
     db.refresh(driver)
 
-    # ✅ Generate presigned URLs for documents
+    # ==========================================================
+    # ✅ FIX: Build documents manually with file_url
+    # ==========================================================
+    documents_with_urls = []
+
     for doc in driver.documents:
-        doc.file_url = await generate_presigned_url_async(doc.file_path)
+        file_url = await generate_presigned_url_async(doc.file_path)
+
+        documents_with_urls.append({
+            "id": doc.id,
+            "filename": doc.filename,
+            "file_path": doc.file_path,
+            "upload_time": doc.upload_time,
+            "doc_type": doc.doc_type,
+            "file_url": file_url,
+        })
+
+    # ==========================================================
+    # ✅ FIX: Replace documents in response
+    # ==========================================================
+    driver_dict = driver.__dict__.copy()
+    driver_dict["documents"] = documents_with_urls
 
     return {
-        "driver": driver,
+        "driver": driver_dict,
         "analytics": analytics
     }
 
