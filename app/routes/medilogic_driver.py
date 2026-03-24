@@ -537,9 +537,9 @@ async def update_me_upload_docs(
     # ==========================================================
     # ✅ FIX: Replace documents in response
     # ==========================================================
-    driver_dict = driver.__dict__.copy()
-    driver_dict["documents"] = documents_with_urls
-
+    driver_data = schemas.MedilogicDriverOut.model_validate(driver)
+    driver_data.documents = documents_with_urls
+    
     return {
         "driver": driver_dict,
         "analytics": analytics
