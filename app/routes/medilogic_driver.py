@@ -191,47 +191,71 @@ from app.dependencies import get_current_user,require_role
 from app import models, schemas
 from app.database import get_db
 
-@router.get("/", response_model=List[schemas.MedilogicDriverOut])
+from sqlalchemy import case, cast, String, or_
+from math import ceil
+
+@router.get("/", response_model=schemas.MedilogicDriverListResponse)
 def list_medilogic_drivers(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
-    country: Optional[str] = Query(None, description="Filter by driver country"),
-    region: Optional[str] = Query(None, description="Filter by driver region"),
-    preferred_role: Optional[str] = Query(None, description="Filter by preferred role"),
-    min_experience: Optional[int] = Query(None, description="Minimum years of experience"),
-    status: Optional[str] = Query(None, description="Driver status (pending, approved, rejected)"),
+
+    # 🔍 Global search
+    search: Optional[str] = Query(None),
+
+    # Filters (ignored if search exists)
+    country: Optional[str] = Query(None),
+    region: Optional[str] = Query(None),
+    preferred_role: Optional[str] = Query(None),
+    min_experience: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
+
+    # 📄 Pagination
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
 ):
 
     # ✅ ROLE CHECK
     if current_user.role not in ["super_admin", "admin"]:
-        raise HTTPException(status_code=403, detail="Not authorised to access this resource")
+        raise HTTPException(status_code=403, detail="Not authorised")
 
     query = db.query(models.Medilogic_Driver)
 
-    # -----------------------------------------------------
-    # FILTERS
-    # -----------------------------------------------------
+    # =====================================================
+    # 🔥 GLOBAL SEARCH (OVERRIDES FILTERS)
+    # =====================================================
+    if search:
+        query = query.filter(
+            or_(
+                models.Medilogic_Driver.name.ilike(f"%{search}%"),
+                models.Medilogic_Driver.email.ilike(f"%{search}%"),
+                models.Medilogic_Driver.country.ilike(f"%{search}%"),
+                models.Medilogic_Driver.region.ilike(f"%{search}%"),
+            )
+        )
 
-    if country:
-        query = query.filter(models.Medilogic_Driver.country.ilike(f"%{country}%"))
+    else:
+        # -------------------------------------------------
+        # NORMAL FILTERS
+        # -------------------------------------------------
 
-    if region:
-        query = query.filter(models.Medilogic_Driver.region.ilike(f"%{region}%"))
+        if country:
+            query = query.filter(models.Medilogic_Driver.country.ilike(f"%{country}%"))
 
-    if preferred_role:
-        query = query.filter(models.Medilogic_Driver.preferred_role == preferred_role)
+        if region:
+            query = query.filter(models.Medilogic_Driver.region.ilike(f"%{region}%"))
 
-    if min_experience:
-        query = query.filter(models.Medilogic_Driver.experience_years >= min_experience)
+        if preferred_role:
+            query = query.filter(models.Medilogic_Driver.preferred_role == preferred_role)
 
-    if status:
-        query = query.filter(models.Medilogic_Driver.status == status)
+        if min_experience:
+            query = query.filter(models.Medilogic_Driver.experience_years >= min_experience)
 
-    # -----------------------------------------------------
-    # SUBSCRIPTION PLAN PRIORITY ORDER
-    # Blue → Green → Free
-    # -----------------------------------------------------
+        if status:
+            query = query.filter(models.Medilogic_Driver.status == status)
 
+    # =====================================================
+    # 🏆 SUBSCRIPTION PRIORITY (Blue → Green → Free)
+    # =====================================================
     subscription_order = case(
         (cast(models.Medilogic_Driver.subscription_plan, String) == "blue", 3),
         (cast(models.Medilogic_Driver.subscription_plan, String) == "green", 2),
@@ -239,18 +263,26 @@ def list_medilogic_drivers(
         else_=0,
     )
 
-    # -----------------------------------------------------
-    # FINAL SORTING
-    # 1️⃣ Plan priority
-    # 2️⃣ Newest drivers first
-    # -----------------------------------------------------
-
     query = query.order_by(
         subscription_order.desc(),
         models.Medilogic_Driver.created_at.desc()
     )
 
-    return query.all()
+    # =====================================================
+    # 📊 PAGINATION LOGIC
+    # =====================================================
+    total = query.count()
+
+    offset = (page - 1) * page_size
+
+    results = query.offset(offset).limit(page_size).all()
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "results": results,
+    }
     
 @router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(
