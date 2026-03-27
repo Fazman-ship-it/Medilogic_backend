@@ -467,6 +467,8 @@ from app.utilites.storage_utilites import upload_file_to_s3_async
 from app.utilites.storage_utilites import generate_presigned_url_async
 from app.models import BadgeType  # adjust import if needed
 
+from app.utilites.storage_utilites import generate_presigned_url
+
 @router.put("/me", response_model=schemas.MedilogicDriverMeOut)
 async def update_me_upload_docs(
     files: List[UploadFile] = File([]),
@@ -575,7 +577,7 @@ async def update_me_upload_docs(
         print("🔍 FILE PATH:", doc.file_path)
 
         try:
-            file_url = await generate_presigned_url_async(doc.file_path)
+            file_url = await generate_presigned_url(doc.file_path)
             print("✅ GENERATED URL:", file_url)
         except Exception as e:
             print("❌ URL GENERATION ERROR:", str(e))
