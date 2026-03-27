@@ -562,7 +562,7 @@ async def update_me_upload_docs(
     db.refresh(driver)
 
     # --------------------------------------------------
-    # DEBUG: CHECK DOCUMENTS EXIST
+    # DEBUG
     # --------------------------------------------------
     print("🔍 TOTAL DOCUMENTS:", len(driver.documents))
 
@@ -582,7 +582,7 @@ async def update_me_upload_docs(
             file_url = None
 
         documents_with_urls.append({
-            "id": doc.id,
+            "id": str(doc.id),
             "filename": doc.filename,
             "file_path": doc.file_path,
             "upload_time": doc.upload_time,
@@ -591,18 +591,25 @@ async def update_me_upload_docs(
         })
 
     # --------------------------------------------------
-    # CONVERT DRIVER TO SCHEMA
+    # ✅ BUILD DRIVER DICT (CRITICAL FIX)
     # --------------------------------------------------
-    driver_data = schemas.MedilogicDriverOut.model_validate(driver)
-
-    # 🔥 IMPORTANT: inject documents WITH URL
-    driver_data.documents = documents_with_urls
+    driver_dict = {
+        "id": str(driver.id),
+        "name": driver.name,
+        "email": driver.email,
+        "subscription_plan": driver.subscription_plan,
+        "badge_type": driver.badge_type,
+        "documents": documents_with_urls,  # ✅ REAL DATA
+        "can_upload_docs": driver.can_upload_docs,
+        "can_view_analytics": driver.can_view_analytics,
+        "can_see_org_names": driver.can_see_org_names,
+    }
 
     # --------------------------------------------------
     # FINAL RETURN
     # --------------------------------------------------
     return {
-        "driver": driver_data,
+        "driver": driver_dict,
         "analytics": analytics
     }
     
