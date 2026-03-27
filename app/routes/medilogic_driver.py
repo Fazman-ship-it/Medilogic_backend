@@ -475,7 +475,9 @@ async def update_me_upload_docs(
 ):
     request_id = str(uuid4())[:8]
 
-    # ✅ ONLY Medilogic drivers allowed
+    # --------------------------------------------------
+    # AUTH CHECK
+    # --------------------------------------------------
     if current_user.role != "medilogic_driver":
         raise HTTPException(status_code=403, detail="Only Medilogic drivers can access this resource")
 
@@ -486,14 +488,14 @@ async def update_me_upload_docs(
     if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
 
-    # Check if any real files were sent
+    # --------------------------------------------------
+    # UPLOAD LOGIC
+    # --------------------------------------------------
     has_real_files = any(f and getattr(f, "filename", "") for f in (files or []))
 
-    # ✅ Restrict uploads for free plan
     if driver.subscription_plan == schemas.SubscriptionPlan.free and has_real_files:
-        raise HTTPException(status_code=403, detail="You must subscribe to Green or Blue to upload documents")
+        raise HTTPException(status_code=403, detail="You must subscribe to Green or Blue")
 
-    # ✅ Upload documents only if allowed
     if has_real_files and driver.subscription_plan in [
         schemas.SubscriptionPlan.green,
         schemas.SubscriptionPlan.blue,
@@ -503,6 +505,8 @@ async def update_me_upload_docs(
                 continue
 
             key = await upload_file_to_s3_async(file, prefix=f"drivers/{driver.id}")
+
+            print("📤 UPLOADED FILE KEY:", key)
 
             doc = models.Document(
                 medilogic_driver_id=driver.id,
@@ -514,7 +518,9 @@ async def update_me_upload_docs(
 
             db.add(doc)
 
-    # Badge-based access
+    # --------------------------------------------------
+    # BADGE LOGIC
+    # --------------------------------------------------
     if driver.badge_type == BadgeType.blue.value:
         driver.can_view_analytics = True
         driver.can_see_org_names = True
@@ -525,7 +531,9 @@ async def update_me_upload_docs(
         driver.can_view_analytics = False
         driver.can_see_org_names = False
 
-    # Analytics block
+    # --------------------------------------------------
+    # ANALYTICS
+    # --------------------------------------------------
     analytics = None
     if driver.badge_type in [BadgeType.green.value, BadgeType.blue.value]:
         analytics = {
@@ -541,21 +549,37 @@ async def update_me_upload_docs(
 
             analytics["charts"]["views_over_time"] = charts
 
+    # --------------------------------------------------
+    # SAVE TO DB
+    # --------------------------------------------------
     try:
         db.commit()
-    except Exception:
+    except Exception as e:
         db.rollback()
+        print("❌ DB COMMIT ERROR:", str(e))
         raise
 
     db.refresh(driver)
 
-    # ==========================================================
-    # ✅ FIX: Build documents manually with file_url
-    # ==========================================================
+    # --------------------------------------------------
+    # DEBUG: CHECK DOCUMENTS EXIST
+    # --------------------------------------------------
+    print("🔍 TOTAL DOCUMENTS:", len(driver.documents))
+
+    # --------------------------------------------------
+    # BUILD DOCUMENTS WITH URL
+    # --------------------------------------------------
     documents_with_urls = []
 
     for doc in driver.documents:
-        file_url = await generate_presigned_url_async(doc.file_path)
+        print("🔍 FILE PATH:", doc.file_path)
+
+        try:
+            file_url = await generate_presigned_url_async(doc.file_path)
+            print("✅ GENERATED URL:", file_url)
+        except Exception as e:
+            print("❌ URL GENERATION ERROR:", str(e))
+            file_url = None
 
         documents_with_urls.append({
             "id": doc.id,
@@ -566,17 +590,23 @@ async def update_me_upload_docs(
             "file_url": file_url,
         })
 
-    # ==========================================================
-    # ✅ FIX: Replace documents in response
-    # ==========================================================
+    # --------------------------------------------------
+    # CONVERT DRIVER TO SCHEMA
+    # --------------------------------------------------
     driver_data = schemas.MedilogicDriverOut.model_validate(driver)
+
+    # 🔥 IMPORTANT: inject documents WITH URL
     driver_data.documents = documents_with_urls
-    
+
+    # --------------------------------------------------
+    # FINAL RETURN
+    # --------------------------------------------------
     return {
-        "driver": driver_dict,
+        "driver": driver_data,
         "analytics": analytics
     }
-
+    
+    
 # app/routes/medilogic_drivers.py
 from fastapi import APIRouter, HTTPException, Depends, Form
 from sqlalchemy.orm import Session
