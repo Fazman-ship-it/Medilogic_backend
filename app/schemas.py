@@ -329,6 +329,8 @@ class TripCreateClient(BaseModel):
 
 class TripClientResponse(BaseModel):
     id: UUID
+    client_name:str
+    cilent_id :Optional[UUID] = None 
     short_id: Optional[str] = None
     delivery_type: DeliveryType
     custom_delivery_description: Optional[str] = None
