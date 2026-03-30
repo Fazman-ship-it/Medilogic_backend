@@ -326,11 +326,19 @@ class TripCreateClient(BaseModel):
     scheduled_time: datetime
     priority: Optional[str]= None
     requires_pin: Optional[bool] = False
+    
+    
+class ClientMini(BaseModel):
+    id: UUID
+    name: str
+    email: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 class TripClientResponse(BaseModel):
     id: UUID
-    client_name:str
-    cilent_id :Optional[UUID] = None 
+    client:ClientMini
     short_id: Optional[str] = None
     delivery_type: DeliveryType
     custom_delivery_description: Optional[str] = None
