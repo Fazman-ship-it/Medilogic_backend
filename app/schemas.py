@@ -323,7 +323,6 @@ class TripCreateClient(BaseModel):
     custom_delivery_description: Optional[str] = None
     pickup_location: Optional[str] = None
     dropoff_location: Optional[str] = None
-    distance_km: Optional[float]= None
     scheduled_time: datetime
     priority: Optional[str]= None
     requires_pin: Optional[bool] = False
@@ -335,7 +334,6 @@ class TripClientResponse(BaseModel):
     custom_delivery_description: Optional[str] = None
     pickup_location: Optional[str] = None
     dropoff_location: Optional[str] = None
-    distance_km: Optional [float]= None
     priority: Optional[str]= None
     requires_pin: Optional[bool] = False
     scheduled_time: datetime
