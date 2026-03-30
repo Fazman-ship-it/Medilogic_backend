@@ -40,7 +40,6 @@ def create_trip_as_client(
         scheduled_time=to_utc(trip_data.scheduled_time),  # 🔹 convert to UTC
         pickup_location=trip_data.pickup_location,
         dropoff_location=trip_data.dropoff_location,
-        distance_km=trip_data.distance_km,
         priority=trip_data.priority,
         status="pending",
         driver_id=None,
