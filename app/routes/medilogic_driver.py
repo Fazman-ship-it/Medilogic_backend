@@ -284,6 +284,7 @@ def list_medilogic_drivers(
         "results": results,
     }
     
+    
 @router.get("/driver", response_model=schemas.MedilogicDriverAnalyticsOut)
 def get_medilogic_driver_analytics(
     db: Session = Depends(get_db),
@@ -340,7 +341,6 @@ def get_medilogic_driver_analytics(
         "org_views": org_views,
         "charts": charts
     }
-    
 
 @router.get("/{medilogic_driver_id}", response_model=schemas.MedilogicDriverOut)
 def get_driver(
@@ -371,7 +371,7 @@ def get_driver(
             raise HTTPException(status_code=403, detail="Not authorised to access this driver record")
 
     return driver
-    
+
 from app.utilites.time_utilities import now_utc
 from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
 from sqlalchemy.orm import Session
@@ -450,8 +450,7 @@ def update_medilogic_driver_profile_json(
 
     logger.info("[%s] Profile updated(JSON) applied=%s", request_id, applied)
     return driver
-    
-    
+
 import logging
 from uuid import uuid4
 logger = logging.getLogger(__name__)
@@ -565,7 +564,6 @@ async def update_me_upload_docs(
     # DEBUG
     # --------------------------------------------------
     print("🔍 TOTAL DOCUMENTS:", len(driver.documents))
-
     # --------------------------------------------------
     # BUILD DOCUMENTS WITH URL
     # --------------------------------------------------
@@ -612,7 +610,6 @@ async def update_me_upload_docs(
         "driver": driver_dict,
         "analytics": analytics
     }
-    
     
 # app/routes/medilogic_drivers.py
 from fastapi import APIRouter, HTTPException, Depends, Form
@@ -674,8 +671,7 @@ def create_setup_intent(
     return {
         "client_secret": setup_intent.client_secret
     }
-
-
+    
 @router.put("/driver/subscription", response_model=schemas.MedilogicDriverSubscriptionChangeOut)
 def change_subscription(
     new_plan: schemas.SubscriptionPlan = Form(...),
@@ -796,8 +792,7 @@ def change_subscription(
                 customer=customer.id,
                 items=[{"price": price_id}],
                 metadata={
-                    "driver_id": str(driver.id),
-                    "plan": new_plan.value,
+                    "driver_id": str(driver.id),"plan": new_plan.value,
                 },
                 collection_method="charge_automatically",
                 idempotency_key=f"subscription-create-{driver.id}"
@@ -841,6 +836,7 @@ def change_subscription(
     return {
         "driver": driver,
     }
+    
 from app.routes.hookstripe import apply_plan_features    
 @router.delete("/driver/subscription", response_model=schemas.MedilogicDriverOut)
 def cancel_subscription(
@@ -889,4 +885,4 @@ def cancel_subscription(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Cancellation failed: {str(e)}")
 
-    return driver
+    return driver                
