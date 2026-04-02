@@ -104,3 +104,31 @@ async def delete_file_from_s3(key: str):
         region_name=AWS_REGION
     ) as s3:
         await s3.delete_object(Bucket=AWS_BUCKET, Key=key)
+        
+        
+import boto3
+
+def generate_presigned_url(key: str, expires_in: int = 3600):
+    if not key:
+        return None
+
+    s3 = boto3.client(
+        "s3",
+        aws_access_key_id=AWS_ACCESS_KEY,
+        aws_secret_access_key=AWS_SECRET_KEY,
+        region_name=AWS_REGION,
+    )
+
+    try:
+        url = s3.generate_presigned_url(
+            ClientMethod="get_object",
+            Params={
+                "Bucket": AWS_BUCKET,
+                "Key": key,
+            },
+            ExpiresIn=expires_in,
+        )
+        return url
+    except Exception as e:
+        print("❌ PRESIGNED URL ERROR:", str(e))
+        return None
