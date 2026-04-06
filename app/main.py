@@ -72,8 +72,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://medilogicglobal.vercel.app",  # In production, set this to your frontend domain
-        "https://medilogic.vercel.app",
+        "https://medilogicglobal.co.uk",  # In production, set this to your frontend domain
         # ✅ ADD THESE FOR LOCAL DEVELOPMENT
         "http://localhost:3000",   # React / Next.js
         "http://127.0.0.1:3000",
