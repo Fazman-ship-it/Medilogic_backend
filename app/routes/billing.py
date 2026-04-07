@@ -117,9 +117,15 @@ def subscribe_org(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
+    # ======================================================
+    # 🔐 ONLY ADMIN CAN SUBSCRIBE
+    # ======================================================
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins allowed")
 
+    # ======================================================
+    # 🏢 GET ORGANIZATION
+    # ======================================================
     org = db.query(models.Organization).filter(
         models.Organization.id == current_user.organization_id
     ).first()
@@ -127,24 +133,60 @@ def subscribe_org(
     if not org:
         raise HTTPException(status_code=404, detail="Organisation not found")
 
-    # 🔥 Calculate bill
+    # ======================================================
+    # 💰 CALCULATE BILL
+    # ======================================================
     bill = calculate_org_bill(db, org.id)
 
-    # 🔥 FIXED: pass db + org
+    if bill["total"] <= 0:
+        raise HTTPException(status_code=400, detail="No billable users found")
+
+    # ======================================================
+    # 👤 CREATE / GET STRIPE CUSTOMER
+    # ======================================================
     customer_id = create_or_get_customer(db, org)
 
-    # 🔥 Create subscription
-    subscription = create_subscription(customer_id, bill["total"])
+    try:
+        # ======================================================
+        # 💵 CREATE STRIPE PRICE (dynamic billing)
+        # ======================================================
+        price = stripe.Price.create(
+            unit_amount=int(bill["total"] * 100),  # pence
+            currency="gbp",
+            recurring={"interval": "month"},
+            product_data={"name": "Medilogic Subscription"},
+        )
 
-    # 🔥 Save to DB
-    org.stripe_customer_id = customer_id
-    org.stripe_subscription_id = subscription.id
-    org.subscription_status = subscription.status
+        # ======================================================
+        # 🔥 CREATE SUBSCRIPTION (IMPORTANT FIX)
+        # ======================================================
+        subscription = stripe.Subscription.create(
+            customer=customer_id,
+            items=[{"price": price.id}],
+            payment_behavior="default_incomplete",  # 🔥 REQUIRED
+            expand=["latest_invoice.payment_intent"],  # 🔥 REQUIRED
+        )
 
-    db.commit()
+        # ======================================================
+        # 💾 SAVE TO DB
+        # ======================================================
+        org.stripe_customer_id = customer_id
+        org.stripe_subscription_id = subscription.id
+        org.subscription_status = subscription.status
 
-    return {
-        "message": "Subscription created",
-        "amount": bill["total"],
-        "status": subscription.status
-    }
+        db.commit()
+
+        # ======================================================
+        # 🔥 RETURN CLIENT SECRET FOR FRONTEND PAYMENT
+        # ======================================================
+        return {
+            "message": "Subscription created. Complete payment.",
+            "subscription_id": subscription.id,
+            "client_secret": subscription.latest_invoice.payment_intent.client_secret,
+            "amount": bill["total"],
+            "status": subscription.status,
+        }
+
+    except Exception as e:
+        print("❌ Subscription creation failed:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to create subscription")
