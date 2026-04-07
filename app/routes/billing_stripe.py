@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET2")
 
 @router.post("/billing-webhook")
 async def billing_webhook(request: Request, db: Session = Depends(get_db)):
