@@ -89,6 +89,22 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
 
     return user
 
+def require_active_subscription(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    if not org or org.subscription_status != "active":
+        raise HTTPException(
+            status_code=402,
+            detail="Subscription inactive. Please renew."
+        )
+
+    return current_user
+
 # app/dependencies/applicants.py
 from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session

@@ -91,6 +91,7 @@ class SubscriptionStatus(str,enum.Enum):
     cancelled = "cancelled"            
     none = "none"
     past_due = "past_due"
+    inactive = "inactive"
     
 class SubscriptionPlan(str, enum.Enum):
     free = "free"
@@ -289,7 +290,12 @@ class Organization(Base,ShortIDMixin):
     driver_views = relationship("DriverView", back_populates="organization", cascade="all, delete-orphan")
     daily_notifications = relationship("DailyNotification", back_populates="organization")
     ico_registration_number = Column(String, nullable=True)  # ICO registration ID if available
-    timezone = Column(String, default="UTC",nullable=False,doc="IANA tz name, e.g. Europe/London")    
+    timezone = Column(String, default="UTC",nullable=False,doc="IANA tz name, e.g. Europe/London")
+    stripe_customer_id = Column(String, nullable= True)
+    stripe_subscription_id = Column(String, nullable=True)
+    subscription_status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.inactive)
+    subscription_current_period_end = Column(DateTime, nullable= True)
+    
 class ActivityLog(Base, ShortIDMixin):
     __tablename__ = "activity_logs"
 

@@ -9,6 +9,7 @@ import string # ✅ You imported User
 from uuid import UUID
 from datetime import datetime
 from app.utilites.time_utilities import now_utc
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def serialize_for_jwt(data: dict):

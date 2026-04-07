@@ -43,20 +43,28 @@ def delete_own_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # ✅ Verify password
+    # ======================================================
+    # ✅ VERIFY PASSWORD
+    # ======================================================
     if not pwd_context.verify(request.password, current_user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid password")
 
-    # 🚫 Prevent double deletion
+    # ======================================================
+    # 🚫 PREVENT DOUBLE DELETION
+    # ======================================================
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Account already deleted")
 
-    # 📝 Mark account as deleted instead of removing it
+    # ======================================================
+    # 📝 SOFT DELETE USER
+    # ======================================================
     current_user.is_active = False
     current_user.deleted_at = now_utc()
     current_user.deletion_reason = request.reason
 
-    # 📝 Log activity (multi-tenant safe)
+    # ======================================================
+    # 📝 LOG ACTIVITY
+    # ======================================================
     log_activity(
         db=db,
         user_id=current_user.id,
@@ -67,6 +75,25 @@ def delete_own_account(
     db.commit()
     db.refresh(current_user)
 
+    # ======================================================
+    # 🔥 BILLING UPDATE (VERY IMPORTANT)
+    # ======================================================
+    from app.routes.billing import update_org_subscription
+
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    if org:
+        try:
+            update_org_subscription(db, org)
+            print("💰 Billing updated after user deletion:", org.id)
+        except Exception as e:
+            print("⚠️ Billing update failed:", str(e))
+
+    # ======================================================
+    # ✅ RESPONSE
+    # ======================================================
     return {
         "message": "Account deleted successfully.",
         "user": {

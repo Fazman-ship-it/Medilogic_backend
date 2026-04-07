@@ -55,7 +55,7 @@ def public_signup(
     db.refresh(new_user)
 
     # ✅ Send verification email
-    verification_link = f"https://medilogic.vercel.app/verifyemail?token={verification_token}"
+    verification_link = f"https://medilogicglobal.co.uk/verifyemail?token={verification_token}"
     subject = "Verify your Medilogic Email"
     email_body = f"""
     Hi {new_user.name},<br><br>
@@ -103,23 +103,48 @@ from app.utilites.time_utilities import now_utc,to_local,to_utc
 @router.get("/verify-email")
 def verify_email(
     token: str,
-    request: Request,  # ✅ Inject Request for client data
+    request: Request,
     db: Session = Depends(get_db)
 ):
-    user = db.query(models.User).filter(models.User.email_verification_token == token).first()
+    user = db.query(models.User).filter(
+        models.User.email_verification_token == token
+    ).first()
 
     if not user or user.token_expires_at < now_utc():
         raise HTTPException(status_code=400, detail="Invalid or expired verification token.")
 
-    # ✅ Mark as verified
+    # ======================================================
+    # ✅ MARK USER VERIFIED
+    # ======================================================
     user.is_verified = True
     user.email_verification_token = None
     user.token_expires_at = None
-    db.commit()
 
-    # ✅ Log activity with IP and user-agent
+    db.commit()
+    db.refresh(user)
+
+    # ======================================================
+    # 🔥 BILLING UPDATE (ADD THIS BLOCK)
+    # ======================================================
+    from app.routes.billing import update_org_subscription
+
+    org = db.query(models.Organization).filter(
+        models.Organization.id == user.organization_id
+    ).first()
+
+    if org:
+        try:
+            update_org_subscription(db, org)
+            print("💰 Billing updated after verification:", org.id)
+        except Exception as e:
+            print("⚠️ Billing update failed:", str(e))
+
+    # ======================================================
+    # ✅ LOG ACTIVITY
+    # ======================================================
     ip = request.client.host
     user_agent = request.headers.get("user-agent", "unknown")
+
     log_activity(
         db=db,
         user_id=user.id,
@@ -154,7 +179,7 @@ def resend_verification_email(
     db.commit()
 
     # ✅ Build new link
-    verification_link = f"https://medilogic.vercel.app/verifyemail?token={new_token}"
+    verification_link = f"https://medilogicglobal.co.uk/verifyemail?token={new_token}"
 
     # ✅ Send email
     subject = "Resend: Verify your Medilogic Email"

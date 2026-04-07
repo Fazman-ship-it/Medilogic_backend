@@ -25,8 +25,10 @@ from app.driver_notification import notify_driver_trip_assigned, notify_upcoming
 import random
 from app.utilites.Client_pin import generate_delivery_pin
 from app.utilites.email_utilites import send_email
+from fastapi import Depends
+from app.dependencies import require_active_subscription
 # app/routes/trip.py
-router = APIRouter()
+router = APIRouter( dependencies= [Depends(require_active_subscription)])
 
 @router.post("/", response_model=schemas.TripResponse)
 def create_trip(
