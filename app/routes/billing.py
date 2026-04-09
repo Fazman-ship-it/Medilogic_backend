@@ -197,3 +197,51 @@ def subscribe_org(
     except Exception as e:
         print("❌ Subscription creation failed:", str(e))
         raise HTTPException(status_code=500, detail="Failed to create subscription")
+        
+@router.post("/billing/portal")
+def create_billing_portal(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    if not org or not org.stripe_customer_id:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=org.stripe_customer_id,
+            return_url="https://medilogicglobal.co.uk/dashboard"
+        )
+
+        return {
+            "url": session.url
+        }
+
+    except Exception as e:
+        print("❌ Billing portal error:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to open billing portal")
+
+@router.get("/billing/summary")
+def get_billing_summary(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    if not org:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+
+    bill = calculate_org_bill(db, org.id)
+
+    return {
+        "drivers": bill["drivers"],
+        "clients": bill["clients"],
+        "monthly_total": bill["total"],
+        "subscription_status": org.subscription_status,
+        "next_billing_date": org.subscription_current_period_end
+    }
