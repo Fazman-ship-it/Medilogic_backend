@@ -28,7 +28,7 @@ from app.utilites.email_utilites import send_email
 from fastapi import Depends
 from app.dependencies import require_active_subscription
 # app/routes/trip.py
-router = APIRouter( dependencies= [Depends(require_active_subscription)])
+router = APIRouter()
 
 @router.post("/", response_model=schemas.TripResponse)
 def create_trip(

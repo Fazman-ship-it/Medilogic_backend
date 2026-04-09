@@ -9,7 +9,7 @@ from app import models
 from app.schemas import SubscriptionPlan
 import stripe
 import os
-
+router = APIRouter()
 def calculate_org_bill(db: Session, org_id: UUID):
 
     driver_count = db.query(models.User).filter(
@@ -96,22 +96,91 @@ def update_org_subscription(db: Session, org: models.Organization):
     except Exception as e:
         print("❌ Stripe update failed:", str(e))
 
-def create_subscription(customer_id, amount):
-    price = stripe.Price.create(
-        unit_amount=amount * 100,
-        currency="gbp",
-        recurring={"interval": "month"},
-        product_data={"name": "Medilogic Subscription"},
-    )
+@router.post("/billing/setup-intent")
+def create_setup_intent(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # 🔹 Get org
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
 
-    subscription = stripe.Subscription.create(
+    if not org:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+
+    # 🔹 Create/get Stripe customer
+    customer_id = create_or_get_customer(db, org)
+
+    # 🔥 Create SetupIntent (SAVE CARD ONLY)
+    setup_intent = stripe.SetupIntent.create(
         customer=customer_id,
-        items=[{"price": price.id}],
+        payment_method_types=["card"]
     )
 
-    return subscription
+    return {
+        "client_secret": setup_intent.client_secret
+    }
 
-router = APIRouter()
+
+@router.post("/billing/activate-subscription")
+def activate_subscription(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    # 🔐 Only admin
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins allowed")
+
+    # 🔹 Get org
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    if not org:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+
+    # 🔹 Calculate bill
+    bill = calculate_org_bill(db, org.id)
+
+    if bill["total"] <= 0:
+        raise HTTPException(status_code=400, detail="No billable users found")
+
+    # 🔹 Get Stripe customer
+    customer_id = create_or_get_customer(db, org)
+
+    try:
+        # 🔥 Create price dynamically
+        price = stripe.Price.create(
+            unit_amount=int(bill["total"] * 100),
+            currency="gbp",
+            recurring={"interval": "month"},
+            product_data={"name": "Medilogic Subscription"},
+        )
+
+        # 🔥 Create subscription (AUTO BILLING)
+        subscription = stripe.Subscription.create(
+            customer=customer_id,
+            items=[{"price": price.id}],
+        )
+
+        # 🔹 Save to DB
+        org.stripe_subscription_id = subscription.id
+        org.subscription_status = subscription.status
+
+        db.commit()
+
+        return {
+            "message": "Subscription activated",
+            "status": subscription.status,
+            "amount": bill["total"]
+        }
+
+    except Exception as e:
+        print("❌ Subscription activation failed:", str(e))
+        raise HTTPException(status_code=500, detail="Subscription failed")
+    
+
 @router.post("/subscribe")
 def subscribe_org(
     db: Session = Depends(get_db),
@@ -148,27 +217,26 @@ def subscribe_org(
 
     try:
         # ======================================================
-        # 💵 CREATE STRIPE PRICE (dynamic billing)
+        # 💵 CREATE STRIPE PRICE (DYNAMIC BILLING)
         # ======================================================
         price = stripe.Price.create(
-            unit_amount=int(bill["total"] * 100),  # pence
+            unit_amount=int(bill["total"] * 100),  # convert to pence
             currency="gbp",
             recurring={"interval": "month"},
             product_data={"name": "Medilogic Subscription"},
         )
 
         # ======================================================
-        # 🔥 CREATE SUBSCRIPTION (IMPORTANT FIX)
+        # 🔥 CREATE SUBSCRIPTION (AUTO-CHARGE MODE)
         # ======================================================
         subscription = stripe.Subscription.create(
             customer=customer_id,
             items=[{"price": price.id}],
-            payment_behavior="default_incomplete",  # 🔥 REQUIRED
-            expand=["latest_invoice.payment_intent"],  # 🔥 REQUIRED
+            collection_method="charge_automatically",  # 🔥 KEY CHANGE
         )
 
         # ======================================================
-        # 💾 SAVE TO DB
+        # 💾 SAVE TO DATABASE
         # ======================================================
         org.stripe_customer_id = customer_id
         org.stripe_subscription_id = subscription.id
@@ -177,12 +245,11 @@ def subscribe_org(
         db.commit()
 
         # ======================================================
-        # 🔥 RETURN CLIENT SECRET FOR FRONTEND PAYMENT
+        # ✅ RETURN CLEAN RESPONSE (NO CLIENT SECRET)
         # ======================================================
         return {
-            "message": "Subscription created. Complete payment.",
+            "message": "Subscription activated successfully",
             "subscription_id": subscription.id,
-            "client_secret": subscription.latest_invoice.payment_intent.client_secret,
             "amount": bill["total"],
             "status": subscription.status,
         }
