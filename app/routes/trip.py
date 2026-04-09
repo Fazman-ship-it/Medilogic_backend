@@ -14,7 +14,7 @@ from app import models, schemas
 from app.database import get_db
 from app import models
 from typing import Optional, List
-from app.dependencies import require_role
+from app.dependencies import require_role, get_current_user
 from app.schemas import TripUpdate, TripPatch, TripResponse, TripAnalyticsResponse,TripCreate, TripStatus
 from app.utilites.logging import log_activity
 from uuid import UUID
@@ -34,8 +34,12 @@ router = APIRouter()
 def create_trip(
     trip: schemas.TripCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(require_role("admin"))
+    current_user: models.User = Depends(require_active_subscription),  # 🔥 ADD THIS
 ):
+    # 🔐 ROLE CHECK (ADMIN ONLY)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can create trips")
+
     # ✅ Validate "Others" delivery type
     if trip.delivery_type.lower() == "others" and not trip.custom_delivery_description:
         raise HTTPException(
@@ -81,13 +85,13 @@ def create_trip(
     trip_data.setdefault("priority", "normal")
     trip_data.setdefault("recurrence_rule", "none")
 
-    # 🔐 PIN / WTN flags (from schema, default False)
+    # 🔐 PIN / WTN flags
     requires_pin = bool(trip_data.get("requires_pin", False))
     requires_wtn = bool(trip_data.get("requires_wtn", False))
     trip_data["requires_pin"] = requires_pin
     trip_data["requires_wtn"] = requires_wtn
 
-    # 🔐 Generate PIN if required and not already set
+    # 🔐 Generate PIN if required
     if requires_pin and not trip_data.get("confirmation_pin"):
         trip_data["confirmation_pin"] = generate_delivery_pin(6)
 
@@ -106,11 +110,11 @@ def create_trip(
         details=f"Admin {current_user.name} created trip ID {db_trip.id} for client {trip_data.get('client_id')}"
     )
 
-    # 🔔 NOTIFY DRIVER IF ASSIGNED
+    # 🔔 Notify driver
     if db_trip.driver_id:
         notify_driver_trip_assigned(driver_id=db_trip.driver_id, trip_id=db_trip.id)
 
-    # 🔐 EMAIL DELIVERY PIN TO CLIENT (if required and we know their email)
+    # 🔐 Email PIN to client
     try:
         if db_trip.requires_pin:
             client_email = None
@@ -140,7 +144,6 @@ def create_trip(
                     ),
                 )
     except Exception as e:
-        # Don’t break trip creation if email fails
         print("[TRIP] Failed to send PIN email (ignored):", repr(e))
 
     # ✅ Convert scheduled_time back to local before returning
