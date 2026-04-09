@@ -100,22 +100,19 @@ def require_active_subscription(
     if not org:
         raise HTTPException(status_code=404, detail="Organisation not found")
 
-    # 🔥 FIRST TIME USERS (NO CARD YET)
+    # 🟢 ALLOW FIRST-TIME USERS (IMPORTANT)
     if org.subscription_status in ["inactive", "none"]:
-        raise HTTPException(
-            status_code=402,
-            detail="Please add a payment method to activate your account."
-        )
+        return current_user
 
-    # 🔥 PAYMENT FAILED
+    # 🔴 PAYMENT FAILED → LOCK
     if org.subscription_status == "past_due":
         raise HTTPException(
             status_code=402,
             detail="Payment failed. Please update your card."
         )
 
-    # 🔥 BLOCK EVERYTHING ELSE
-    if org.subscription_status != "active":
+    # 🔴 CANCELLED / EXPIRED → LOCK
+    if org.subscription_status in ["cancelled", "expired"]:
         raise HTTPException(
             status_code=402,
             detail="Subscription inactive."
