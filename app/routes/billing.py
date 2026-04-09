@@ -245,3 +245,18 @@ def get_billing_summary(
         "subscription_status": org.subscription_status,
         "next_billing_date": org.subscription_current_period_end
     }
+    
+@router.get("/billing/status")
+def billing_status(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    return {
+        "subscription_status": org.subscription_status,
+        "has_subscription": bool(org.stripe_subscription_id),
+        "next_billing_date": org.subscription_current_period_end
+    }
