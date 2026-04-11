@@ -175,14 +175,22 @@ def subscribe_org(
             default_payment_method=payment_methods.data[0].id,
         )
 
-        # ✅ SAVE TO NEW TABLE
-        db_subscription = models.Subscription(
-            org_id=org.id,
-            stripe_subscription_id=stripe_sub.id,
-            status=stripe_sub.status
-        )
+        # ✅ CHECK EXISTING SUBSCRIPTION
+        db_subscription = db.query(models.Subscription).filter(
+            models.Subscription.org_id == org.id
+        ).first()
 
-        db.add(db_subscription)
+        if db_subscription:
+            db_subscription.stripe_subscription_id = stripe_sub.id
+            db_subscription.status = stripe_sub.status
+        else:
+            db_subscription = models.Subscription(
+                org_id=org.id,
+                stripe_subscription_id=stripe_sub.id,
+                status=stripe_sub.status
+            )
+            db.add(db_subscription)
+
         db.commit()
 
         return {
