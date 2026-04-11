@@ -11,6 +11,7 @@ import os
 router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+price_id = os.getenv("STRIPE_PRICE_ID")
 
 
 # ======================================================
@@ -66,34 +67,26 @@ def create_or_get_customer(db: Session, org: models.Organization):
 # ======================================================
 def update_org_subscription(db: Session, org: models.Organization):
 
-    subscription = db.query(models.Subscription).filter(
-        models.Subscription.org_id == org.id
-    ).first()
-
-    if not subscription:
-        print("⚠️ No subscription found")
+    if not org.stripe_subscription_id:
         return
 
     bill = calculate_org_bill(db, org.id)
 
     try:
-        stripe_sub = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
+        subscription = stripe.Subscription.retrieve(org.stripe_subscription_id)
 
-        item_id = stripe_sub["items"]["data"][0].id
+        item_id = subscription["items"]["data"][0].id
 
         stripe.Subscription.modify(
-            subscription.stripe_subscription_id,
+            org.stripe_subscription_id,
             items=[{
                 "id": item_id,
-                "price_data": {
-                    "currency": "gbp",
-                    "product_data": {"name": "Medilogic Subscription"},
-                    "unit_amount": int(bill["total"] * 100),
-                    "recurring": {"interval": "month"},
-                }
+                "quantity": bill["total"]  # 🔥 UPDATE QUANTITY ONLY
             }],
             proration_behavior="create_prorations"
         )
+
+        print(f"✅ Subscription updated → £{bill['total']}")
 
     except Exception as e:
         print("❌ Stripe update failed:", str(e))
@@ -162,25 +155,22 @@ def subscribe_org(
         )
 
     try:
-        price = stripe.Price.create(
-            unit_amount=int(bill["total"] * 100),
-            currency="gbp",
-            recurring={"interval": "month"},
-            product_data={"name": "Medilogic Subscription"},
-        )
+        price_id = os.getenv("STRIPE_PRICE_ID")
 
+        # 🔥 CREATE SUBSCRIPTION WITH QUANTITY
         stripe_sub = stripe.Subscription.create(
             customer=customer_id,
-            items=[{"price": price.id}],
+            items=[{
+                "price": price_id,
+                "quantity": bill["total"]  # 💥 KEY CHANGE
+            }],
             default_payment_method=payment_methods.data[0].id,
         )
 
         from datetime import datetime, timezone
 
-        # ✅ ALWAYS START AS INCOMPLETE (WEBHOOK WILL FIX)
         initial_status = "incomplete"
 
-        # ✅ GET PERIOD END SAFELY
         period_end = None
         if stripe_sub.get("current_period_end"):
             period_end = datetime.fromtimestamp(
@@ -188,7 +178,6 @@ def subscribe_org(
                 tz=timezone.utc
             )
 
-        # ✅ CHECK EXISTING SUBSCRIPTION
         db_subscription = db.query(models.Subscription).filter(
             models.Subscription.org_id == org.id
         ).first()
