@@ -295,6 +295,7 @@ class Organization(Base,ShortIDMixin):
     stripe_subscription_id = Column(String, nullable=True)
     subscription_status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.inactive)
     subscription_current_period_end = Column(DateTime, nullable= True)
+    subscriptions = relationship("Subscription", back_populates="organization", cascade="all, delete-orphan")
     
 class ActivityLog(Base, ShortIDMixin):
     __tablename__ = "activity_logs"
@@ -945,4 +946,16 @@ class StripeWebhookEvent(Base):
     __tablename__ = "stripe_webhook_events"
 
     id = Column(String, primary_key=True)
-    created_at = Column(DateTime, default=now_utc)    
+    created_at = Column(DateTime, default=now_utc) 
+
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete='CASCADE'), nullable=False)
+    stripe_subscription_id = Column(String, unique=True, nullable=False)
+    status = Column(SqlEnum(SubscriptionStatus, name="subscriptionstatus"), default=SubscriptionStatus.inactive, nullable=False)
+    current_period_end = Column(DateTime, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    organization = relationship("Organization", back_populates="subscriptions")
+    
