@@ -93,37 +93,15 @@ def require_active_subscription(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    org = db.query(models.Organization).filter(
-        models.Organization.id == current_user.organization_id
-    ).first()
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == current_user.organization_id
+    ).order_by(models.Subscription.created_at.desc()).first()
 
-    if not org:
-        raise HTTPException(status_code=404, detail="Organisation not found")
+    if not subscription:
+        raise HTTPException(402, "No subscription found")
 
-    # 🟢 ACTIVE → FULL ACCESS
-    if org.subscription_status == "active":
-        return current_user
-
-    # 🟡 NEW USER → ALLOW BUT WARN
-    if org.subscription_status in ["inactive", "none"]:
-        raise HTTPException(
-            status_code=402,
-            detail="Subscription required. Please add a payment method."
-        )
-
-    # 🔴 PAYMENT FAILED
-    if org.subscription_status == "past_due":
-        raise HTTPException(
-            status_code=402,
-            detail="Payment failed. Please update your card."
-        )
-
-    # 🔴 CANCELLED / EXPIRED
-    if org.subscription_status in ["cancelled", "expired"]:
-        raise HTTPException(
-            status_code=402,
-            detail="Subscription inactive."
-        )
+    if subscription.status != "active":
+        raise HTTPException(402, "Subscription inactive")
 
     return current_user
 
