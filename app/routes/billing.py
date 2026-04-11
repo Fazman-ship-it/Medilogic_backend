@@ -160,47 +160,76 @@ def subscribe_org(
 
     customer_id = create_or_get_customer(db, org)
 
-    payment_methods = stripe.PaymentMethod.list(
-        customer=customer_id,
-        type="card"
-    )
-
-    if not payment_methods.data:
-        raise HTTPException(status_code=400, detail="No payment method found")
-
     try:
+        # ============================================
+        # ✅ STEP 1: GET CUSTOMER DEFAULT PAYMENT METHOD
+        # ============================================
+        customer = stripe.Customer.retrieve(customer_id)
+
+        default_pm = customer.get("invoice_settings", {}).get("default_payment_method")
+
+        # ============================================
+        # ✅ STEP 2: IF NONE → SET ONE
+        # ============================================
+        if not default_pm:
+            payment_methods = stripe.PaymentMethod.list(
+                customer=customer_id,
+                type="card"
+            )
+
+            if not payment_methods.data:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No payment method found"
+                )
+
+            default_pm = payment_methods.data[0].id
+
+            # 🔥 CRITICAL FIX → SET DEFAULT PAYMENT METHOD
+            stripe.Customer.modify(
+                customer_id,
+                invoice_settings={"default_payment_method": default_pm}
+            )
+
+        # ============================================
+        # ✅ STEP 3: CREATE SUBSCRIPTION
+        # ============================================
         price_id = os.getenv("STRIPE_PRICE_ID")
+
+        if not price_id:
+            raise HTTPException(500, "Stripe price ID not configured")
 
         stripe_sub = stripe.Subscription.create(
             customer=customer_id,
             items=[{
                 "price": price_id,
-                "quantity": int(bill["total"])  # ✅ FIXED (unit-based)
+                "quantity": int(bill["total"])  # keeping your current model
             }],
-            default_payment_method=payment_methods.data[0].id,
+            default_payment_method=default_pm,
         )
 
-        # ✅ ALWAYS START AS INCOMPLETE (webhook decides truth)
+        # ============================================
+        # ✅ STEP 4: SAVE TO DB (ALWAYS INCOMPLETE)
+        # ============================================
         db_subscription = db.query(models.Subscription).filter(
             models.Subscription.org_id == org.id
         ).first()
 
+        period_end = datetime.fromtimestamp(
+            stripe_sub.current_period_end,
+            tz=timezone.utc
+        )
+
         if db_subscription:
             db_subscription.stripe_subscription_id = stripe_sub.id
             db_subscription.status = "incomplete"
-            db_subscription.current_period_end = datetime.fromtimestamp(
-                stripe_sub.current_period_end,
-                tz=timezone.utc
-            )
+            db_subscription.current_period_end = period_end
         else:
             db_subscription = models.Subscription(
                 org_id=org.id,
                 stripe_subscription_id=stripe_sub.id,
                 status="incomplete",
-                current_period_end=datetime.fromtimestamp(
-                    stripe_sub.current_period_end,
-                    tz=timezone.utc
-                )
+                current_period_end=period_end
             )
             db.add(db_subscription)
 
@@ -212,8 +241,13 @@ def subscribe_org(
         }
 
     except Exception as e:
-        print("❌ Subscription failed:", str(e))
-        raise HTTPException(status_code=500, detail="Failed to create subscription")
+        # 🔥 CRITICAL DEBUG FIX (DO NOT REMOVE)
+        print("🔥 STRIPE FULL ERROR:", repr(e))
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Stripe error: {str(e)}"
+        )
 # ======================================================
 # 📊 SUMMARY
 # ======================================================
