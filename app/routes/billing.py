@@ -136,6 +136,7 @@ def subscribe_org(
     if not org:
         raise HTTPException(status_code=404, detail="Organisation not found")
 
+    # ✅ Calculate usage
     bill = calculate_org_bill(db, org.id)
 
     if bill["total"] <= 0:
@@ -149,65 +150,54 @@ def subscribe_org(
     )
 
     if not payment_methods.data:
-        raise HTTPException(
-            status_code=400,
-            detail="No payment method found"
-        )
+        raise HTTPException(status_code=400, detail="No payment method found")
 
     try:
         price_id = os.getenv("STRIPE_PRICE_ID")
 
-        # 🔥 CREATE SUBSCRIPTION WITH QUANTITY
         stripe_sub = stripe.Subscription.create(
             customer=customer_id,
             items=[{
                 "price": price_id,
-                "quantity": bill["total"]  # 💥 KEY CHANGE
+                "quantity": int(bill["total"])  # ✅ FIXED (unit-based)
             }],
             default_payment_method=payment_methods.data[0].id,
         )
 
-        from datetime import datetime, timezone
-
-        initial_status = "incomplete"
-
-        period_end = None
-        if stripe_sub.get("current_period_end"):
-            period_end = datetime.fromtimestamp(
-                stripe_sub["current_period_end"],
-                tz=timezone.utc
-            )
-
+        # ✅ ALWAYS START AS INCOMPLETE (webhook decides truth)
         db_subscription = db.query(models.Subscription).filter(
             models.Subscription.org_id == org.id
         ).first()
 
         if db_subscription:
             db_subscription.stripe_subscription_id = stripe_sub.id
-            db_subscription.status = initial_status
-            db_subscription.current_period_end = period_end
+            db_subscription.status = "incomplete"
+            db_subscription.current_period_end = datetime.fromtimestamp(
+                stripe_sub.current_period_end,
+                tz=timezone.utc
+            )
         else:
             db_subscription = models.Subscription(
                 org_id=org.id,
                 stripe_subscription_id=stripe_sub.id,
-                status=initial_status,
-                current_period_end=period_end
+                status="incomplete",
+                current_period_end=datetime.fromtimestamp(
+                    stripe_sub.current_period_end,
+                    tz=timezone.utc
+                )
             )
             db.add(db_subscription)
 
         db.commit()
 
         return {
-            "message": "Subscription created (pending confirmation)",
+            "message": "Subscription created (awaiting activation)",
             "subscription_id": stripe_sub.id,
-            "amount": bill["total"],
-            "status": initial_status,
         }
 
     except Exception as e:
         print("❌ Subscription failed:", str(e))
         raise HTTPException(status_code=500, detail="Failed to create subscription")
-
 # ======================================================
 # 📊 SUMMARY
 # ======================================================
@@ -256,3 +246,59 @@ def billing_status(
         "has_subscription": bool(subscription),
         "next_billing_date": subscription.current_period_end if subscription else None
     }
+    
+@router.post("/billing/cancel")
+def cancel_subscription(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == current_user.organization_id
+    ).first()
+
+    if not subscription:
+        raise HTTPException(404, "Subscription not found")
+
+    stripe.Subscription.modify(
+        subscription.stripe_subscription_id,
+        cancel_at_period_end=True
+    )
+
+    return {"message": "Subscription will cancel at period end"}
+    
+@router.post("/billing/sync")
+def sync_subscription(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == current_user.organization_id
+    ).first()
+
+    if not subscription:
+        raise HTTPException(404, "Subscription not found")
+
+    stripe_sub = stripe.Subscription.retrieve(
+        subscription.stripe_subscription_id
+    )
+
+    def map_status(s):
+        if s in ["active", "trialing"]:
+            return "active"
+        elif s in ["past_due", "unpaid"]:
+            return "past_due"
+        elif s == "canceled":
+            return "cancelled"
+        return "inactive"
+
+    subscription.status = map_status(stripe_sub.status)
+    subscription.current_period_end = datetime.fromtimestamp(
+        stripe_sub.current_period_end,
+        tz=timezone.utc
+    )
+
+    db.commit()
+
+    return {"message": "Subscription synced"}
+    
+    
