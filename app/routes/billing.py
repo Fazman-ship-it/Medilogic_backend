@@ -175,6 +175,19 @@ def subscribe_org(
             default_payment_method=payment_methods.data[0].id,
         )
 
+        from datetime import datetime, timezone
+
+        # ✅ ALWAYS START AS INCOMPLETE (WEBHOOK WILL FIX)
+        initial_status = "incomplete"
+
+        # ✅ GET PERIOD END SAFELY
+        period_end = None
+        if stripe_sub.get("current_period_end"):
+            period_end = datetime.fromtimestamp(
+                stripe_sub["current_period_end"],
+                tz=timezone.utc
+            )
+
         # ✅ CHECK EXISTING SUBSCRIPTION
         db_subscription = db.query(models.Subscription).filter(
             models.Subscription.org_id == org.id
@@ -182,28 +195,29 @@ def subscribe_org(
 
         if db_subscription:
             db_subscription.stripe_subscription_id = stripe_sub.id
-            db_subscription.status = stripe_sub.status
+            db_subscription.status = initial_status
+            db_subscription.current_period_end = period_end
         else:
             db_subscription = models.Subscription(
                 org_id=org.id,
                 stripe_subscription_id=stripe_sub.id,
-                status=stripe_sub.status
+                status=initial_status,
+                current_period_end=period_end
             )
             db.add(db_subscription)
 
         db.commit()
 
         return {
-            "message": "Subscription activated",
+            "message": "Subscription created (pending confirmation)",
             "subscription_id": stripe_sub.id,
             "amount": bill["total"],
-            "status": stripe_sub.status,
+            "status": initial_status,
         }
 
     except Exception as e:
         print("❌ Subscription failed:", str(e))
         raise HTTPException(status_code=500, detail="Failed to create subscription")
-
 
 # ======================================================
 # 📊 SUMMARY
