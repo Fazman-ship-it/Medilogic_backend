@@ -33,11 +33,17 @@ def calculate_org_bill(db: Session, org_id: UUID):
         models.User.deleted_at == None
     ).count()
 
-    total_amount = (driver_count * 150) + (client_count * 50)
+    # ✅ Define pricing clearly
+    DRIVER_PRICE = 150
+    CLIENT_PRICE = 50
+
+    total_amount = (driver_count * DRIVER_PRICE) + (client_count * CLIENT_PRICE)
 
     return {
         "drivers": driver_count,
         "clients": client_count,
+        "driver_price": DRIVER_PRICE,
+        "client_price": CLIENT_PRICE,
         "total": total_amount
     }
 
