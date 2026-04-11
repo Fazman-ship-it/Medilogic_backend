@@ -73,21 +73,33 @@ def create_or_get_customer(db: Session, org: models.Organization):
 # ======================================================
 def update_org_subscription(db: Session, org: models.Organization):
 
-    if not org.stripe_subscription_id:
+    # ✅ Get subscription from DB (NEW CORRECT SOURCE)
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == org.id
+    ).first()
+
+    if not subscription:
+        print("⚠️ No subscription found for org")
         return
 
+    # ✅ Calculate latest bill
     bill = calculate_org_bill(db, org.id)
 
     try:
-        subscription = stripe.Subscription.retrieve(org.stripe_subscription_id)
+        # ✅ Get Stripe subscription
+        stripe_sub = stripe.Subscription.retrieve(
+            subscription.stripe_subscription_id
+        )
 
-        item_id = subscription["items"]["data"][0].id
+        # ✅ Extract item ID safely
+        item_id = stripe_sub["items"]["data"][0]["id"]
 
+        # ✅ Update quantity (your current model)
         stripe.Subscription.modify(
-            org.stripe_subscription_id,
+            subscription.stripe_subscription_id,
             items=[{
                 "id": item_id,
-                "quantity": bill["total"]  # 🔥 UPDATE QUANTITY ONLY
+                "quantity": int(bill["total"])  # ✅ MUST be int
             }],
             proration_behavior="create_prorations"
         )
@@ -96,8 +108,6 @@ def update_org_subscription(db: Session, org: models.Organization):
 
     except Exception as e:
         print("❌ Stripe update failed:", str(e))
-
-
 # ======================================================
 # 💳 SETUP INTENT
 # ======================================================
