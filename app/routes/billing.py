@@ -1,29 +1,35 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime
-from typing import Optional, List
+from datetime import datetime, timezone
 from app.database import get_db
 from app.dependencies import get_current_user
 from app import models
-from app.schemas import SubscriptionPlan
 import stripe
 import os
+
 router = APIRouter()
+
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+
+# ======================================================
+# 💰 BILL CALCULATION
+# ======================================================
 def calculate_org_bill(db: Session, org_id: UUID):
 
     driver_count = db.query(models.User).filter(
         models.User.organization_id == org_id,
         models.User.role == "driver",
         models.User.is_verified == True,
-        models.User.deleted_at == None   # 🔥 IMPORTANT
+        models.User.deleted_at == None
     ).count()
 
     client_count = db.query(models.User).filter(
         models.User.organization_id == org_id,
         models.User.role == "client",
         models.User.is_verified == True,
-        models.User.deleted_at == None   # 🔥 IMPORTANT
+        models.User.deleted_at == None
     ).count()
 
     total_amount = (driver_count * 150) + (client_count * 50)
@@ -34,51 +40,49 @@ def calculate_org_bill(db: Session, org_id: UUID):
         "total": total_amount
     }
 
-import stripe
-import os
-from sqlalchemy.orm import Session
-from app import models
 
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-
-
+# ======================================================
+# 👤 CUSTOMER
+# ======================================================
 def create_or_get_customer(db: Session, org: models.Organization):
 
-    # ✅ If already exists → return it
     if org.stripe_customer_id:
         return org.stripe_customer_id
 
-    # ✅ Create Stripe customer
     customer = stripe.Customer.create(
-        email=org.email if hasattr(org, "email") else None,
+        email=getattr(org, "email", None),
         name=f"Medilogic Org {org.id}",
         metadata={"organization_id": str(org.id)}
     )
 
-    # ✅ SAVE to DB (VERY IMPORTANT)
     org.stripe_customer_id = customer.id
     db.commit()
 
     return customer.id
 
-def update_org_subscription(db: Session, org: models.Organization):
-    from app.routes.billing import calculate_org_bill
 
-    if not org.stripe_subscription_id:
+# ======================================================
+# 🔄 UPDATE SUBSCRIPTION PRICE
+# ======================================================
+def update_org_subscription(db: Session, org: models.Organization):
+
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == org.id
+    ).first()
+
+    if not subscription:
         print("⚠️ No subscription found")
         return
 
     bill = calculate_org_bill(db, org.id)
 
     try:
-        subscription = stripe.Subscription.retrieve(org.stripe_subscription_id)
+        stripe_sub = stripe.Subscription.retrieve(subscription.stripe_subscription_id)
 
-        # 🔥 Get existing item ID
-        item_id = subscription["items"]["data"][0].id
+        item_id = stripe_sub["items"]["data"][0].id
 
-        # 🔥 UPDATE subscription price dynamically
         stripe.Subscription.modify(
-            org.stripe_subscription_id,
+            subscription.stripe_subscription_id,
             items=[{
                 "id": item_id,
                 "price_data": {
@@ -88,20 +92,21 @@ def update_org_subscription(db: Session, org: models.Organization):
                     "recurring": {"interval": "month"},
                 }
             }],
-            proration_behavior="create_prorations"  # 🔥 IMPORTANT
+            proration_behavior="create_prorations"
         )
-
-        print(f"✅ Subscription updated → £{bill['total']}")
 
     except Exception as e:
         print("❌ Stripe update failed:", str(e))
 
+
+# ======================================================
+# 💳 SETUP INTENT
+# ======================================================
 @router.post("/billing/setup-intent")
 def create_setup_intent(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    # 🔹 Get org
     org = db.query(models.Organization).filter(
         models.Organization.id == current_user.organization_id
     ).first()
@@ -109,30 +114,28 @@ def create_setup_intent(
     if not org:
         raise HTTPException(status_code=404, detail="Organisation not found")
 
-    # 🔹 Create/get Stripe customer
     customer_id = create_or_get_customer(db, org)
 
-    # 🔥 Create SetupIntent (SAVE CARD ONLY)
     setup_intent = stripe.SetupIntent.create(
         customer=customer_id,
         payment_method_types=["card"]
     )
 
-    return {
-        "client_secret": setup_intent.client_secret
-    }
+    return {"client_secret": setup_intent.client_secret}
 
 
+# ======================================================
+# 🚀 SUBSCRIBE
+# ======================================================
 @router.post("/subscribe")
 def subscribe_org(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    # 🔐 ONLY ADMIN
+
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins allowed")
 
-    # 🏢 GET ORG
     org = db.query(models.Organization).filter(
         models.Organization.id == current_user.organization_id
     ).first()
@@ -140,18 +143,13 @@ def subscribe_org(
     if not org:
         raise HTTPException(status_code=404, detail="Organisation not found")
 
-    # 💰 BILL
     bill = calculate_org_bill(db, org.id)
 
     if bill["total"] <= 0:
         raise HTTPException(status_code=400, detail="No billable users found")
 
-    # 👤 CUSTOMER
     customer_id = create_or_get_customer(db, org)
 
-    # ======================================================
-    # 🔥 NEW: CHECK IF CARD EXISTS
-    # ======================================================
     payment_methods = stripe.PaymentMethod.list(
         customer=customer_id,
         type="card"
@@ -160,11 +158,10 @@ def subscribe_org(
     if not payment_methods.data:
         raise HTTPException(
             status_code=400,
-            detail="No payment method found. Please add a card first."
+            detail="No payment method found"
         )
 
     try:
-        # 💵 CREATE PRICE
         price = stripe.Price.create(
             unit_amount=int(bill["total"] * 100),
             currency="gbp",
@@ -172,58 +169,37 @@ def subscribe_org(
             product_data={"name": "Medilogic Subscription"},
         )
 
-        # 🔥 CREATE SUBSCRIPTION (AUTO CHARGE)
-        subscription = stripe.Subscription.create(
+        stripe_sub = stripe.Subscription.create(
             customer=customer_id,
             items=[{"price": price.id}],
-            collection_method="charge_automatically",
-            default_payment_method=payment_methods.data[0].id,  # 🔥 IMPORTANT
+            default_payment_method=payment_methods.data[0].id,
         )
 
-        # 💾 SAVE
-        org.stripe_customer_id = customer_id
-        org.stripe_subscription_id = subscription.id
-        org.subscription_status = subscription.status
+        # ✅ SAVE TO NEW TABLE
+        db_subscription = models.Subscription(
+            org_id=org.id,
+            stripe_subscription_id=stripe_sub.id,
+            status=stripe_sub.status
+        )
 
+        db.add(db_subscription)
         db.commit()
 
         return {
-            "message": "Subscription activated successfully",
-            "subscription_id": subscription.id,
+            "message": "Subscription activated",
+            "subscription_id": stripe_sub.id,
             "amount": bill["total"],
-            "status": subscription.status,
+            "status": stripe_sub.status,
         }
 
     except Exception as e:
-        print("❌ Subscription creation failed:", str(e))
+        print("❌ Subscription failed:", str(e))
         raise HTTPException(status_code=500, detail="Failed to create subscription")
-        
-@router.post("/billing/portal")
-def create_billing_portal(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    org = db.query(models.Organization).filter(
-        models.Organization.id == current_user.organization_id
-    ).first()
 
-    if not org or not org.stripe_customer_id:
-        raise HTTPException(status_code=404, detail="Customer not found")
 
-    try:
-        session = stripe.billing_portal.Session.create(
-            customer=org.stripe_customer_id,
-            return_url="https://medilogicglobal.co.uk/dashboard"
-        )
-
-        return {
-            "url": session.url
-        }
-
-    except Exception as e:
-        print("❌ Billing portal error:", str(e))
-        raise HTTPException(status_code=500, detail="Failed to open billing portal")
-
+# ======================================================
+# 📊 SUMMARY
+# ======================================================
 @router.get("/billing/summary")
 def get_billing_summary(
     db: Session = Depends(get_db),
@@ -233,8 +209,9 @@ def get_billing_summary(
         models.Organization.id == current_user.organization_id
     ).first()
 
-    if not org:
-        raise HTTPException(status_code=404, detail="Organisation not found")
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == org.id
+    ).first()
 
     bill = calculate_org_bill(db, org.id)
 
@@ -242,10 +219,14 @@ def get_billing_summary(
         "drivers": bill["drivers"],
         "clients": bill["clients"],
         "monthly_total": bill["total"],
-        "subscription_status": org.subscription_status,
-        "next_billing_date": org.subscription_current_period_end
+        "subscription_status": subscription.status if subscription else "none",
+        "next_billing_date": subscription.current_period_end if subscription else None
     }
-    
+
+
+# ======================================================
+# 📡 STATUS
+# ======================================================
 @router.get("/billing/status")
 def billing_status(
     db: Session = Depends(get_db),
@@ -255,8 +236,12 @@ def billing_status(
         models.Organization.id == current_user.organization_id
     ).first()
 
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == org.id
+    ).first()
+
     return {
-        "subscription_status": org.subscription_status,
-        "has_subscription": bool(org.stripe_subscription_id),
-        "next_billing_date": org.subscription_current_period_end
+        "subscription_status": subscription.status if subscription else "none",
+        "has_subscription": bool(subscription),
+        "next_billing_date": subscription.current_period_end if subscription else None
     }
