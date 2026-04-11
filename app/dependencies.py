@@ -89,6 +89,10 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
 
     return user
 
+from datetime import datetime, timedelta, timezone
+
+GRACE_DAYS = 3
+
 def require_active_subscription(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -98,13 +102,28 @@ def require_active_subscription(
     ).order_by(models.Subscription.created_at.desc()).first()
 
     if not subscription:
-        raise HTTPException(402, "No subscription found")
+        raise HTTPException(status_code=402, detail="No subscription found")
 
-    if subscription.status != "active":
-        raise HTTPException(402, "Subscription inactive")
+    now = datetime.now(timezone.utc)
 
-    return current_user
+    # ✅ ACTIVE
+    if subscription.status == "active":
+        if subscription.current_period_end and now > subscription.current_period_end:
+            raise HTTPException(status_code=402, detail="Subscription expired")
+        return current_user
 
+    # ✅ GRACE PERIOD (VERY IMPORTANT BUSINESS LOGIC)
+    if subscription.status == "past_due":
+        if subscription.current_period_end:
+            grace_end = subscription.current_period_end + timedelta(days=GRACE_DAYS)
+            if now < grace_end:
+                return current_user
+
+        raise HTTPException(status_code=402, detail="Payment failed")
+
+    # ❌ ALL OTHER STATES
+    raise HTTPException(status_code=402, detail="Subscription inactive")
+    
 # app/dependencies/applicants.py
 from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session
