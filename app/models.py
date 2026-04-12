@@ -92,7 +92,8 @@ class SubscriptionStatus(str,enum.Enum):
     none = "none"
     past_due = "past_due"
     inactive = "inactive"
-    
+    incomplete = "incomplete"
+        
 class SubscriptionPlan(str, enum.Enum):
     free = "free"
     green = "green"
