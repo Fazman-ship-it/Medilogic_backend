@@ -30,17 +30,23 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
     event_type = event["type"]
     data = event["data"]["object"]
 
-    # ✅ Prevent duplicates
+    # ======================================================
+    # ✅ PREVENT DUPLICATE EVENTS (IDEMPOTENCY)
+    # ======================================================
     existing_event = db.query(models.StripeWebhookEvent).filter(
         models.StripeWebhookEvent.id == event_id
     ).first()
 
     if existing_event:
+        print("⚠️ Duplicate webhook ignored:", event_id)
         return {"status": "duplicate"}
 
     db.add(models.StripeWebhookEvent(id=event_id))
     db.commit()
 
+    # ======================================================
+    # ✅ MAP STRIPE STATUS → YOUR ENUM
+    # ======================================================
     def map_status(s):
         if s in ["active", "trialing"]:
             return "active"
@@ -48,10 +54,20 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
             return "past_due"
         elif s in ["canceled"]:
             return "cancelled"
+        elif s in ["incomplete", "incomplete_expired"]:
+            return "incomplete"  # 🔥 IMPORTANT
         return "inactive"
 
     try:
-        subscription_id = data.get("id") or data.get("subscription")
+        # ======================================================
+        # ✅ SAFE SUBSCRIPTION ID EXTRACTION
+        # ======================================================
+        subscription_id = None
+
+        if "subscription" in data:
+            subscription_id = data.get("subscription")
+        elif data.get("object") == "subscription":
+            subscription_id = data.get("id")
 
         if not subscription_id:
             return {"status": "no_subscription"}
@@ -63,17 +79,23 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
         if not subscription:
             return {"status": "not_found"}
 
-        # ✅ Update status safely
+        # ======================================================
+        # ✅ UPDATE STATUS SAFELY
+        # ======================================================
         stripe_status = data.get("status")
         if stripe_status:
             subscription.status = map_status(stripe_status)
 
-        # ✅ Update billing period
-        if data.get("current_period_end"):
-            subscription.current_period_end = datetime.fromtimestamp(
-                data.get("current_period_end"),
-                tz=timezone.utc
-            )
+        # ======================================================
+        # ✅ SAFE DATETIME HANDLING (CRITICAL FIX)
+        # ======================================================
+        period_end = data.get("current_period_end")
+
+        subscription.current_period_end = (
+            datetime.fromtimestamp(period_end, tz=timezone.utc)
+            if period_end
+            else None
+        )
 
         db.commit()
 
@@ -82,5 +104,5 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
         return {"status": "updated"}
 
     except Exception as e:
-        print("❌ Webhook processing error:", str(e))
+        print("🔥 Webhook FULL ERROR:", repr(e))
         return {"status": "error"}
