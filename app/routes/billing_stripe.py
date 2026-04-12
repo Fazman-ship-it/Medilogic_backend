@@ -55,21 +55,25 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
         elif s in ["canceled"]:
             return "cancelled"
         elif s in ["incomplete", "incomplete_expired"]:
-            return "incomplete"  # 🔥 IMPORTANT
+            return "incomplete"
         return "inactive"
 
     try:
         # ======================================================
-        # ✅ SAFE SUBSCRIPTION ID EXTRACTION
+        # ✅ FIXED SUBSCRIPTION ID EXTRACTION (NO BUG)
         # ======================================================
         subscription_id = None
 
-        if "subscription" in data:
+        # 🔥 Invoice events
+        if data.get("object") == "invoice":
             subscription_id = data.get("subscription")
+
+        # 🔥 Subscription events
         elif data.get("object") == "subscription":
             subscription_id = data.get("id")
 
         if not subscription_id:
+            print(f"⚠️ No subscription for event: {event_type}")
             return {"status": "no_subscription"}
 
         subscription = db.query(models.Subscription).filter(
@@ -87,7 +91,7 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
             subscription.status = map_status(stripe_status)
 
         # ======================================================
-        # ✅ SAFE DATETIME HANDLING (CRITICAL FIX)
+        # ✅ SAFE DATETIME HANDLING
         # ======================================================
         period_end = data.get("current_period_end")
 
