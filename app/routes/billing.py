@@ -277,9 +277,26 @@ def billing_status(
         models.Subscription.org_id == org.id
     ).first()
 
+    # ✅ NEW: Check payment method from Stripe
+    has_payment_method = False
+
+    if org and org.stripe_customer_id:
+        try:
+            payment_methods = stripe.PaymentMethod.list(
+                customer=org.stripe_customer_id,
+                type="card"
+            )
+            has_payment_method = len(payment_methods.data) > 0
+        except Exception as e:
+            print("⚠️ Payment method check failed:", e)
+
     return {
         "subscription_status": subscription.status if subscription else "none",
         "has_subscription": bool(subscription),
+
+        # ✅ THIS IS THE FIX
+        "has_payment_method": has_payment_method,
+
         "next_billing_date": subscription.current_period_end if subscription else None
     }
     
