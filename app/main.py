@@ -76,6 +76,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://medilogicglobal.co.uk",  # In production, set this to your frontend domain
+        "https://www.medilogicglobal.co.uk",
         # ✅ ADD THESE FOR LOCAL DEVELOPMENT
         "http://localhost:3000",   # React / Next.js
         "http://127.0.0.1:3000",
