@@ -7,7 +7,7 @@ def send_welcome_email(
     full_name: str,
     role: str,
     temp_password: str,
-    login_link: str = "https://medilogic.vercel.app/login"
+    login_link: str = "https://www.medilogicglobal.co.uk/login"
 ):
 
     print(f"📨 DEBUG: send_welcome_email() called with to_email={to_email}")
