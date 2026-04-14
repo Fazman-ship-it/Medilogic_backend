@@ -17,6 +17,8 @@ from uuid import UUID
 from app import scheduler  # Assuming you have a scheduler setup
 from app.utilites.time_utilities import to_utc, to_local, now_utc
 from app.models import TripNotification
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 # ✅ Utility: Resolve delivery type (standard vs custom)
 def get_delivery_label(trip: Trip) -> str:
