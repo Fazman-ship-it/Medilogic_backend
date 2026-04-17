@@ -1,18 +1,16 @@
 import stripe
 import os
-from fastapi import Request
 from fastapi import APIRouter, Request, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
-import stripe
-import os
-from app.utilites.time_utilities import now_utc,to_local,to_utc
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+
 router = APIRouter()
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 endpoint_secret = os.getenv("STRIPE_WEBHOOK_SECRET2")
+
 
 @router.post("/billing-webhook")
 async def billing_webhook(request: Request, db: Session = Depends(get_db)):
@@ -20,8 +18,13 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
 
+    # ======================================================
+    # ✅ VERIFY STRIPE SIGNATURE
+    # ======================================================
     try:
-        event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
     except Exception as e:
         print("❌ Webhook verification failed:", str(e))
         raise HTTPException(status_code=400, detail="Webhook error")
@@ -60,7 +63,7 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
 
     try:
         # ======================================================
-        # ✅ FIXED SUBSCRIPTION ID EXTRACTION (NO BUG)
+        # ✅ EXTRACT SUBSCRIPTION ID SAFELY
         # ======================================================
         subscription_id = None
 
@@ -76,34 +79,41 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
             print(f"⚠️ No subscription for event: {event_type}")
             return {"status": "no_subscription"}
 
+        # ======================================================
+        # ✅ FIND SUBSCRIPTION IN DB
+        # ======================================================
         subscription = db.query(models.Subscription).filter(
             models.Subscription.stripe_subscription_id == subscription_id
         ).first()
 
         if not subscription:
+            print(f"⚠️ Subscription not found in DB: {subscription_id}")
             return {"status": "not_found"}
 
         # ======================================================
-        # ✅ UPDATE STATUS SAFELY
+        # 🔥 CRITICAL FIX: ALWAYS FETCH FROM STRIPE (SOURCE OF TRUTH)
         # ======================================================
-        stripe_status = data.get("status")
-        if stripe_status:
-            subscription.status = map_status(stripe_status)
+        stripe_sub = stripe.Subscription.retrieve(subscription_id)
 
         # ======================================================
-        # ✅ SAFE DATETIME HANDLING
+        # ✅ UPDATE STATUS (REAL STRIPE STATUS)
         # ======================================================
-        period_end = data.get("current_period_end")
+        subscription.status = map_status(stripe_sub.status)
+
+        # ======================================================
+        # ✅ UPDATE CURRENT PERIOD END
+        # ======================================================
+        period_end_ts = stripe_sub.get("current_period_end")
 
         subscription.current_period_end = (
-            datetime.fromtimestamp(period_end, tz=timezone.utc)
-            if period_end
+            datetime.fromtimestamp(period_end_ts, tz=timezone.utc)
+            if period_end_ts
             else None
         )
 
         db.commit()
 
-        print(f"✅ Webhook updated: {event_type}")
+        print(f"✅ Webhook updated: {event_type} → {stripe_sub.status}")
 
         return {"status": "updated"}
 
