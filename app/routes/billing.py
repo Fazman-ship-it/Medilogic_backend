@@ -371,3 +371,22 @@ def sync_subscription(
     except Exception as e:
         print("🔥 Sync FULL ERROR:", repr(e))
         raise HTTPException(500, "Failed to sync subscription")
+        
+@router.post("/billing/portal")
+def create_portal_session(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    if not org or not org.stripe_customer_id:
+        raise HTTPException(404, "Customer not found")
+
+    session = stripe.billing_portal.Session.create(
+        customer=org.stripe_customer_id,
+        return_url="https://your-frontend.com/company-admin/billing"
+    )
+
+    return {"url": session.url}
