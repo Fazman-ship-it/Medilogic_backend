@@ -53,19 +53,40 @@ def calculate_org_bill(db: Session, org_id: UUID):
 # ======================================================
 def create_or_get_customer(db: Session, org: models.Organization):
 
+    # ======================================================
+    # ✅ STEP 1: IF CUSTOMER ID EXISTS → VERIFY IT IN STRIPE
+    # ======================================================
     if org.stripe_customer_id:
-        return org.stripe_customer_id
+        try:
+            stripe.Customer.retrieve(org.stripe_customer_id)
+            print(f"✅ Existing Stripe customer valid: {org.stripe_customer_id}")
+            return org.stripe_customer_id
 
-    customer = stripe.Customer.create(
-        email=getattr(org, "email", None),
-        name=f"Medilogic Org {org.id}",
-        metadata={"organization_id": str(org.id)}
-    )
+        except stripe.error.InvalidRequestError:
+            print("⚠️ Customer ID invalid in Stripe → resetting")
+            org.stripe_customer_id = None
+            db.commit()
 
-    org.stripe_customer_id = customer.id
-    db.commit()
+    # ======================================================
+    # ✅ STEP 2: CREATE NEW CUSTOMER
+    # ======================================================
+    try:
+        customer = stripe.Customer.create(
+            email=getattr(org, "email", None),
+            name=f"Medilogic Org {org.id}",
+            metadata={"organization_id": str(org.id)}
+        )
 
-    return customer.id
+        org.stripe_customer_id = customer.id
+        db.commit()
+
+        print(f"🔥 New Stripe customer created: {customer.id}")
+
+        return customer.id
+
+    except Exception as e:
+        print("🔥 CUSTOMER CREATION ERROR:", repr(e))
+        raise HTTPException(500, "Failed to create Stripe customer")
 
 
 # ======================================================
@@ -123,15 +144,24 @@ def create_setup_intent(
     if not org:
         raise HTTPException(status_code=404, detail="Organisation not found")
 
+    print(f"🧠 Org ID: {org.id}")
+    print(f"🧠 Existing customer: {org.stripe_customer_id}")
+
     customer_id = create_or_get_customer(db, org)
 
-    setup_intent = stripe.SetupIntent.create(
-        customer=customer_id,
-        payment_method_types=["card"]
-    )
+    print(f"🧠 Using customer_id: {customer_id}")
 
-    return {"client_secret": setup_intent.client_secret}
+    try:
+        setup_intent = stripe.SetupIntent.create(
+            customer=customer_id,
+            payment_method_types=["card"]
+        )
 
+        return {"client_secret": setup_intent.client_secret}
+
+    except Exception as e:
+        print("🔥 SETUP INTENT ERROR:", repr(e))
+        raise HTTPException(500, "Failed to create setup intent")
 
 # ======================================================
 # 🚀 SUBSCRIBE
