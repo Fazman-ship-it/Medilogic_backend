@@ -381,12 +381,44 @@ def create_portal_session(
         models.Organization.id == current_user.organization_id
     ).first()
 
-    if not org or not org.stripe_customer_id:
-        raise HTTPException(404, "Customer not found")
+    if not org:
+        raise HTTPException(404, "Organisation not found")
 
-    session = stripe.billing_portal.Session.create(
-        customer=org.stripe_customer_id,
-        return_url="https://your-frontend.com/company-admin/billing"
-    )
+    # ======================================================
+    # ✅ STEP 1: CHECK CUSTOMER EXISTS IN DB
+    # ======================================================
+    if not org.stripe_customer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No Stripe customer found. Add payment method first."
+        )
 
-    return {"url": session.url}
+    # ======================================================
+    # ✅ STEP 2: VERIFY CUSTOMER EXISTS IN STRIPE (CRITICAL)
+    # ======================================================
+    try:
+        stripe.Customer.retrieve(org.stripe_customer_id)
+    except stripe.error.InvalidRequestError:
+        # 🔥 Customer was deleted or invalid → reset it
+        org.stripe_customer_id = None
+        db.commit()
+
+        raise HTTPException(
+            status_code=400,
+            detail="Stripe customer missing. Please add payment method again."
+        )
+
+    # ======================================================
+    # ✅ STEP 3: CREATE PORTAL SESSION
+    # ======================================================
+    try:
+        session = stripe.billing_portal.Session.create(
+            customer=org.stripe_customer_id,
+            return_url="https://www.medilogicglobal.co.uk/company-admin/billing"
+        )
+
+        return {"url": session.url}
+
+    except Exception as e:
+        print("🔥 Portal FULL ERROR:", repr(e))
+        raise HTTPException(500, "Failed to create portal session")
