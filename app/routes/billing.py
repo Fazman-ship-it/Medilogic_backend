@@ -54,16 +54,21 @@ def calculate_org_bill(db: Session, org_id: UUID):
 def create_or_get_customer(db: Session, org: models.Organization):
 
     # ======================================================
-    # ✅ STEP 1: IF CUSTOMER ID EXISTS → VERIFY IT IN STRIPE
+    # ✅ STEP 1: VALIDATE EXISTING CUSTOMER PROPERLY
     # ======================================================
     if org.stripe_customer_id:
         try:
-            stripe.Customer.retrieve(org.stripe_customer_id)
+            customer = stripe.Customer.retrieve(org.stripe_customer_id)
+
+            # 🔥 THIS IS THE FIX (you were missing this)
+            if getattr(customer, "deleted", False):
+                raise Exception("Customer deleted in Stripe")
+
             print(f"✅ Existing Stripe customer valid: {org.stripe_customer_id}")
             return org.stripe_customer_id
 
-        except stripe.error.InvalidRequestError:
-            print("⚠️ Customer ID invalid in Stripe → resetting")
+        except Exception as e:
+            print("⚠️ Invalid Stripe customer → recreating:", repr(e))
             org.stripe_customer_id = None
             db.commit()
 
@@ -87,7 +92,6 @@ def create_or_get_customer(db: Session, org: models.Organization):
     except Exception as e:
         print("🔥 CUSTOMER CREATION ERROR:", repr(e))
         raise HTTPException(500, "Failed to create Stripe customer")
-
 
 # ======================================================
 # 🔄 UPDATE SUBSCRIPTION PRICE
