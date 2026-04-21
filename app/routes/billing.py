@@ -298,6 +298,7 @@ def get_billing_summary(
 # ======================================================
 # 📡 STATUS
 # ======================================================
+
 @router.get("/billing/status")
 def billing_status(
     db: Session = Depends(get_db),
@@ -311,26 +312,27 @@ def billing_status(
         models.Subscription.org_id == org.id
     ).first()
 
-    # ✅ NEW: Check payment method from Stripe
     has_payment_method = False
 
-    if org and org.stripe_customer_id:
+    # 🔥 FIX: ALWAYS USE SAFE CUSTOMER FUNCTION
+    if org:
         try:
+            customer_id = create_or_get_customer(db, org)
+
             payment_methods = stripe.PaymentMethod.list(
-                customer=org.stripe_customer_id,
+                customer=customer_id,
                 type="card"
             )
+
             has_payment_method = len(payment_methods.data) > 0
+
         except Exception as e:
             print("⚠️ Payment method check failed:", e)
 
     return {
         "subscription_status": subscription.status if subscription else "none",
         "has_subscription": bool(subscription),
-
-        # ✅ THIS IS THE FIX
         "has_payment_method": has_payment_method,
-
         "next_billing_date": subscription.current_period_end if subscription else None
     }
     
@@ -419,35 +421,13 @@ def create_portal_session(
         raise HTTPException(404, "Organisation not found")
 
     # ======================================================
-    # ✅ STEP 1: CHECK CUSTOMER EXISTS IN DB
+    # 🔥 FIX: ALWAYS USE SAFE CUSTOMER FUNCTION
     # ======================================================
-    if not org.stripe_customer_id:
-        raise HTTPException(
-            status_code=400,
-            detail="No Stripe customer found. Add payment method first."
-        )
+    customer_id = create_or_get_customer(db, org)
 
-    # ======================================================
-    # ✅ STEP 2: VERIFY CUSTOMER EXISTS IN STRIPE (CRITICAL)
-    # ======================================================
-    try:
-        stripe.Customer.retrieve(org.stripe_customer_id)
-    except stripe.error.InvalidRequestError:
-        # 🔥 Customer was deleted or invalid → reset it
-        org.stripe_customer_id = None
-        db.commit()
-
-        raise HTTPException(
-            status_code=400,
-            detail="Stripe customer missing. Please add payment method again."
-        )
-
-    # ======================================================
-    # ✅ STEP 3: CREATE PORTAL SESSION
-    # ======================================================
     try:
         session = stripe.billing_portal.Session.create(
-            customer=org.stripe_customer_id,
+            customer=customer_id,
             return_url="https://www.medilogicglobal.co.uk/company-admin/billing"
         )
 
