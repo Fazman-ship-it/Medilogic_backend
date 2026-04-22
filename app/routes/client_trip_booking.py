@@ -69,7 +69,7 @@ def create_trip_as_client(
 @router.get("/", response_model=List[schemas.TripClientResponse])
 def get_client_trips(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),= Depends(require_active_subscription),
+    current_user: models.User = Depends(get_current_user),_=Depends(require_active_subscription),
     status: Optional[str] = Query(None),
     delivery_type: Optional[DeliveryType] = Query(None),
     start_date: Optional[date] = Query(None),
@@ -171,7 +171,7 @@ def get_client_trips(
     start_date: Optional[datetime] = Query(None, description="Start of date range"),
     end_date: Optional[datetime] = Query(None, description="End of date range"),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),= Depends(require_active_subscription),
+    current_user: models.User = Depends(get_current_user),_=Depends(require_active_subscription),
 ):
     """
     Retrieve all trips associated with a specific client.
