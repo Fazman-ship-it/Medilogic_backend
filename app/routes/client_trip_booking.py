@@ -10,7 +10,7 @@ from fastapi import Query
 from app.utilites.logging import log_activity
 from uuid import UUID
 from app.utilites.time_utilities import to_utc, now_utc, to_local  # 🔹 Import time utilities
-
+from app.dependencies import require_active_subscription
 router = APIRouter(
     prefix="/client/trips",
     tags=["Client Trips"]
@@ -69,7 +69,7 @@ def create_trip_as_client(
 @router.get("/", response_model=List[schemas.TripClientResponse])
 def get_client_trips(
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_current_user),= Depends(require_active_subscription),
     status: Optional[str] = Query(None),
     delivery_type: Optional[DeliveryType] = Query(None),
     start_date: Optional[date] = Query(None),
@@ -161,7 +161,7 @@ from app import models, schemas
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.utilites.time_utilities import to_utc, now_utc,to_local
-
+from app.dependencies import require_active_subscription
 
 @router.get("/client/{client_id}/trips", summary="Get all trips assigned to a client")
 def get_client_trips(
@@ -171,7 +171,7 @@ def get_client_trips(
     start_date: Optional[datetime] = Query(None, description="Start of date range"),
     end_date: Optional[datetime] = Query(None, description="End of date range"),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
+    current_user: models.User = Depends(get_current_user),= Depends(require_active_subscription),
 ):
     """
     Retrieve all trips associated with a specific client.
