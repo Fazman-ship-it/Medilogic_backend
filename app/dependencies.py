@@ -89,7 +89,12 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
 
     return user
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.dependencies import get_current_user
+from app.database import get_db
+from app import models
 
 def require_active_subscription(
     current_user: models.User = Depends(get_current_user),
@@ -100,24 +105,79 @@ def require_active_subscription(
     ).order_by(models.Subscription.created_at.desc()).first()
 
     if not subscription:
-        raise HTTPException(402, "No subscription found")
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "NO_SUBSCRIPTION",
+                "message": "No active subscription found",
+                "action": "ADD_PAYMENT_METHOD"
+            }
+        )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
-    # ✅ Active
+    # ======================================================
+    # ✅ ACTIVE → FULL ACCESS
+    # ======================================================
     if subscription.status == "active":
-        if subscription.current_period_end and subscription.current_period_end < now:
-            raise HTTPException(402, "Subscription expired")
         return current_user
 
-    # ✅ Grace period (3 days)
+    # ======================================================
+    # ⚠️ PAYMENT FAILED → GRACE PERIOD
+    # ======================================================
     if subscription.status == "past_due":
+
         if subscription.current_period_end:
             grace_end = subscription.current_period_end + timedelta(days=3)
+
             if now < grace_end:
                 return current_user
 
-    raise HTTPException(402, "Subscription inactive")
+        # ❌ Grace expired → force payment update
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "PAYMENT_FAILED",
+                "message": "Payment failed. Please update your card.",
+                "action": "UPDATE_CARD"
+            }
+        )
+
+    # ======================================================
+    # 🚫 INCOMPLETE → CARD NOT SETUP PROPERLY
+    # ======================================================
+    if subscription.status == "incomplete":
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "PAYMENT_SETUP_REQUIRED",
+                "message": "Please complete payment setup",
+                "action": "ADD_PAYMENT_METHOD"
+            }
+        )
+
+    # ======================================================
+    # 🚫 INACTIVE → TREATED AS NO PAYMENT
+    # ======================================================
+    if subscription.status == "inactive":
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "SUBSCRIPTION_INACTIVE",
+                "message": "Subscription inactive. Add a payment method.",
+                "action": "ADD_PAYMENT_METHOD"
+            }
+        )
+
+    # fallback
+    raise HTTPException(
+        status_code=402,
+        detail={
+            "code": "UNKNOWN",
+            "message": "Subscription issue",
+            "action": "CONTACT_SUPPORT"
+        }
+    )
     
 # app/dependencies/applicants.py
 from fastapi import HTTPException, Depends
