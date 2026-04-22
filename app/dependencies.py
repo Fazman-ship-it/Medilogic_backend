@@ -92,7 +92,6 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
 from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.dependencies import get_current_user
 from app.database import get_db
 from app import models
 
@@ -100,6 +99,15 @@ def require_active_subscription(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # ======================================================
+    # 🔥 ALLOW NON-ADMIN USERS (CLIENT + DRIVER)
+    # ======================================================
+    if current_user.role in ["client", "driver"]:
+        return current_user
+
+    # ======================================================
+    # 🔒 ADMIN → MUST HAVE ACTIVE SUBSCRIPTION
+    # ======================================================
     subscription = db.query(models.Subscription).filter(
         models.Subscription.org_id == current_user.organization_id
     ).order_by(models.Subscription.created_at.desc()).first()
@@ -133,7 +141,7 @@ def require_active_subscription(
             if now < grace_end:
                 return current_user
 
-        # ❌ Grace expired → force payment update
+        # ❌ Grace expired → force update
         raise HTTPException(
             status_code=402,
             detail={
@@ -144,7 +152,7 @@ def require_active_subscription(
         )
 
     # ======================================================
-    # 🚫 INCOMPLETE → CARD NOT SETUP PROPERLY
+    # 🚫 INCOMPLETE → PAYMENT NOT FINISHED
     # ======================================================
     if subscription.status == "incomplete":
         raise HTTPException(
@@ -157,7 +165,7 @@ def require_active_subscription(
         )
 
     # ======================================================
-    # 🚫 INACTIVE → TREATED AS NO PAYMENT
+    # 🚫 INACTIVE → TREATED AS UNPAID
     # ======================================================
     if subscription.status == "inactive":
         raise HTTPException(
@@ -169,7 +177,9 @@ def require_active_subscription(
             }
         )
 
-    # fallback
+    # ======================================================
+    # 🔥 FALLBACK
+    # ======================================================
     raise HTTPException(
         status_code=402,
         detail={
@@ -178,7 +188,8 @@ def require_active_subscription(
             "action": "CONTACT_SUPPORT"
         }
     )
-    
+
+
 # app/dependencies/applicants.py
 from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session
