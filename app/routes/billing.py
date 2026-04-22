@@ -102,23 +102,67 @@ def update_org_subscription(db: Session, org: models.Organization):
         models.Subscription.org_id == org.id
     ).first()
 
-    if not subscription:
-        print("⚠️ No subscription found for org")
-        return
-
     bill = calculate_org_bill(db, org.id)
 
+    # 🚫 No bill → do nothing
+    if bill["total"] <= 0:
+        return
+
+    # ======================================================
+    # 🔥 CASE 1: NO SUBSCRIPTION → CREATE ONE
+    # ======================================================
+    if not subscription:
+        print("🔥 No subscription → creating one")
+
+        customer_id = create_or_get_customer(db, org)
+
+        # get payment method
+        payment_methods = stripe.PaymentMethod.list(
+            customer=customer_id,
+            type="card"
+        )
+
+        if not payment_methods.data:
+            print("⚠️ No payment method → cannot create subscription")
+            return
+
+        default_pm = payment_methods.data[0].id
+
+        stripe.Customer.modify(
+            customer_id,
+            invoice_settings={"default_payment_method": default_pm}
+        )
+
+        stripe_sub = stripe.Subscription.create(
+            customer=customer_id,
+            items=[{
+                "price": os.getenv("STRIPE_PRICE_ID"),
+                "quantity": int(bill["total"])
+            }],
+            default_payment_method=default_pm,
+        )
+
+        db_subscription = models.Subscription(
+            org_id=org.id,
+            stripe_subscription_id=stripe_sub.id,
+            status="incomplete"
+        )
+
+        db.add(db_subscription)
+        db.commit()
+
+        print("✅ Subscription CREATED automatically")
+        return
+
+    # ======================================================
+    # 🔄 CASE 2: SUBSCRIPTION EXISTS → UPDATE
+    # ======================================================
     try:
         stripe_sub = stripe.Subscription.retrieve(
             subscription.stripe_subscription_id
         )
 
-        items = stripe_sub.get("items", {}).get("data", [])
-        if not items:
-            print("⚠️ No subscription items found in Stripe")
-            return
-
-        item_id = items[0]["id"]
+        item_id = stripe_sub["items"]["data"][0]["id"]
 
         stripe.Subscription.modify(
             subscription.stripe_subscription_id,
@@ -129,10 +173,10 @@ def update_org_subscription(db: Session, org: models.Organization):
             proration_behavior="create_prorations"
         )
 
-        print(f"✅ Subscription updated → £{bill['total']}")
+        print("✅ Subscription UPDATED automatically")
 
     except Exception as e:
-        print("🔥 Stripe update FULL ERROR:", repr(e))
+        print("🔥 Subscription update error:", repr(e))
 # ======================================================
 # 💳 SETUP INTENT
 # ======================================================
