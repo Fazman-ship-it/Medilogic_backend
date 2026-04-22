@@ -380,33 +380,6 @@ def billing_status(
         "next_billing_date": subscription.current_period_end if subscription else None
     }
     
-@router.post("/billing/cancel")
-def cancel_subscription(
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
-):
-    subscription = db.query(models.Subscription).filter(
-        models.Subscription.org_id == current_user.organization_id
-    ).first()
-
-    if not subscription:
-        raise HTTPException(404, "Subscription not found")
-
-    try:
-        stripe.Subscription.modify(
-            subscription.stripe_subscription_id,
-            cancel_at_period_end=True
-        )
-
-        subscription.status = "cancelled"
-        db.commit()
-
-        return {"message": "Subscription will cancel at period end"}
-
-    except Exception as e:
-        print("🔥 Cancel FULL ERROR:", repr(e))
-        raise HTTPException(500, "Failed to cancel subscription")
-        
 @router.post("/billing/sync")
 def sync_subscription(
     db: Session = Depends(get_db),
