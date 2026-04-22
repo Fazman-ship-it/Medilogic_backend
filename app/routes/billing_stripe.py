@@ -48,17 +48,21 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
     db.commit()
 
     # ======================================================
-    # ✅ MAP STRIPE STATUS → YOUR ENUM
+    # ✅ MAP STRIPE STATUS → YOUR SYSTEM STATUS
     # ======================================================
     def map_status(s):
         if s in ["active", "trialing"]:
             return "active"
+
         elif s in ["past_due", "unpaid"]:
-            return "past_due"
-        elif s in ["canceled"]:
-            return "cancelled"
+            return "past_due"  # 🔥 triggers lock in your system
+
         elif s in ["incomplete", "incomplete_expired"]:
             return "incomplete"
+
+        elif s == "canceled":
+            return "inactive"  # 🔥 IMPORTANT: no "cancelled" anymore
+
         return "inactive"
 
     try:
@@ -67,11 +71,9 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
         # ======================================================
         subscription_id = None
 
-        # 🔥 Invoice events
         if data.get("object") == "invoice":
             subscription_id = data.get("subscription")
 
-        # 🔥 Subscription events
         elif data.get("object") == "subscription":
             subscription_id = data.get("id")
 
@@ -91,17 +93,17 @@ async def billing_webhook(request: Request, db: Session = Depends(get_db)):
             return {"status": "not_found"}
 
         # ======================================================
-        # 🔥 CRITICAL FIX: ALWAYS FETCH FROM STRIPE (SOURCE OF TRUTH)
+        # 🔥 SOURCE OF TRUTH → STRIPE
         # ======================================================
         stripe_sub = stripe.Subscription.retrieve(subscription_id)
 
         # ======================================================
-        # ✅ UPDATE STATUS (REAL STRIPE STATUS)
+        # ✅ UPDATE STATUS
         # ======================================================
         subscription.status = map_status(stripe_sub.status)
 
         # ======================================================
-        # ✅ UPDATE CURRENT PERIOD END
+        # ✅ UPDATE BILLING PERIOD
         # ======================================================
         period_end_ts = stripe_sub.get("current_period_end")
 
