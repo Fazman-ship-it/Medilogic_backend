@@ -95,7 +95,9 @@ from datetime import datetime, timezone
 from app.dependencies import get_current_user
 from app.database import get_db
 from app import models
+import stripe
 
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 def require_active_subscription(
     current_user: models.User = Depends(get_current_user),
@@ -108,7 +110,7 @@ def require_active_subscription(
         return current_user
 
     # ======================================================
-    # 🔒 ADMIN → MUST HAVE ACTIVE SUBSCRIPTION
+    # 🔒 ADMIN → MUST HAVE SUBSCRIPTION
     # ======================================================
     subscription = db.query(models.Subscription).filter(
         models.Subscription.org_id == current_user.organization_id
@@ -125,15 +127,28 @@ def require_active_subscription(
         )
 
     # ======================================================
+    # 🔥 ALWAYS CHECK STRIPE (REAL-TIME SOURCE OF TRUTH)
+    # ======================================================
+    try:
+        stripe_sub = stripe.Subscription.retrieve(
+            subscription.stripe_subscription_id
+        )
+        stripe_status = stripe_sub.status
+
+    except Exception as e:
+        print("⚠️ Stripe fetch failed, fallback to DB:", e)
+        stripe_status = subscription.status  # fallback
+
+    # ======================================================
     # ✅ ACTIVE → FULL ACCESS
     # ======================================================
-    if subscription.status == "active":
+    if stripe_status in ["active", "trialing"]:
         return current_user
 
     # ======================================================
     # ❌ PAYMENT FAILED → LOCK IMMEDIATELY
     # ======================================================
-    if subscription.status in ["past_due", "unpaid"]:
+    if stripe_status in ["past_due", "unpaid"]:
         raise HTTPException(
             status_code=402,
             detail={
@@ -146,7 +161,7 @@ def require_active_subscription(
     # ======================================================
     # ❌ INCOMPLETE → PAYMENT NOT FINISHED
     # ======================================================
-    if subscription.status == "incomplete":
+    if stripe_status in ["incomplete", "incomplete_expired"]:
         raise HTTPException(
             status_code=402,
             detail={
@@ -157,14 +172,14 @@ def require_active_subscription(
         )
 
     # ======================================================
-    # ❌ INACTIVE / CANCELLED → BLOCK
+    # ❌ CANCELLED / INACTIVE
     # ======================================================
-    if subscription.status in ["inactive", "cancelled"]:
+    if stripe_status in ["canceled"]:
         raise HTTPException(
             status_code=402,
             detail={
                 "code": "SUBSCRIPTION_INACTIVE",
-                "message": "Subscription inactive. Add a payment method.",
+                "message": "Subscription cancelled. Add a payment method.",
                 "action": "ADD_PAYMENT_METHOD"
             }
         )
@@ -176,7 +191,7 @@ def require_active_subscription(
         status_code=402,
         detail={
             "code": "UNKNOWN",
-            "message": "Subscription issue",
+            "message": f"Subscription issue ({stripe_status})",
             "action": "CONTACT_SUPPORT"
         }
     )
