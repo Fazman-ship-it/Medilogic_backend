@@ -89,18 +89,20 @@ async def get_current_user_ws(websocket: WebSocket, db: Session = Depends(get_db
 
     return user
 
-from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
+from app.dependencies import get_current_user
 from app.database import get_db
 from app import models
+
 
 def require_active_subscription(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     # ======================================================
-    # 🔥 ALLOW NON-ADMIN USERS (CLIENT + DRIVER)
+    # 🔓 ALLOW NON-ADMIN USERS (CLIENT + DRIVER)
     # ======================================================
     if current_user.role in ["client", "driver"]:
         return current_user
@@ -122,8 +124,6 @@ def require_active_subscription(
             }
         )
 
-    now = datetime.now(timezone.utc)
-
     # ======================================================
     # ✅ ACTIVE → FULL ACCESS
     # ======================================================
@@ -131,17 +131,9 @@ def require_active_subscription(
         return current_user
 
     # ======================================================
-    # ⚠️ PAYMENT FAILED → GRACE PERIOD
+    # ❌ PAYMENT FAILED → LOCK IMMEDIATELY
     # ======================================================
-    if subscription.status == "past_due":
-
-        if subscription.current_period_end:
-            grace_end = subscription.current_period_end + timedelta(days=3)
-
-            if now < grace_end:
-                return current_user
-
-        # ❌ Grace expired → force update
+    if subscription.status in ["past_due", "unpaid"]:
         raise HTTPException(
             status_code=402,
             detail={
@@ -152,7 +144,7 @@ def require_active_subscription(
         )
 
     # ======================================================
-    # 🚫 INCOMPLETE → PAYMENT NOT FINISHED
+    # ❌ INCOMPLETE → PAYMENT NOT FINISHED
     # ======================================================
     if subscription.status == "incomplete":
         raise HTTPException(
@@ -165,9 +157,9 @@ def require_active_subscription(
         )
 
     # ======================================================
-    # 🚫 INACTIVE → TREATED AS UNPAID
+    # ❌ INACTIVE / CANCELLED → BLOCK
     # ======================================================
-    if subscription.status == "inactive":
+    if subscription.status in ["inactive", "cancelled"]:
         raise HTTPException(
             status_code=402,
             detail={
