@@ -357,8 +357,30 @@ def billing_status(
     ).first()
 
     has_payment_method = False
+    live_status = "none"
 
-    # 🔥 FIX: ALWAYS USE SAFE CUSTOMER FUNCTION
+    if org and subscription:
+        try:
+            # 🔥 ALWAYS FETCH FROM STRIPE (REAL-TIME)
+            stripe_sub = stripe.Subscription.retrieve(
+                subscription.stripe_subscription_id
+            )
+
+            # 🔥 MAP STATUS (same logic as webhook)
+            if stripe_sub.status in ["active", "trialing"]:
+                live_status = "active"
+            elif stripe_sub.status in ["past_due", "unpaid"]:
+                live_status = "past_due"
+            elif stripe_sub.status in ["incomplete", "incomplete_expired"]:
+                live_status = "incomplete"
+            else:
+                live_status = "inactive"
+
+        except Exception as e:
+            print("⚠️ Stripe fetch failed:", e)
+            live_status = subscription.status  # fallback
+
+    # 🔥 Payment method check (unchanged)
     if org:
         try:
             customer_id = create_or_get_customer(db, org)
@@ -374,7 +396,7 @@ def billing_status(
             print("⚠️ Payment method check failed:", e)
 
     return {
-        "subscription_status": subscription.status if subscription else "none",
+        "subscription_status": live_status,  # 🔥 USE LIVE STATUS
         "has_subscription": bool(subscription),
         "has_payment_method": has_payment_method,
         "next_billing_date": subscription.current_period_end if subscription else None
