@@ -96,6 +96,7 @@ from app.dependencies import get_current_user
 from app.database import get_db
 from app import models
 import stripe
+import os 
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
