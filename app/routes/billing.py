@@ -475,3 +475,69 @@ def create_portal_session(
     except Exception as e:
         print("🔥 Portal FULL ERROR:", repr(e))
         raise HTTPException(500, "Failed to create portal session")
+        
+        
+@router.get("/billing/preview-change")
+def preview_billing_change(
+    add_drivers: int = 0,
+    add_clients: int = 0,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    org = db.query(models.Organization).filter(
+        models.Organization.id == current_user.organization_id
+    ).first()
+
+    if not org:
+        raise HTTPException(404, "Organisation not found")
+
+    subscription = db.query(models.Subscription).filter(
+        models.Subscription.org_id == org.id
+    ).first()
+
+    if not subscription:
+        raise HTTPException(404, "Subscription not found")
+
+    current_bill = calculate_org_bill(db, org.id)
+    current_total = current_bill["total"]
+
+    DRIVER_PRICE = 150
+    CLIENT_PRICE = 50
+
+    # 🔥 NEW TOTAL (your logic)
+    change_amount = (add_drivers * DRIVER_PRICE) + (add_clients * CLIENT_PRICE)
+    new_total = current_total + change_amount
+
+    try:
+        # ======================================================
+        # 🔥 STRIPE REAL CALCULATION
+        # ======================================================
+        stripe_sub = stripe.Subscription.retrieve(
+            subscription.stripe_subscription_id
+        )
+
+        item_id = stripe_sub["items"]["data"][0]["id"]
+
+        upcoming_invoice = stripe.Invoice.upcoming(
+            customer=org.stripe_customer_id,
+            subscription=subscription.stripe_subscription_id,
+            subscription_items=[{
+                "id": item_id,
+                "quantity": int(new_total)
+            }]
+        )
+
+        # Stripe returns amount in pence
+        amount_due = upcoming_invoice["amount_due"] / 100
+
+    except Exception as e:
+        print("⚠️ Stripe preview failed:", e)
+        amount_due = change_amount  # fallback
+
+    return {
+        "current_total": current_total,
+        "new_total": new_total,
+        "prorated_charge": change_amount,
+        "stripe_estimated_charge": amount_due,
+        "message": f"Estimated charge now: £{amount_due}, next monthly: £{new_total}"
+    }
