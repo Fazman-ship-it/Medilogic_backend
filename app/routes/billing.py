@@ -124,7 +124,7 @@ def update_org_subscription(db: Session, org: models.Organization):
     if not subscription:
         print("🔥 No subscription → creating one")
 
-        customer_id = create_or_get_customer(db, org)
+        customer_id = create_or_get_customer(db, org, current_user)
 
         # get payment method
         payment_methods = stripe.PaymentMethod.list(
@@ -205,7 +205,7 @@ def create_setup_intent(
     print(f"🧠 Org ID: {org.id}")
     print(f"🧠 Existing customer: {org.stripe_customer_id}")
 
-    customer_id = create_or_get_customer(db, org)
+    customer_id = create_or_get_customer(db, org, current_user)
 
     print(f"🧠 Using customer_id: {customer_id}")
 
@@ -245,7 +245,7 @@ def subscribe_org(
     if bill["total"] <= 0:
         raise HTTPException(status_code=400, detail="No billable users found")
 
-    customer_id = create_or_get_customer(db, org)
+    customer_id = create_or_get_customer(db, org, current_user)
 
     try:
         customer = stripe.Customer.retrieve(customer_id)
@@ -393,7 +393,7 @@ def billing_status(
     # 🔥 Payment method check (unchanged)
     if org:
         try:
-            customer_id = create_or_get_customer(db, org)
+            customer_id = create_or_get_customer(db, org, current_user)
 
             payment_methods = stripe.PaymentMethod.list(
                 customer=customer_id,
@@ -472,7 +472,7 @@ def create_portal_session(
     # ======================================================
     # 🔥 FIX: ALWAYS USE SAFE CUSTOMER FUNCTION
     # ======================================================
-    customer_id = create_or_get_customer(db, org)
+    customer_id = create_or_get_customer(db, org, current_user)
 
     try:
         session = stripe.billing_portal.Session.create(
