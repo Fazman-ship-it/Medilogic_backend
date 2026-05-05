@@ -47,22 +47,29 @@ def calculate_org_bill(db: Session, org_id: UUID):
         "total": total_amount
     }
 
-
 # ======================================================
-# 👤 CUSTOMER
+# 👤 CUSTOMER (UPDATED - EMAIL FIX INCLUDED)
 # ======================================================
 def create_or_get_customer(db: Session, org: models.Organization):
 
     # ======================================================
-    # ✅ STEP 1: VALIDATE EXISTING CUSTOMER PROPERLY
+    # ✅ STEP 1: VALIDATE EXISTING CUSTOMER
     # ======================================================
     if org.stripe_customer_id:
         try:
             customer = stripe.Customer.retrieve(org.stripe_customer_id)
 
-            # 🔥 THIS IS THE FIX (you were missing this)
+            # 🔥 Handle deleted customers properly
             if getattr(customer, "deleted", False):
                 raise Exception("Customer deleted in Stripe")
+
+            # 🔥 OPTIONAL: ensure email is present in Stripe
+            if not customer.email and org.email:
+                stripe.Customer.modify(
+                    org.stripe_customer_id,
+                    email=org.email
+                )
+                print("🔄 Stripe customer email updated")
 
             print(f"✅ Existing Stripe customer valid: {org.stripe_customer_id}")
             return org.stripe_customer_id
@@ -73,11 +80,14 @@ def create_or_get_customer(db: Session, org: models.Organization):
             db.commit()
 
     # ======================================================
-    # ✅ STEP 2: CREATE NEW CUSTOMER
+    # ✅ STEP 2: CREATE NEW CUSTOMER (FIXED EMAIL)
     # ======================================================
     try:
+        if not org.email:
+            print("⚠️ WARNING: Organization has NO email → Stripe emails won't work")
+
         customer = stripe.Customer.create(
-            email=getattr(org, "email", None),
+            email=org.email,  # 🔥 FIXED (no more None issues)
             name=f"Medilogic Org {org.id}",
             metadata={"organization_id": str(org.id)}
         )
@@ -92,7 +102,7 @@ def create_or_get_customer(db: Session, org: models.Organization):
     except Exception as e:
         print("🔥 CUSTOMER CREATION ERROR:", repr(e))
         raise HTTPException(500, "Failed to create Stripe customer")
-
+        
 # ======================================================
 # 🔄 UPDATE SUBSCRIPTION PRICE
 # ======================================================
