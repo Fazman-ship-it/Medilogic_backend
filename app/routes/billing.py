@@ -50,7 +50,7 @@ def calculate_org_bill(db: Session, org_id: UUID):
 # ======================================================
 # 👤 CUSTOMER (UPDATED - EMAIL FIX INCLUDED)
 # ======================================================
-def create_or_get_customer(db: Session, org: models.Organization):
+def create_or_get_customer(db: Session, org: models.Organization,current_user:models.User = None):
 
     # ======================================================
     # ✅ STEP 1: VALIDATE EXISTING CUSTOMER
@@ -87,7 +87,7 @@ def create_or_get_customer(db: Session, org: models.Organization):
             print("⚠️ WARNING: Organization has NO email → Stripe emails won't work")
 
         customer = stripe.Customer.create(
-            email=org.email,  # 🔥 FIXED (no more None issues)
+            email=org.email if org.email else (current_user.email if current_user else None ) ,  # 🔥 FIXED (no more None issues)
             name=f"Medilogic Org {org.id}",
             metadata={"organization_id": str(org.id)}
         )
@@ -124,7 +124,7 @@ def update_org_subscription(db: Session, org: models.Organization):
     if not subscription:
         print("🔥 No subscription → creating one")
 
-        customer_id = create_or_get_customer(db, org, current_user)
+        customer_id = create_or_get_customer(db, org)
 
         # get payment method
         payment_methods = stripe.PaymentMethod.list(
