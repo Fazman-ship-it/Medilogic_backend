@@ -3,10 +3,14 @@ import os
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
+from app.config import settings
+from app.database import DATABASE_URL
+
 
 # Add project root to sys.path so Alembic can find app.models
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from app.config import settings
 # Alembic Config object
 config = context.config
 
@@ -21,8 +25,10 @@ from app import models
 target_metadata = models.Base.metadata
 
 # DATABASE_URL (optional override from alembic.ini)
-DATABASE_URL = os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
-
+DATABASE_URL = (
+    f"postgresql+psycopg2://{settings.DB_USER}:{settings.DB_PASSWORD}"
+    f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}?sslmode=require"
+)
 def run_migrations_offline():
     context.configure(
         url=DATABASE_URL,

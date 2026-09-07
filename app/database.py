@@ -4,6 +4,7 @@ from app.config import settings
 from sqlalchemy.exc import OperationalError
 import time
 
+
 # ✅ Construct full connection URL (with SSL required for Neon)
 DATABASE_URL = (
     f"postgresql+psycopg2://{settings.DB_USER}:{settings.DB_PASSWORD}"
